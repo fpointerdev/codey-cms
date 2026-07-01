@@ -1,0 +1,45 @@
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+  MANUAL
+}
+
+enum PaymentStatus {
+  REQUIRES_ACTION
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id                  String          @id @default(cuid())
+  provider            PaymentProvider @default(STRIPE)
+  status              PaymentStatus   @default(PENDING)
+  orderId             String?
+  amountCents         Int
+  currency            String          @default("USD")
+  providerReference   String?
+  idempotencyKey      String?         @unique
+  metadata            Json?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([providerReference])
+  @@index([provider, status])
+}
+
+model PaymentWebhook {
+  id                String          @id @default(cuid())
+  provider          PaymentProvider
+  eventType         String
+  providerEventId   String?         @unique
+  providerReference String?
+  payload           Json
+  processedAt       DateTime?
+  createdAt         DateTime        @default(now())
+
+  @@index([provider, eventType])
+  @@index([providerReference])
+}

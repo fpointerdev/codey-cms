@@ -1,0 +1,214 @@
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PAID
+  FULFILLED
+  CANCELLED
+  REFUNDED
+}
+
+enum CheckoutStatus {
+  STARTED
+  SHIPPING_SELECTED
+  PAYMENT_PENDING
+  PAYMENT_AUTHORIZED
+  COMPLETE
+  ABANDONED
+}
+
+enum CartStatus {
+  ACTIVE
+  CONVERTED
+  ABANDONED
+}
+
+enum CouponDiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum OrderNotificationChannel {
+  EMAIL
+}
+
+enum OrderNotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum OrderNotificationEvent {
+  ORDER_RECEIVED
+  ORDER_STATUS_CHANGED
+  ORDER_PAID
+  ORDER_REFUNDED
+}
+
+model Order {
+  id                 String        @id @default(cuid())
+  orderNumber        String        @unique
+  customerEmail      String
+  customerName       String?
+  status             OrderStatus   @default(PENDING)
+  checkoutStatus     CheckoutStatus @default(STARTED)
+  currency           String        @default("USD")
+  subtotalCents      Int
+  taxCents           Int           @default(0)
+  shippingCents      Int           @default(0)
+  discountCents      Int           @default(0)
+  totalCents         Int
+  couponCode         String?
+  shippingCountry    String?
+  shippingRateId     String?
+  metadata           Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  items              OrderItem[]
+  notifications      OrderNotification[]
+
+  @@index([status, createdAt])
+  @@index([checkoutStatus, createdAt])
+  @@index([customerEmail])
+  @@index([orderNumber, customerEmail])
+}
+
+model OrderItem {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId      String?
+  variantId      String?
+  productName    String
+  variantName    String?
+  sku            String?
+  unitPriceCents Int
+  quantity       Int
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model Cart {
+  id              String     @id @default(cuid())
+  sessionToken    String     @unique
+  customerEmail   String?
+  currency        String?
+  status          CartStatus @default(ACTIVE)
+  couponCode      String?
+  shippingCountry String?
+  shippingRateId  String?
+  metadata        Json?
+  expiresAt       DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  items           CartItem[]
+
+  @@index([status, updatedAt])
+  @@index([customerEmail])
+  @@index([expiresAt])
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  variantId String?
+  selectionKey String
+  quantity  Int
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, selectionKey])
+  @@index([cartId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model ShippingZone {
+  id        String         @id @default(cuid())
+  name      String
+  countries String[]       @default([])
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  rates     ShippingRate[]
+
+  @@index([active])
+}
+
+model ShippingRate {
+  id               String       @id @default(cuid())
+  zoneId           String
+  zone             ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  name             String
+  minSubtotalCents Int          @default(0)
+  maxSubtotalCents Int?
+  priceCents       Int
+  active           Boolean      @default(true)
+  sortOrder        Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([zoneId, active, sortOrder])
+}
+
+model TaxRule {
+  id        String   @id @default(cuid())
+  name      String
+  country   String?
+  region    String?
+  rateBps   Int
+  active    Boolean  @default(true)
+  priority  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([country, region, active, priority])
+}
+
+model Coupon {
+  id               String             @id @default(cuid())
+  code             String             @unique
+  description      String?
+  discountType     CouponDiscountType
+  amount           Int
+  currency         String?
+  minSubtotalCents Int?
+  active           Boolean            @default(true)
+  startsAt         DateTime?
+  expiresAt        DateTime?
+  usageLimit       Int?
+  usageCount       Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([active, startsAt, expiresAt])
+}
+
+model OrderNotification {
+  id        String             @id @default(cuid())
+  orderId   String
+  order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  eventType OrderNotificationEvent @default(ORDER_RECEIVED)
+  channel   OrderNotificationChannel @default(EMAIL)
+  status    OrderNotificationStatus  @default(QUEUED)
+  recipient String
+  subject   String
+  body      String
+  htmlBody  String?
+  attempts  Int                @default(0)
+  failureReason String?
+  lastAttemptAt DateTime?
+  sentAt    DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([orderId])
+  @@index([eventType, createdAt])
+  @@index([status, createdAt])
+}

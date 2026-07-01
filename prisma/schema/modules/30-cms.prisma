@@ -1,0 +1,272 @@
+enum CmsPublishStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ContentBlockType {
+  TEXT
+  RICH_TEXT
+  IMAGE
+  GALLERY
+  EMBED
+  BUTTON
+  CTA
+  CONTACT_FORM
+  PRODUCT_LIST
+  CUSTOM
+}
+
+enum MediaAssetKind {
+  IMAGE
+  VIDEO
+  DOCUMENT
+  OTHER
+}
+
+enum ContentRevisionEntity {
+  PAGE
+  POST
+}
+
+enum ContactSubmissionStatus {
+  NEW
+  READ
+  SPAM
+}
+
+model CmsPage {
+  id          String           @id @default(cuid())
+  title       String
+  slug        String
+  locale      String           @default("en")
+  translationGroupId String?
+  excerpt     String?
+  content     Json
+  metaTitle   String?
+  metaDescription String?
+  seo         Json?
+  status      CmsPublishStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  sections    PageSection[]
+  blocks      ContentBlock[]
+  menuItems   MenuItem[]
+  revisions   ContentRevision[]
+
+  @@unique([locale, slug])
+  @@index([status, publishedAt])
+  @@index([locale, status, publishedAt])
+  @@index([translationGroupId])
+}
+
+model CmsPost {
+  id          String           @id @default(cuid())
+  title       String
+  slug        String
+  locale      String           @default("en")
+  translationGroupId String?
+  excerpt     String?
+  content     Json
+  metaTitle   String?
+  metaDescription String?
+  seo         Json?
+  status      CmsPublishStatus @default(DRAFT)
+  publishedAt DateTime?
+  tags        String[]         @default([])
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  categories  CmsPostCategory[]
+  revisions   ContentRevision[]
+
+  @@unique([locale, slug])
+  @@index([status, publishedAt])
+  @@index([locale, status, publishedAt])
+  @@index([translationGroupId])
+  @@index([tags], type: Gin)
+}
+
+model CmsCategory {
+  id          String            @id @default(cuid())
+  name        String
+  slug        String
+  locale      String            @default("en")
+  translationGroupId String?
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  posts       CmsPostCategory[]
+
+  @@unique([locale, slug])
+  @@index([name])
+  @@index([locale, name])
+  @@index([translationGroupId])
+}
+
+model CmsPostCategory {
+  postId     String
+  post       CmsPost     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   CmsCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  assignedAt DateTime    @default(now())
+
+  @@id([postId, categoryId])
+  @@index([categoryId])
+}
+
+model CmsRedirect {
+  id            String   @id @default(cuid())
+  sourcePath    String   @unique
+  targetPath    String
+  statusCode    Int      @default(301)
+  preserveQuery Boolean  @default(true)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([active])
+}
+
+model Menu {
+  id        String     @id @default(cuid())
+  slug      String
+  locale    String     @default("en")
+  name      String
+  location  String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     MenuItem[]
+
+  @@unique([locale, slug])
+  @@index([location])
+  @@index([locale, location])
+}
+
+model MenuItem {
+  id           String     @id @default(cuid())
+  menuId       String
+  menu         Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  parentId     String?
+  parent       MenuItem?  @relation("MenuItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children     MenuItem[] @relation("MenuItemChildren")
+  pageId       String?
+  page         CmsPage?   @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  label        String
+  url          String?
+  sortOrder    Int        @default(0)
+  openInNewTab Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([menuId, sortOrder])
+  @@index([parentId])
+  @@index([pageId])
+}
+
+model PageSection {
+  id        String         @id @default(cuid())
+  pageId    String
+  page      CmsPage        @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  key       String
+  label     String?
+  sortOrder Int            @default(0)
+  settings  Json
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  blocks    ContentBlock[]
+
+  @@unique([pageId, key])
+  @@index([pageId, sortOrder])
+}
+
+model ContentBlock {
+  id           String           @id @default(cuid())
+  pageId       String
+  page         CmsPage          @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  sectionId    String?
+  section      PageSection?     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  mediaAssetId String?
+  mediaAsset   MediaAsset?      @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  type         ContentBlockType
+  key          String
+  label        String?
+  value        Json
+  settings     Json?
+  sortOrder    Int              @default(0)
+  editable     Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([pageId, key])
+  @@index([pageId, sortOrder])
+  @@index([sectionId, sortOrder])
+  @@index([mediaAssetId])
+}
+
+model MediaAsset {
+  id           String         @id @default(cuid())
+  siteId       String?
+  kind         MediaAssetKind @default(IMAGE)
+  storageKey   String?
+  originalFilename String?
+  checksumSha256 String?
+  url          String
+  mimeType     String?
+  sizeBytes    Int?
+  width        Int?
+  height       Int?
+  variants     Json?
+  altText      String?
+  deletedAt    DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  blocks       ContentBlock[]
+
+  @@index([siteId, createdAt])
+  @@index([kind])
+  @@index([storageKey])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+model ContactSubmission {
+  id          String                  @id @default(cuid())
+  formKey     String                  @default("contact")
+  name        String
+  email       String
+  phone       String?
+  subject     String?
+  message     String
+  metadata    Json?
+  status      ContactSubmissionStatus @default(NEW)
+  spamReason  String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([formKey, createdAt])
+  @@index([status, createdAt])
+}
+
+model ContentRevision {
+  id          String                @id @default(cuid())
+  entityType  ContentRevisionEntity
+  pageId      String?
+  page        CmsPage?              @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  postId      String?
+  post        CmsPost?              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  version     Int
+  action      String
+  title       String
+  slug        String
+  status      CmsPublishStatus
+  snapshot    Json
+  createdById String?
+  createdAt   DateTime              @default(now())
+
+  @@index([entityType, createdAt])
+  @@index([pageId, version])
+  @@index([postId, version])
+}

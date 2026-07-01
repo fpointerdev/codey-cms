@@ -1,0 +1,417 @@
+import { api, defaultPage, elements, modulesEnabled, setRuntimeConfig, setStatus, state } from "./core.js";
+import { currentAdminRoute, currentLocale, pageSlug, publicPostRoute, publicShopRoute } from "./routes.js";
+import { loadMenu } from "./content-actions.js";
+import { renderPage, renderPost } from "./public-renderer.js";
+import { loadUser } from "./session-actions.js";
+import { renderAdminLogin, renderPasswordReset } from "./ui.js";
+
+async function adminViews() {
+  return import("./admin-views.js");
+}
+
+async function builderViews() {
+  return import("./builder-views.js");
+}
+
+async function shopViews() {
+  return import("./shop-views.js");
+}
+
+async function publicShopViews() {
+  return import("./public-shop.js");
+}
+
+function activeAdminLocale() {
+  const activeQueryLocale = new URLSearchParams(window.location.search || "").get("locale");
+  if (activeQueryLocale) return currentLocale();
+
+  return state.config?.localization?.defaultLocale || currentLocale();
+}
+
+function adminLocaleUrl(path, extra = {}) {
+  const params = new URLSearchParams(extra);
+  const locale = String(activeAdminLocale() || "").toLowerCase();
+  const activeQueryLocale = new URLSearchParams(window.location.search || "").get("locale");
+  const defaultLocale = String(state.config?.localization?.defaultLocale || "en").toLowerCase();
+
+  if (locale && (activeQueryLocale || locale !== defaultLocale)) params.set("locale", locale);
+
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function publicLocaleUrl(path, extra = {}) {
+  const params = new URLSearchParams(extra);
+  params.set("locale", currentLocale());
+  const query = params.toString();
+
+  return `${path}?${query}`;
+}
+
+export async function loadAdminRoute(route) {
+  if (route.view === "password-reset") {
+    renderPasswordReset(route.token);
+    return;
+  }
+
+  state.user = await loadUser();
+  if (!state.user) {
+    renderAdminLogin();
+    return;
+  }
+
+  await loadRuntimeConfig();
+
+  if (!routeModulesEnabled(route)) {
+    const { renderDashboardHome } = await adminViews();
+    renderDashboardHome(state.config || {});
+    setStatus("This dashboard section is not enabled for this project.", true);
+    return;
+  }
+
+  if (route.view === "profile") {
+    const { renderProfilePage } = await adminViews();
+    const { user } = await api("/users/me");
+    renderProfilePage(user);
+    return;
+  }
+
+  if (route.view === "shop") {
+    const { renderShopPage } = await adminViews();
+    try {
+      const [config, draftProducts, activeProducts, archivedProducts, orders, categories, attributes] = await Promise.all([
+        api("/config"),
+        api(adminLocaleUrl("/products", { status: "DRAFT" })),
+        api(adminLocaleUrl("/products", { status: "ACTIVE" })),
+        api(adminLocaleUrl("/products", { status: "ARCHIVED" })),
+        api("/orders"),
+        api(adminLocaleUrl("/products/categories")),
+        api(adminLocaleUrl("/products/attributes"))
+      ]);
+      renderShopPage({
+        config,
+        products: [
+          ...(draftProducts.products || []),
+          ...(activeProducts.products || []),
+          ...(archivedProducts.products || [])
+        ],
+        orders: orders.orders || [],
+        categories: categories.categories || [],
+        attributes: attributes.attributes || []
+      });
+    } catch (error) {
+      renderShopPage({ errorMessage: error.message || "Unable to load shop overview." });
+    }
+    return;
+  }
+
+  if (route.view === "shop-products") {
+    const { renderShopProductsPage } = await adminViews();
+    try {
+      const { products } = await api(adminLocaleUrl("/products", { status: "DRAFT" }));
+      const activeProducts = await api(adminLocaleUrl("/products", { status: "ACTIVE" }));
+      const archivedProducts = await api(adminLocaleUrl("/products", { status: "ARCHIVED" }));
+      renderShopProductsPage([
+        ...products,
+        ...(activeProducts.products || []),
+        ...(archivedProducts.products || [])
+      ]);
+    } catch (error) {
+      renderShopProductsPage([], error.message || "Unable to load products.");
+    }
+    return;
+  }
+
+  if (route.view === "product-create") {
+    const { renderProductEditorPage } = await shopViews();
+    try {
+      const { categories } = await api(adminLocaleUrl("/products/categories"));
+      renderProductEditorPage({ categories });
+    } catch (error) {
+      const { renderShopProductsPage } = await adminViews();
+      renderShopProductsPage([], error.message || "Unable to load product editor.");
+    }
+    return;
+  }
+
+  if (route.view === "product-editor" && route.slug) {
+    const [{ renderProductEditorPage }, { renderShopProductsPage }] = await Promise.all([shopViews(), adminViews()]);
+    try {
+      const [{ product }, { categories }] = await Promise.all([
+        api(adminLocaleUrl(`/products/${encodeURIComponent(route.slug)}`)),
+        api(adminLocaleUrl("/products/categories"))
+      ]);
+      renderProductEditorPage({ product, categories });
+    } catch (error) {
+      renderShopProductsPage([], error.message || "Unable to load product editor.");
+    }
+    return;
+  }
+
+  if (route.view === "shop-orders") {
+    const { renderShopOrdersPage } = await adminViews();
+    try {
+      const { orders } = await api("/orders");
+      renderShopOrdersPage(orders);
+    } catch (error) {
+      renderShopOrdersPage([], error.message || "Unable to load orders.");
+    }
+    return;
+  }
+
+  if (route.view === "shop-categories") {
+    const { renderProductCategoriesPage } = await adminViews();
+    try {
+      const { categories } = await api(adminLocaleUrl("/products/categories"));
+      renderProductCategoriesPage(categories);
+    } catch (error) {
+      renderProductCategoriesPage([], error.message || "Unable to load product categories.");
+    }
+    return;
+  }
+
+  if (route.view === "shop-attributes") {
+    const { renderProductAttributesPage } = await adminViews();
+    try {
+      const { attributes } = await api(adminLocaleUrl("/products/attributes"));
+      renderProductAttributesPage(attributes);
+    } catch (error) {
+      renderProductAttributesPage([], error.message || "Unable to load product attributes.");
+    }
+    return;
+  }
+
+  if (route.view === "shop-configuration") {
+    const { renderShopConfigurationPage } = await adminViews();
+    renderShopConfigurationPage(await api("/config"));
+    return;
+  }
+
+  if (route.view === "pages") {
+    const { renderPagesPage } = await adminViews();
+    try {
+      const locale = new URLSearchParams(window.location.search || "").get("locale");
+      const query = locale ? `?locale=${encodeURIComponent(locale)}` : "";
+      const [{ pages }, allPagesResponse] = await Promise.all([
+        api(`/cms/pages${query}`),
+        locale ? api("/cms/pages") : Promise.resolve({ pages: null })
+      ]);
+      renderPagesPage(pages, "", allPagesResponse.pages || pages);
+    } catch (error) {
+      renderPagesPage([], error.message || "Unable to load pages.");
+    }
+    return;
+  }
+
+  if (route.view === "page-create") {
+    const { renderCreatePagePage } = await builderViews();
+    renderCreatePagePage();
+    return;
+  }
+
+  if (route.view === "page-builder" && route.slug) {
+    const [{ renderPageBuilderPage }, { renderPagesPage }] = await Promise.all([builderViews(), adminViews()]);
+    try {
+      const { page } = await api(adminLocaleUrl(`/cms/pages/${encodeURIComponent(route.slug)}`, { preview: "true" }));
+      renderPageBuilderPage(page);
+    } catch (error) {
+      renderPagesPage([], error.message || "Unable to load page builder.");
+    }
+    return;
+  }
+
+  if (route.view === "posts") {
+    const { renderPostsPage } = await adminViews();
+    try {
+      const params = new URLSearchParams({ includeDrafts: "true" });
+      const locale = new URLSearchParams(window.location.search || "").get("locale");
+      if (locale) params.set("locale", locale);
+      const [{ posts }, allPostsResponse] = await Promise.all([
+        api(`/cms/posts?${params.toString()}`),
+        locale ? api("/cms/posts?includeDrafts=true") : Promise.resolve({ posts: null })
+      ]);
+      renderPostsPage(posts, "", allPostsResponse.posts || posts);
+    } catch (error) {
+      renderPostsPage([], error.message || "Unable to load posts.");
+    }
+    return;
+  }
+
+  if (route.view === "post-categories") {
+    const { renderPostCategoriesPage } = await adminViews();
+    try {
+      const { categories } = await api("/cms/categories");
+      renderPostCategoriesPage(categories);
+    } catch (error) {
+      renderPostCategoriesPage([], error.message || "Unable to load post categories.");
+    }
+    return;
+  }
+
+  if (route.view === "post-create") {
+    const { renderPostEditorPage } = await builderViews();
+    renderPostEditorPage();
+    return;
+  }
+
+  if (route.view === "post-builder" && route.slug) {
+    const [{ renderPostEditorPage }, { renderPostsPage }] = await Promise.all([builderViews(), adminViews()]);
+    try {
+      const locale = activeAdminLocale();
+      const { posts } = await api(adminLocaleUrl("/cms/posts", { includeDrafts: "true" }));
+      const post = posts.find((item) => item.slug === route.slug && item.locale === locale) ||
+        posts.find((item) => item.slug === route.slug);
+      if (!post) throw new Error("Post not found.");
+      renderPostEditorPage(post);
+    } catch (error) {
+      renderPostsPage([], error.message || "Unable to load post editor.");
+    }
+    return;
+  }
+
+  if (route.view === "users") {
+    const { renderUsersPage } = await adminViews();
+    const { users } = await api("/users");
+    renderUsersPage(users);
+    return;
+  }
+
+  if (route.view === "user" && route.userId) {
+    const { renderUserDetailPage } = await adminViews();
+    const { user } = await api(`/users/${encodeURIComponent(route.userId)}`);
+    renderUserDetailPage(user);
+    return;
+  }
+
+  if (route.view === "settings") {
+    const { renderSettingsPage } = await adminViews();
+    renderSettingsPage(await api("/config"));
+    return;
+  }
+
+  const { renderDashboardHome } = await adminViews();
+  try {
+    renderDashboardHome(await api("/config"));
+  } catch {
+    renderDashboardHome();
+  }
+}
+
+async function loadRuntimeConfig() {
+  try {
+    return setRuntimeConfig(await api("/config"));
+  } catch {
+    return setRuntimeConfig(null);
+  }
+}
+
+function routeModulesEnabled(route) {
+  const requiredModulesByView = {
+    shop: ["products", "orders"],
+    "shop-products": ["products"],
+    "product-create": ["products"],
+    "product-editor": ["products"],
+    "shop-categories": ["products"],
+    "shop-attributes": ["products"],
+    "shop-orders": ["orders"],
+    "shop-configuration": ["products", "orders"],
+    pages: ["cms"],
+    "page-create": ["cms"],
+    "page-builder": ["cms"],
+    posts: ["cms"],
+    "post-create": ["cms"],
+    "post-builder": ["cms"],
+    "post-categories": ["cms"],
+    users: ["users", "roles"],
+    user: ["users", "roles"],
+    settings: ["config"]
+  };
+  const requiredModules = requiredModulesByView[route.view] || [];
+
+  return modulesEnabled(requiredModules);
+}
+
+async function loadPage() {
+  const shopRoute = publicShopRoute();
+  if (shopRoute) {
+    const { renderShopListing, renderProductDetail } = await publicShopViews();
+
+    if (shopRoute.view === "product") {
+      const { product } = await api(publicLocaleUrl(`/products/${encodeURIComponent(shopRoute.slug)}`));
+      renderProductDetail(product);
+      return;
+    }
+
+    const params = new URLSearchParams();
+    if (shopRoute.category) params.set("category", shopRoute.category);
+    if (shopRoute.attributeName) params.set("attributeName", shopRoute.attributeName);
+    if (shopRoute.attributeValue) params.set("attributeValue", shopRoute.attributeValue);
+
+    const [{ products }, { categories }, { attributes }] = await Promise.all([
+      api(publicLocaleUrl("/products", Object.fromEntries(params.entries()))),
+      api(publicLocaleUrl("/products/categories")),
+      api(publicLocaleUrl("/products/attributes"))
+    ]);
+    renderShopListing({ products, categories, attributes, route: shopRoute });
+    return;
+  }
+
+  const postRoute = publicPostRoute();
+  if (postRoute) {
+    const params = new URLSearchParams();
+    if (state.token) params.set("preview", "true");
+    params.set("locale", currentLocale());
+    const query = `?${params.toString()}`;
+    const { post } = await api(`/cms/posts/${encodeURIComponent(postRoute.slug)}${query}`);
+    renderPost(post);
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (state.token) params.set("preview", "true");
+  params.set("locale", currentLocale());
+  const query = `?${params.toString()}`;
+  try {
+    const { page } = await api(`/cms/pages/${encodeURIComponent(pageSlug())}${query}`);
+    state.page = page;
+    renderPage(page);
+  } catch (error) {
+    if (pageSlug() === "home") {
+      state.page = defaultPage;
+      renderPage(defaultPage);
+      setStatus(
+        state.user
+          ? "Static preview. Enable CMS pages to edit live content."
+          : "Static preview. CMS content is not available yet."
+      );
+      return;
+    }
+
+    throw error;
+  }
+}
+
+export async function bootstrap() {
+  const adminRoute = currentAdminRoute();
+
+  if (adminRoute) {
+    try {
+      await loadAdminRoute(adminRoute);
+    } catch (error) {
+      renderAdminLogin();
+      setStatus(error.message, true);
+    }
+    return;
+  }
+
+  try {
+    document.body.classList.remove("auth-enabled", "dashboard-enabled");
+    state.user = await loadUser();
+    await loadRuntimeConfig();
+    await loadMenu();
+    await loadPage();
+  } catch (error) {
+    elements.page.innerHTML = "";
+    setStatus(error.message, true);
+  }
+}

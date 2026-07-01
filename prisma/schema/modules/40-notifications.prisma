@@ -1,0 +1,28 @@
+enum NotificationChannel {
+  SYSTEM
+  EMAIL
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  READ
+  FAILED
+}
+
+model Notification {
+  id          String              @id @default(cuid())
+  userId      String?
+  channel     NotificationChannel @default(SYSTEM)
+  status      NotificationStatus  @default(QUEUED)
+  subject     String
+  body        String
+  metadata    Json?
+  sentAt      DateTime?
+  readAt      DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([userId, status])
+  @@index([channel, status])
+}

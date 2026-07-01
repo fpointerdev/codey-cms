@@ -1,0 +1,511 @@
+import { randomBytes } from "node:crypto";
+import type { Prisma } from "@prisma/client";
+import { AppError } from "../../core/errors/app-error.js";
+import type { ModuleContext } from "../../core/types/module.js";
+import { queueOrderEmail } from "./order-email.service.js";
+
+type OrderItemInput = {
+  productId: string;
+  variantId?: string;
+  quantity: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type CreateOrderInput = {
+  customerEmail: string;
+  customerName?: string;
+  shippingCountry?: string;
+  shippingRateId?: string;
+  couponCode?: string;
+  metadata?: Record<string, unknown>;
+  items: OrderItemInput[];
+};
+
+export type CreateCartInput = {
+  customerEmail?: string;
+  shippingCountry?: string;
+  shippingRateId?: string;
+  couponCode?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type CheckoutCartInput = Omit<CreateOrderInput, "items">;
+
+export type LookupOrderInput = {
+  orderNumber: string;
+  customerEmail: string;
+};
+
+type ShopTransaction = Prisma.TransactionClient;
+
+function createOrderNumber() {
+  return `ORD-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
+}
+
+function createCartToken() {
+  return randomBytes(32).toString("base64url");
+}
+
+function normalizeCode(code?: string) {
+  return code?.trim().toUpperCase();
+}
+
+function normalizeCountry(country?: string) {
+  return country?.trim().toUpperCase();
+}
+
+function itemKey(item: Pick<OrderItemInput, "productId" | "variantId">) {
+  return `${item.productId}:${item.variantId ?? ""}`;
+}
+
+function shippingCountryFilter(country: string | undefined) {
+  return country
+    ? {
+        OR: [{ countries: { has: country } }, { countries: { isEmpty: true } }]
+      }
+    : {
+        countries: { isEmpty: true }
+      };
+}
+
+async function resolveCoupon(
+  tx: ShopTransaction,
+  couponCode: string | undefined,
+  subtotalCents: number,
+  currency: string
+) {
+  const code = normalizeCode(couponCode);
+
+  if (!code) {
+    return { code: undefined, discountCents: 0 };
+  }
+
+  const coupon = await tx.coupon.findUnique({
+    where: { code }
+  });
+  const now = new Date();
+
+  if (
+    !coupon ||
+    !coupon.active ||
+    (coupon.startsAt && coupon.startsAt > now) ||
+    (coupon.expiresAt && coupon.expiresAt <= now) ||
+    (coupon.currency && coupon.currency !== currency) ||
+    (coupon.minSubtotalCents && subtotalCents < coupon.minSubtotalCents) ||
+    (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit)
+  ) {
+    throw new AppError(422, "invalid_coupon", "Coupon is not valid for this order.");
+  }
+
+  if (coupon.discountType === "PERCENTAGE" && coupon.amount > 100) {
+    throw new AppError(422, "invalid_coupon", "Percentage coupons cannot exceed 100.");
+  }
+
+  const discountCents =
+    coupon.discountType === "PERCENTAGE"
+      ? Math.floor((subtotalCents * coupon.amount) / 100)
+      : coupon.amount;
+
+  return {
+    code,
+    couponId: coupon.id,
+    usageLimit: coupon.usageLimit,
+    discountCents: Math.min(subtotalCents, discountCents)
+  };
+}
+
+async function resolveShipping(
+  tx: ShopTransaction,
+  shippingRateId: string | undefined,
+  country: string | undefined,
+  subtotalCents: number
+) {
+  const normalizedCountry = normalizeCountry(country);
+  const subtotalFilter = {
+    minSubtotalCents: { lte: subtotalCents },
+    OR: [{ maxSubtotalCents: null }, { maxSubtotalCents: { gte: subtotalCents } }]
+  };
+
+  if (shippingRateId) {
+    const rate = await tx.shippingRate.findFirst({
+      where: {
+        id: shippingRateId,
+        active: true,
+        ...subtotalFilter,
+        zone: {
+          active: true,
+          ...shippingCountryFilter(normalizedCountry)
+        }
+      }
+    });
+
+    if (!rate) {
+      throw new AppError(422, "invalid_shipping_rate", "Shipping rate is not valid for this order.");
+    }
+
+    return { shippingRateId: rate.id, shippingCents: rate.priceCents };
+  }
+
+  if (!normalizedCountry) {
+    return { shippingRateId: undefined, shippingCents: 0 };
+  }
+
+  const rate = await tx.shippingRate.findFirst({
+    where: {
+      active: true,
+      ...subtotalFilter,
+      zone: {
+        active: true,
+        ...shippingCountryFilter(normalizedCountry)
+      }
+    },
+    orderBy: [{ priceCents: "asc" }, { sortOrder: "asc" }]
+  });
+
+  return {
+    shippingRateId: rate?.id,
+    shippingCents: rate?.priceCents ?? 0
+  };
+}
+
+async function resolveTax(tx: ShopTransaction, country: string | undefined, taxableCents: number) {
+  const normalizedCountry = normalizeCountry(country);
+  const taxRule = await tx.taxRule.findFirst({
+    where: {
+      active: true,
+      OR: normalizedCountry ? [{ country: normalizedCountry }, { country: null }] : [{ country: null }]
+    },
+    orderBy: [{ priority: "desc" }, { createdAt: "desc" }]
+  });
+
+  if (!taxRule) {
+    return 0;
+  }
+
+  return Math.floor((taxableCents * taxRule.rateBps) / 10_000);
+}
+
+async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderInput) {
+  const requestedQuantities = input.items.reduce((totals, item) => {
+    totals.set(itemKey(item), (totals.get(itemKey(item)) ?? 0) + item.quantity);
+    return totals;
+  }, new Map<string, number>());
+  const productIds = [...new Set(input.items.map((item) => item.productId))];
+  const variantIds = input.items.flatMap((item) => (item.variantId ? [item.variantId] : []));
+  const products = await tx.product.findMany({
+    where: {
+      id: { in: productIds },
+      status: "ACTIVE"
+    },
+    include: {
+      variants: {
+        where: {
+          id: { in: variantIds },
+          active: true
+        }
+      }
+    }
+  });
+
+  if (products.length !== productIds.length) {
+    throw new AppError(422, "invalid_order_item", "One or more products are unavailable.");
+  }
+
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const variantsById = new Map(
+    products.flatMap((product) =>
+      product.variants.map((variant) => [variant.id, { ...variant, productId: product.id }] as const)
+    )
+  );
+  const currencies = new Set(products.map((product) => product.currency));
+
+  if (currencies.size !== 1) {
+    throw new AppError(422, "mixed_currency_order", "Order items must use one currency.");
+  }
+
+  for (const [key, quantity] of requestedQuantities) {
+    const [productId, variantId] = key.split(":");
+
+    if (variantId) {
+      const updated = await tx.productVariant.updateMany({
+        where: {
+          id: variantId,
+          productId,
+          active: true,
+          stockQuantity: { gte: quantity }
+        },
+        data: {
+          stockQuantity: { decrement: quantity }
+        }
+      });
+
+      if (updated.count !== 1) {
+        throw new AppError(409, "insufficient_stock", "One or more variants are out of stock.");
+      }
+
+      continue;
+    }
+
+    const updated = await tx.product.updateMany({
+      where: {
+        id: productId,
+        stockQuantity: { gte: quantity }
+      },
+      data: {
+        stockQuantity: { decrement: quantity }
+      }
+    });
+
+    if (updated.count !== 1) {
+      throw new AppError(409, "insufficient_stock", "One or more products are out of stock.");
+    }
+  }
+
+  const orderItems = input.items.map((item) => {
+    const product = productsById.get(item.productId);
+    const variant = item.variantId ? variantsById.get(item.variantId) : undefined;
+
+    if (!product || (item.variantId && (!variant || variant.productId !== product.id))) {
+      throw new AppError(422, "invalid_order_item", "One or more products are unavailable.");
+    }
+
+    return {
+      productId: product.id,
+      variantId: variant?.id,
+      productName: product.name,
+      variantName: variant?.name,
+      sku: variant?.sku ?? product.sku,
+      unitPriceCents: variant?.priceCents ?? product.priceCents,
+      quantity: item.quantity,
+      metadata: item.metadata as Prisma.InputJsonValue | undefined
+    };
+  });
+  const subtotalCents = orderItems.reduce(
+    (total, item) => total + item.unitPriceCents * item.quantity,
+    0
+  );
+  const currency = products[0]!.currency;
+  const { code, couponId, usageLimit, discountCents } = await resolveCoupon(
+    tx,
+    input.couponCode,
+    subtotalCents,
+    currency
+  );
+  const shippingCountry = normalizeCountry(input.shippingCountry);
+  const { shippingRateId, shippingCents } = await resolveShipping(
+    tx,
+    input.shippingRateId,
+    shippingCountry,
+    subtotalCents
+  );
+  const taxableCents = Math.max(subtotalCents - discountCents + shippingCents, 0);
+  const taxCents = await resolveTax(tx, shippingCountry, taxableCents);
+  const totalCents = taxableCents + taxCents;
+  const order = await tx.order.create({
+    data: {
+      orderNumber: createOrderNumber(),
+      customerEmail: input.customerEmail,
+      customerName: input.customerName,
+      checkoutStatus: "PAYMENT_PENDING",
+      currency,
+      subtotalCents,
+      taxCents,
+      shippingCents,
+      discountCents,
+      totalCents,
+      couponCode: code,
+      shippingCountry,
+      shippingRateId,
+      metadata: input.metadata as Prisma.InputJsonValue | undefined,
+      items: {
+        create: orderItems
+      }
+    },
+    include: { items: true }
+  });
+
+  if (couponId) {
+    const updatedCoupon = await tx.coupon.updateMany({
+      where: {
+        id: couponId,
+        ...(usageLimit ? { usageCount: { lt: usageLimit } } : {})
+      },
+      data: {
+        usageCount: { increment: 1 }
+      }
+    });
+
+    if (updatedCoupon.count !== 1) {
+      throw new AppError(422, "invalid_coupon", "Coupon is not valid for this order.");
+    }
+  }
+
+  await queueOrderEmail(tx, order, {
+    eventType: "ORDER_RECEIVED"
+  });
+
+  return order;
+}
+
+export async function createOrder(context: ModuleContext, input: CreateOrderInput) {
+  return context.prisma.$transaction((tx) => createOrderInTransaction(tx, input));
+}
+
+export async function createCart(context: ModuleContext, input: CreateCartInput) {
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  return context.prisma.cart.create({
+    data: {
+      sessionToken: createCartToken(),
+      customerEmail: input.customerEmail,
+      shippingCountry: normalizeCountry(input.shippingCountry),
+      shippingRateId: input.shippingRateId,
+      couponCode: normalizeCode(input.couponCode),
+      metadata: input.metadata as Prisma.InputJsonValue | undefined,
+      expiresAt
+    },
+    include: { items: true }
+  });
+}
+
+export async function getCart(context: ModuleContext, token: string) {
+  const cart = await context.prisma.cart.findUnique({
+    where: { sessionToken: token },
+    include: {
+      items: {
+        orderBy: { createdAt: "asc" }
+      }
+    }
+  });
+
+  if (!cart || cart.status !== "ACTIVE") {
+    throw new AppError(404, "cart_not_found", "Cart not found.");
+  }
+
+  return cart;
+}
+
+export async function addCartItem(context: ModuleContext, token: string, input: OrderItemInput) {
+  return context.prisma.$transaction(async (tx) => {
+    const cart = await tx.cart.findUnique({
+      where: { sessionToken: token }
+    });
+
+    if (!cart || cart.status !== "ACTIVE") {
+      throw new AppError(404, "cart_not_found", "Cart not found.");
+    }
+
+    const product = await tx.product.findFirst({
+      where: {
+        id: input.productId,
+        status: "ACTIVE"
+      },
+      include: {
+        variants: {
+          where: {
+            id: { in: input.variantId ? [input.variantId] : [] },
+            active: true
+          }
+        }
+      }
+    });
+    const variant = input.variantId ? product?.variants[0] : undefined;
+
+    if (!product || (input.variantId && !variant)) {
+      throw new AppError(422, "invalid_cart_item", "Product is unavailable.");
+    }
+
+    if (cart.currency && cart.currency !== product.currency) {
+      throw new AppError(422, "mixed_currency_cart", "Cart items must use one currency.");
+    }
+
+    await tx.cartItem.upsert({
+      where: {
+        cartId_selectionKey: {
+          cartId: cart.id,
+          selectionKey: itemKey(input)
+        }
+      },
+      update: {
+        quantity: { increment: input.quantity },
+        metadata: input.metadata as Prisma.InputJsonValue | undefined
+      },
+      create: {
+        cartId: cart.id,
+        productId: input.productId,
+        variantId: input.variantId,
+        selectionKey: itemKey(input),
+        quantity: input.quantity,
+        metadata: input.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+
+    return tx.cart.update({
+      where: { id: cart.id },
+      data: {
+        currency: cart.currency ?? product.currency
+      },
+      include: {
+        items: {
+          orderBy: { createdAt: "asc" }
+        }
+      }
+    });
+  });
+}
+
+export async function checkoutCart(context: ModuleContext, token: string, input: CheckoutCartInput) {
+  return context.prisma.$transaction(async (tx) => {
+    const cart = await tx.cart.findUnique({
+      where: { sessionToken: token },
+      include: { items: true }
+    });
+
+    if (!cart || cart.status !== "ACTIVE") {
+      throw new AppError(404, "cart_not_found", "Cart not found.");
+    }
+
+    if (!cart.items.length) {
+      throw new AppError(422, "empty_cart", "Cart has no items.");
+    }
+
+    const order = await createOrderInTransaction(tx, {
+      ...input,
+      shippingCountry: input.shippingCountry ?? cart.shippingCountry ?? undefined,
+      shippingRateId: input.shippingRateId ?? cart.shippingRateId ?? undefined,
+      couponCode: input.couponCode ?? cart.couponCode ?? undefined,
+      items: cart.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId ?? undefined,
+        quantity: item.quantity,
+        metadata: item.metadata as Record<string, unknown> | undefined
+      }))
+    });
+
+    await tx.cart.update({
+      where: { id: cart.id },
+      data: { status: "CONVERTED" }
+    });
+
+    return order;
+  });
+}
+
+export async function lookupOrder(context: ModuleContext, input: LookupOrderInput) {
+  const order = await context.prisma.order.findFirst({
+    where: {
+      orderNumber: input.orderNumber,
+      customerEmail: {
+        equals: input.customerEmail,
+        mode: "insensitive"
+      }
+    },
+    include: { items: true }
+  });
+
+  if (!order) {
+    throw new AppError(404, "order_not_found", "Order not found.");
+  }
+
+  return order;
+}

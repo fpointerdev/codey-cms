@@ -1,0 +1,51 @@
+FROM node:24-alpine AS base
+
+WORKDIR /app
+
+RUN apk add --no-cache openssl postgresql16-client \
+  && corepack enable \
+  && corepack prepare pnpm@11.3.0 --activate
+
+FROM base AS development
+
+COPY package.json pnpm-workspace.yaml ./
+RUN pnpm install --no-frozen-lockfile
+
+COPY . .
+
+EXPOSE 4000
+CMD ["pnpm", "dev"]
+
+FROM base AS builder
+
+COPY package.json pnpm-workspace.yaml ./
+RUN pnpm install --no-frozen-lockfile
+
+COPY . .
+RUN pnpm build
+RUN pnpm prune --prod
+
+FROM base AS production
+
+ENV NODE_ENV=production
+ENV PORT=4000
+
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 api
+
+COPY --from=builder --chown=api:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=api:nodejs /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=builder --chown=api:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=api:nodejs /app/dist ./dist
+COPY --from=builder --chown=api:nodejs /app/apps/web ./apps/web
+COPY --from=builder --chown=api:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=api:nodejs /app/scripts ./scripts
+
+RUN mkdir -p storage/uploads backups \
+  && chown -R api:nodejs storage backups
+
+USER api
+
+EXPOSE 4000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD node -e "fetch('http://127.0.0.1:4000/api/v1/health/ready').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "scripts/start-production.mjs"]

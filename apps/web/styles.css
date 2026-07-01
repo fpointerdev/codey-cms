@@ -1,0 +1,74 @@
+@import "./styles/base.css";
+@import "./styles/admin-builder.css";
+@import "./styles/product-editor.css";
+@import "./styles/components.css";
+@import "./styles/tables-modal-responsive.css";
+
+:root {
+  --font-regular: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-heading: 620;
+}
+
+body {
+  font-weight: var(--font-regular);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+strong,
+b,
+.brand,
+.admin-sidebar-brand strong,
+.dashboard-command strong,
+.shop-overview-grid strong,
+.table-empty-state strong,
+.product-editor-summary strong,
+.choice-card strong,
+.existing-option-list strong,
+.modal-field-section strong,
+.choice-card-copy strong,
+.builder-empty strong,
+.builder-layout-pill strong,
+.revision-item strong,
+.revision-compare strong,
+.shop-product-card strong,
+.shop-product-detail-hero strong {
+  font-weight: var(--font-semibold);
+  letter-spacing: 0;
+}
+
+.admin-page-title,
+.admin-builder-title,
+.page-hero h1,
+.structured-block h2,
+.structured-card h3 {
+  font-weight: var(--font-heading);
+  letter-spacing: 0;
+}
+
+button,
+.secondary-button,
+.link-button,
+.front-edit-button,
+.dashboard-command span,
+.admin-sidebar-link,
+.builder-tab,
+.builder-sidebar-label,
+.builder-element-card,
+.builder-section-meta,
+.table-action,
+.status-pill,
+.form-chip,
+.locale-chip,
+.taxonomy-chip,
+.domain-records code,
+.modal-field-label,
+.choice-card-copy small,
+.product-editor-summary span {
+  font-weight: var(--font-medium);
+}

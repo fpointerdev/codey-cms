@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.env
+.pnpm-store
+storage
+backups
+test-results
+playwright-report
+coverage
+*.log
+.DS_Store

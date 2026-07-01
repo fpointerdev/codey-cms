@@ -1,0 +1,122 @@
+import { z } from "zod";
+
+export const orderIdParams = z.object({
+  id: z.string().cuid()
+});
+
+export const cartTokenParams = z.object({
+  token: z.string().trim().min(16).max(160)
+});
+
+export const shippingZoneIdParams = z.object({
+  id: z.string().cuid()
+});
+
+const orderItemSchema = z.object({
+  productId: z.string().cuid(),
+  variantId: z.string().cuid().optional(),
+  quantity: z.number().int().positive().max(999),
+  metadata: z.record(z.unknown()).optional()
+});
+
+export const createOrderSchema = z.object({
+  customerEmail: z.string().email(),
+  customerName: z.string().trim().max(120).optional(),
+  shippingCountry: z.string().trim().length(2).optional(),
+  shippingRateId: z.string().cuid().optional(),
+  couponCode: z.string().trim().min(1).max(80).optional(),
+  metadata: z.record(z.unknown()).optional(),
+  items: z.array(orderItemSchema).min(1).max(100)
+});
+
+export const updateOrderStatusSchema = z.object({
+  status: z.enum(["PENDING", "CONFIRMED", "PAID", "FULFILLED", "CANCELLED", "REFUNDED"])
+});
+
+export const updateCheckoutStatusSchema = z.object({
+  checkoutStatus: z.enum([
+    "STARTED",
+    "SHIPPING_SELECTED",
+    "PAYMENT_PENDING",
+    "PAYMENT_AUTHORIZED",
+    "COMPLETE",
+    "ABANDONED"
+  ])
+});
+
+export const createCartSchema = z.object({
+  customerEmail: z.string().email().optional(),
+  couponCode: z.string().trim().min(1).max(80).optional(),
+  shippingCountry: z.string().trim().length(2).optional(),
+  shippingRateId: z.string().cuid().optional(),
+  metadata: z.record(z.unknown()).optional()
+});
+
+export const addCartItemSchema = orderItemSchema;
+
+export const checkoutCartSchema = z.object({
+  customerEmail: z.string().email(),
+  customerName: z.string().trim().max(120).optional(),
+  shippingCountry: z.string().trim().length(2).optional(),
+  shippingRateId: z.string().cuid().optional(),
+  couponCode: z.string().trim().min(1).max(80).optional(),
+  metadata: z.record(z.unknown()).optional()
+});
+
+export const lookupOrderSchema = z.object({
+  orderNumber: z.string().trim().min(1).max(80),
+  customerEmail: z.string().email()
+});
+
+export const createShippingZoneSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  countries: z.array(z.string().trim().length(2)).max(250).default([]),
+  active: z.boolean().default(true)
+});
+
+export const createShippingRateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  minSubtotalCents: z.number().int().nonnegative().default(0),
+  maxSubtotalCents: z.number().int().nonnegative().optional(),
+  priceCents: z.number().int().nonnegative(),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().default(0)
+});
+
+export const createTaxRuleSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  country: z.string().trim().length(2).optional(),
+  region: z.string().trim().min(1).max(80).optional(),
+  rateBps: z.number().int().min(0).max(10000),
+  active: z.boolean().default(true),
+  priority: z.number().int().default(0)
+});
+
+export const createCouponSchema = z.object({
+  code: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(500).optional(),
+  discountType: z.enum(["PERCENTAGE", "FIXED"]),
+  amount: z.number().int().positive(),
+  currency: z.string().length(3).optional(),
+  minSubtotalCents: z.number().int().nonnegative().optional(),
+  active: z.boolean().default(true),
+  startsAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date().optional(),
+  usageLimit: z.number().int().positive().optional()
+}).superRefine((coupon, context) => {
+  if (coupon.discountType === "PERCENTAGE" && coupon.amount > 100) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["amount"],
+      message: "Percentage coupon amount cannot exceed 100."
+    });
+  }
+
+  if (coupon.startsAt && coupon.expiresAt && coupon.expiresAt <= coupon.startsAt) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["expiresAt"],
+      message: "Coupon expiry must be after the start date."
+    });
+  }
+});

@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum InstalledModuleStatus {
+  ENABLED
+  DISABLED
+}
+
+enum UserInviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+enum SiteDomainType {
+  PLATFORM_SUBDOMAIN
+  CUSTOM
+}
+
+enum SiteDomainStatus {
+  PENDING
+  ACTIVE
+  FAILED
+  DISABLED
+}
+
+model Site {
+  id                String            @id @default(cuid())
+  slug              String            @unique
+  name              String
+  deploymentProfile String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  modules           InstalledModule[]
+  settings          ModuleSetting[]
+  domains           SiteDomain[]
+}
+
+model InstalledModule {
+  id                String                @id @default(cuid())
+  siteId            String
+  site              Site                  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  moduleId          String
+  status            InstalledModuleStatus @default(ENABLED)
+  version           String                @default("0.1.0")
+  monthlyEuroCents  Int                   @default(0)
+  installedAt       DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([siteId, moduleId])
+  @@index([moduleId, status])
+  @@index([siteId, status])
+}
+
+model ModuleSetting {
+  id        String   @id @default(cuid())
+  siteId    String
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  moduleId  String
+  key       String
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([siteId, moduleId, key])
+  @@index([moduleId])
+}
+
+model SiteDomain {
+  id                String           @id @default(cuid())
+  siteId            String
+  site              Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  hostname          String           @unique
+  type              SiteDomainType
+  status            SiteDomainStatus @default(PENDING)
+  isPrimary         Boolean          @default(false)
+  verificationToken String?
+  verifiedAt        DateTime?
+  lastCheckedAt     DateTime?
+  metadata          Json?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([siteId, type])
+  @@index([status])
+  @@index([isPrimary])
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  name            String?
+  passwordHash    String
+  status          UserStatus     @default(ACTIVE)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  roles           UserRole[]
+  refreshTokens   RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+  sentInvites      UserInvite[]   @relation("InvitesSent")
+  acceptedInvites  UserInvite[]   @relation("InvitesAccepted")
+  auditLogs        AuditLog[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  action      String
+  subject     String
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  roles       RolePermission[]
+
+  @@unique([action, subject])
+  @@index([subject])
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model RefreshToken {
+  id                  String    @id @default(cuid())
+  tokenHash           String    @unique
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent           String?
+  ipAddress           String?
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  createdAt           DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([consumedAt])
+}
+
+model UserInvite {
+  id           String           @id @default(cuid())
+  email        String
+  tokenHash    String           @unique
+  roleNames    String[]         @default(["client_editor"])
+  status       UserInviteStatus @default(PENDING)
+  invitedById  String?
+  invitedBy    User?            @relation("InvitesSent", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedById String?
+  acceptedBy   User?            @relation("InvitesAccepted", fields: [acceptedById], references: [id], onDelete: SetNull)
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action      String
+  subject     String
+  subjectId   String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([action, subject])
+  @@index([subject, subjectId])
+  @@index([createdAt])
+}
