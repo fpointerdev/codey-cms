@@ -38,6 +38,14 @@ export type LookupOrderInput = {
 
 type ShopTransaction = Prisma.TransactionClient;
 
+export const orderReservationTtlMs = 30 * 60 * 1000;
+
+type ReservedOrderItem = {
+  productId: string | null;
+  variantId: string | null;
+  quantity: number;
+};
+
 function createOrderNumber() {
   return `ORD-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
 }
@@ -56,6 +64,30 @@ function normalizeCountry(country?: string) {
 
 function itemKey(item: Pick<OrderItemInput, "productId" | "variantId">) {
   return `${item.productId}:${item.variantId ?? ""}`;
+}
+
+function activeCartWhere(token: string) {
+  return {
+    sessionToken: token,
+    status: "ACTIVE" as const,
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }]
+  };
+}
+
+function aggregateReservedItems(items: ReservedOrderItem[]) {
+  return items.reduce((quantities, item) => {
+    if (!item.productId) return quantities;
+
+    const key = `${item.productId}:${item.variantId ?? ""}`;
+    const current = quantities.get(key) ?? {
+      productId: item.productId,
+      variantId: item.variantId,
+      quantity: 0
+    };
+    current.quantity += item.quantity;
+    quantities.set(key, current);
+    return quantities;
+  }, new Map<string, { productId: string; variantId: string | null; quantity: number }>());
 }
 
 function shippingCountryFilter(country: string | undefined) {
@@ -348,6 +380,7 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
 }
 
 export async function createOrder(context: ModuleContext, input: CreateOrderInput) {
+  await releaseExpiredOrderReservations(context);
   return context.prisma.$transaction((tx) => createOrderInTransaction(tx, input));
 }
 
@@ -369,8 +402,8 @@ export async function createCart(context: ModuleContext, input: CreateCartInput)
 }
 
 export async function getCart(context: ModuleContext, token: string) {
-  const cart = await context.prisma.cart.findUnique({
-    where: { sessionToken: token },
+  const cart = await context.prisma.cart.findFirst({
+    where: activeCartWhere(token),
     include: {
       items: {
         orderBy: { createdAt: "asc" }
@@ -378,7 +411,7 @@ export async function getCart(context: ModuleContext, token: string) {
     }
   });
 
-  if (!cart || cart.status !== "ACTIVE") {
+  if (!cart) {
     throw new AppError(404, "cart_not_found", "Cart not found.");
   }
 
@@ -387,11 +420,11 @@ export async function getCart(context: ModuleContext, token: string) {
 
 export async function addCartItem(context: ModuleContext, token: string, input: OrderItemInput) {
   return context.prisma.$transaction(async (tx) => {
-    const cart = await tx.cart.findUnique({
-      where: { sessionToken: token }
+    const cart = await tx.cart.findFirst({
+      where: activeCartWhere(token)
     });
 
-    if (!cart || cart.status !== "ACTIVE") {
+    if (!cart) {
       throw new AppError(404, "cart_not_found", "Cart not found.");
     }
 
@@ -419,6 +452,25 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
       throw new AppError(422, "mixed_currency_cart", "Cart items must use one currency.");
     }
 
+    const existingItem = await tx.cartItem.findUnique({
+      where: {
+        cartId_selectionKey: {
+          cartId: cart.id,
+          selectionKey: itemKey(input)
+        }
+      }
+    });
+    const nextQuantity = (existingItem?.quantity ?? 0) + input.quantity;
+    const availableStock = variant?.stockQuantity ?? product.stockQuantity;
+
+    if (nextQuantity > 999) {
+      throw new AppError(422, "cart_quantity_too_large", "Cart item quantity cannot exceed 999.");
+    }
+
+    if (nextQuantity > availableStock) {
+      throw new AppError(409, "insufficient_stock", "The requested quantity is not available.");
+    }
+
     await tx.cartItem.upsert({
       where: {
         cartId_selectionKey: {
@@ -427,7 +479,7 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
         }
       },
       update: {
-        quantity: { increment: input.quantity },
+        quantity: nextQuantity,
         metadata: input.metadata as Prisma.InputJsonValue | undefined
       },
       create: {
@@ -455,13 +507,15 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
 }
 
 export async function checkoutCart(context: ModuleContext, token: string, input: CheckoutCartInput) {
+  await releaseExpiredOrderReservations(context);
+
   return context.prisma.$transaction(async (tx) => {
-    const cart = await tx.cart.findUnique({
-      where: { sessionToken: token },
+    const cart = await tx.cart.findFirst({
+      where: activeCartWhere(token),
       include: { items: true }
     });
 
-    if (!cart || cart.status !== "ACTIVE") {
+    if (!cart) {
       throw new AppError(404, "cart_not_found", "Cart not found.");
     }
 
@@ -508,4 +562,100 @@ export async function lookupOrder(context: ModuleContext, input: LookupOrderInpu
   }
 
   return order;
+}
+
+export async function releaseOrderInventoryReservation(
+  tx: ShopTransaction,
+  orderId: string,
+  options: { checkoutStatuses?: Array<"PAYMENT_PENDING" | "PAYMENT_AUTHORIZED"> } = {}
+) {
+  const checkoutStatuses = options.checkoutStatuses ?? ["PAYMENT_PENDING", "PAYMENT_AUTHORIZED"];
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    include: { items: true }
+  });
+
+  if (
+    !order ||
+    order.status !== "PENDING" ||
+    !checkoutStatuses.includes(order.checkoutStatus as "PAYMENT_PENDING" | "PAYMENT_AUTHORIZED")
+  ) {
+    return false;
+  }
+
+  const claimed = await tx.order.updateMany({
+    where: {
+      id: order.id,
+      status: "PENDING",
+      checkoutStatus: order.checkoutStatus
+    },
+    data: {
+      status: "CANCELLED",
+      checkoutStatus: "ABANDONED"
+    }
+  });
+
+  if (claimed.count !== 1) return false;
+
+  for (const item of aggregateReservedItems(order.items).values()) {
+    if (item.variantId) {
+      await tx.productVariant.updateMany({
+        where: {
+          id: item.variantId,
+          productId: item.productId
+        },
+        data: {
+          stockQuantity: { increment: item.quantity }
+        }
+      });
+      continue;
+    }
+
+    await tx.product.updateMany({
+      where: { id: item.productId },
+      data: {
+        stockQuantity: { increment: item.quantity }
+      }
+    });
+  }
+
+  if (order.couponCode) {
+    await tx.coupon.updateMany({
+      where: {
+        code: order.couponCode,
+        usageCount: { gt: 0 }
+      },
+      data: {
+        usageCount: { decrement: 1 }
+      }
+    });
+  }
+
+  return true;
+}
+
+export async function releaseExpiredOrderReservations(context: ModuleContext, now = new Date()) {
+  const cutoff = new Date(now.getTime() - orderReservationTtlMs);
+  const expiredOrders = await context.prisma.order.findMany({
+    where: {
+      status: "PENDING",
+      checkoutStatus: "PAYMENT_PENDING",
+      createdAt: { lte: cutoff }
+    },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+    take: 100
+  });
+  let released = 0;
+
+  for (const order of expiredOrders) {
+    const didRelease = await context.prisma.$transaction((tx) =>
+      releaseOrderInventoryReservation(tx, order.id, {
+        checkoutStatuses: ["PAYMENT_PENDING"]
+      })
+    );
+    if (didRelease) released += 1;
+  }
+
+  return released;
 }

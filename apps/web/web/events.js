@@ -29,6 +29,8 @@ import {
   createPageTranslation,
   createPostFromDashboard,
   createPostTranslation,
+  deleteBuilderBlock,
+  deleteBuilderSection,
   editBuilderBlock,
   editBuilderSection,
   insertTemplateIntoPost,
@@ -53,10 +55,14 @@ import {
 } from "./session-actions.js";
 import {
   addRepeaterRow,
+  copyPaymentWebhook,
   createProductFromDashboard,
   openProductEditor,
   removeRepeaterRow,
-  saveProductEditor
+  savePaymentProvider,
+  saveProductEditor,
+  testPaymentProvider,
+  updateManualPayment
 } from "./shop-actions.js";
 import {
   deletePostCategory,
@@ -164,6 +170,13 @@ function bindSubmitEvents() {
     if (productEditorForm) {
       event.preventDefault();
       void saveProductEditor(productEditorForm);
+      return;
+    }
+
+    const paymentProviderForm = event.target.closest("[data-payment-provider-form]");
+    if (paymentProviderForm) {
+      event.preventDefault();
+      void savePaymentProvider(paymentProviderForm);
     }
   });
 }
@@ -307,12 +320,14 @@ function bindBuilderClick(event) {
 
   const builderTemplateButton = event.target.closest("[data-builder-template]");
   if (builderTemplateButton?.dataset.builderTemplate) {
+    event.preventDefault();
     void addTemplateToBuilder(builderTemplateButton.dataset.builderTemplate);
     return true;
   }
 
   const sectionPatternButton = event.target.closest("[data-builder-section-pattern]");
   if (sectionPatternButton?.dataset.builderSectionPattern) {
+    event.preventDefault();
     void addSectionPatternToBuilder(sectionPatternButton.dataset.builderSectionPattern);
     return true;
   }
@@ -329,12 +344,14 @@ function bindBuilderClick(event) {
   }
 
   if (event.target.closest("[data-add-container]")) {
+    event.preventDefault();
     void addBuilderContainer();
     return true;
   }
 
   const addElementButton = event.target.closest("[data-add-element-to-section]");
   if (addElementButton?.dataset.addElementToSection) {
+    event.preventDefault();
     void addTemplateToBuilderSection(addElementButton.dataset.addElementToSection);
     return true;
   }
@@ -389,6 +406,22 @@ function bindBuilderClick(event) {
     return true;
   }
 
+  const sectionDeleteButton = event.target.closest("[data-delete-builder-section]");
+  const deletedSection = sectionDeleteButton?.closest("[data-builder-section]");
+  if (deletedSection?.dataset.builderSection) {
+    event.preventDefault();
+    void deleteBuilderSection(deletedSection.dataset.builderSection);
+    return true;
+  }
+
+  const blockDeleteButton = event.target.closest("[data-delete-builder-block]");
+  const deletedBlock = blockDeleteButton?.closest("[data-builder-block-key]");
+  if (deletedBlock?.dataset.builderBlockKey) {
+    event.preventDefault();
+    void deleteBuilderBlock(deletedBlock.dataset.builderBlockKey);
+    return true;
+  }
+
   const postTemplateButton = event.target.closest("[data-post-template]");
   if (postTemplateButton?.dataset.postTemplate) {
     insertTemplateIntoPost(postTemplateButton.dataset.postTemplate);
@@ -421,6 +454,24 @@ function bindBuilderClick(event) {
 }
 
 function bindAdminClick(event) {
+  const paymentTestButton = event.target.closest("[data-test-payment-provider]");
+  if (paymentTestButton) {
+    void testPaymentProvider(paymentTestButton);
+    return true;
+  }
+
+  const webhookCopyButton = event.target.closest("[data-copy-payment-webhook]");
+  if (webhookCopyButton) {
+    void copyPaymentWebhook(webhookCopyButton);
+    return true;
+  }
+
+  const manualPaymentButton = event.target.closest("[data-manual-payment-action]");
+  if (manualPaymentButton) {
+    void updateManualPayment(manualPaymentButton);
+    return true;
+  }
+
   if (event.target.closest("[data-admin-logout]")) {
     void logoutAdmin();
     return true;

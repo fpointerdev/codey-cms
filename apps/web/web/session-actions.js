@@ -12,8 +12,6 @@ export async function loadUser() {
     const { user } = await api("/auth/me");
     return user;
   } catch {
-    localStorage.removeItem("cms_access_token");
-    state.token = "";
     return null;
   }
 }

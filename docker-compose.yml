@@ -5,7 +5,7 @@ services:
     build:
       context: .
       target: development
-    command: sh -c "pnpm install --no-frozen-lockfile --force && pnpm db:push && pnpm db:seed && pnpm dev"
+    command: sh -c "pnpm install --frozen-lockfile && pnpm db:push && pnpm db:seed && pnpm dev"
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       APP_ENV: ${APP_ENV:-development}
@@ -17,6 +17,7 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-replace-this-access-secret-32}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      CMS_CREDENTIAL_ENCRYPTION_KEY: ${CMS_CREDENTIAL_ENCRYPTION_KEY:-dev-only-replace-this-credential-key-32}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-true}

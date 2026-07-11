@@ -28,7 +28,21 @@ export async function runModuleLifecycleHook(
     throw new AppError(400, "unsupported_module_lifecycle", `${module.label} does not support ${hook}.`);
   }
 
-  await lifecycleHandlers[moduleId]?.[hook]?.({ context, module });
+  const handler = lifecycleHandlers[moduleId]?.[hook];
+
+  if (!handler) {
+    context.logger.debug(
+      {
+        module: moduleId,
+        hook,
+        version: module.version
+      },
+      "Module lifecycle hook has no registered side effect"
+    );
+    return false;
+  }
+
+  await handler({ context, module });
 
   context.logger.info(
     {
@@ -38,4 +52,6 @@ export async function runModuleLifecycleHook(
     },
     "Module lifecycle hook completed"
   );
+
+  return true;
 }

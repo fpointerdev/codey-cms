@@ -26,13 +26,107 @@ function localizedShopPath(path) {
   return locale === defaultLocale ? normalizedPath : `/${locale}${normalizedPath}`;
 }
 
+function encodePathSegment(segment) {
+  return encodeURIComponent(segment).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+function uploadPathForStorageKey(key = "") {
+  const cleanKey = String(key || "").replace(/^\/+/, "");
+  if (!cleanKey || cleanKey.split("/").includes("..")) return "";
+
+  return `/uploads/${cleanKey.split("/").map(encodePathSegment).join("/")}`;
+}
+
+function uploadPathForS3Url(src = "") {
+  const value = String(src || "").trim();
+  if (!/^s3:\/\//i.test(value)) return "";
+
+  const bucketAndKey = value.replace(/^s3:\/\//i, "");
+  const slashIndex = bucketAndKey.indexOf("/");
+  const key = slashIndex >= 0 ? bucketAndKey.slice(slashIndex + 1) : "";
+
+  try {
+    return uploadPathForStorageKey(decodeURIComponent(key));
+  } catch {
+    return uploadPathForStorageKey(key);
+  }
+}
+
+function uploadPathForConfiguredStorageUrl(src = "") {
+  const publicBaseUrl = String(state.config?.storage?.publicBaseUrl || "").replace(/\/+$/g, "");
+  if (!publicBaseUrl || !src.startsWith(`${publicBaseUrl}/`)) return "";
+
+  const key = src.slice(publicBaseUrl.length + 1);
+
+  try {
+    return uploadPathForStorageKey(decodeURIComponent(key));
+  } catch {
+    return uploadPathForStorageKey(key);
+  }
+}
+
+function safeMediaSrc(value = "") {
+  const src = String(value || "").trim();
+  if (!src) return "";
+
+  const s3Src = uploadPathForS3Url(src);
+  if (s3Src) return s3Src;
+
+  const configuredStorageSrc = uploadPathForConfiguredStorageUrl(src);
+  if (configuredStorageSrc) return configuredStorageSrc;
+
+  if (/^(https?:\/\/|\/|\.\/)/i.test(src)) return src;
+
+  return "";
+}
+
+function responsiveImageWidths() {
+  const configuredWidths = state.config?.storage?.imageVariantWidths;
+
+  if (!Array.isArray(configuredWidths)) return [320, 640, 1200];
+
+  const widths = configuredWidths
+    .map(Number)
+    .filter((width) => Number.isInteger(width) && width >= 160 && width <= 2400);
+
+  return widths.length ? [...new Set(widths)].sort((left, right) => left - right) : [320, 640, 1200];
+}
+
+function isUploadedImageSrc(src = "") {
+  const cleanSrc = String(src || "").split("?")[0] || "";
+
+  return /\/uploads\//.test(cleanSrc) && /\.(png|jpe?g|webp)$/i.test(cleanSrc);
+}
+
+function imageVariantSrc(src, width) {
+  return `${src}${src.includes("?") ? "&" : "?"}w=${width}`;
+}
+
+function renderProductImage(image, fallbackAlt = "", className = "", priority = false) {
+  const src = safeMediaSrc(image?.url);
+  if (!src) return "";
+
+  const widths = responsiveImageWidths();
+  const srcset = isUploadedImageSrc(src)
+    ? ` srcset="${escapeHtml(widths.map((width) => `${imageVariantSrc(src, width)} ${width}w`).join(", "))}" sizes="(max-width: 760px) 92vw, 34vw"`
+    : "";
+  const loadingAttrs = priority
+    ? 'loading="eager" decoding="async" fetchpriority="high"'
+    : 'loading="lazy" decoding="async"';
+
+  return `<img${className ? ` class="${escapeHtml(className)}"` : ""} src="${escapeHtml(src)}" alt="${escapeHtml(image?.alt || fallbackAlt)}"${srcset} ${loadingAttrs} />`;
+}
+
 function productCard(product) {
   const image = primaryImage(product);
+  const imageHtml = renderProductImage(image, product.name);
 
   return `
     <article class="shop-product-card">
       <a href="${escapeHtml(localizedShopPath(`/product/${product.slug}`))}">
-        ${image ? `<img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt || product.name)}" />` : `<div class="shop-product-image-placeholder">${escapeHtml(translateString("shop.noImage", "No image"))}</div>`}
+        ${imageHtml || `<div class="shop-product-image-placeholder">${escapeHtml(translateString("shop.noImage", "No image"))}</div>`}
         <span>${escapeHtml(product.category?.name || translateString("shop.product", "Product"))}</span>
         <strong>${escapeHtml(product.name)}</strong>
       </a>
@@ -119,6 +213,7 @@ export function renderShopListing({ products = [], categories = [], attributes =
 
 export function renderProductDetail(product) {
   const image = primaryImage(product);
+  const imageHtml = renderProductImage(image, product.name, "", true);
   const attributes = productAttributes(product);
 
   document.title = product.name;
@@ -129,7 +224,7 @@ export function renderProductDetail(product) {
       <a class="secondary-button" href="${escapeHtml(localizedShopPath("/shop"))}">${escapeHtml(translateString("shop.backToShop", "Back to shop"))}</a>
       <section class="shop-product-detail-hero">
         <div>
-          ${image ? `<img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.alt || product.name)}" />` : `<div class="shop-product-image-placeholder large">${escapeHtml(translateString("shop.noImage", "No image"))}</div>`}
+          ${imageHtml || `<div class="shop-product-image-placeholder large">${escapeHtml(translateString("shop.noImage", "No image"))}</div>`}
         </div>
         <div>
           <p class="section-label">${escapeHtml(product.category?.name || translateString("shop.product", "Product"))}</p>

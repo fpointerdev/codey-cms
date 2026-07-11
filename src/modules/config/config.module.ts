@@ -182,7 +182,8 @@ export const configModule: AppModule = {
           driver: context.config.storage.driver,
           bucket: context.config.storage.bucket,
           keyPrefix: context.config.storage.keyPrefix,
-          publicBaseUrl: context.config.storage.publicBaseUrl
+          publicBaseUrl: context.config.storage.publicBaseUrl,
+          imageVariantWidths: context.config.storage.imageVariantWidths
         },
         installedModules,
         siteSettings,
@@ -483,8 +484,11 @@ export const configModule: AppModule = {
           req.body.settings,
           auditMeta(req)
         );
+        const localization = moduleId === "localization"
+          ? await readLocalizationSettings(context.prisma)
+          : undefined;
 
-        return sendSuccess(res, { installedModules });
+        return sendSuccess(res, { installedModules, localization });
       })
     );
 
@@ -495,12 +499,13 @@ export const configModule: AppModule = {
       asyncHandler(async (req, res) => {
         const moduleId = req.params.moduleId as ModuleId;
         const hook = req.params.hook as ModuleLifecycleHook;
-        await moduleAdminService.runLifecycle(moduleId, hook, auditMeta(req));
+        const handled = await moduleAdminService.runLifecycle(moduleId, hook, auditMeta(req));
 
         return sendSuccess(res, {
           moduleId: req.params.moduleId,
           hook: req.params.hook,
-          completed: true
+          completed: handled,
+          message: handled ? undefined : "No lifecycle side effect is registered for this module."
         });
       })
     );

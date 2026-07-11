@@ -12,13 +12,36 @@ function looksLikeLocale(value) {
   return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(value || "");
 }
 
+function configuredLocaleCodes() {
+  const localization = state.config?.localization;
+  const locales = Array.isArray(localization?.locales) ? localization.locales : [];
+
+  if (!localization) return null;
+  if (!localization.enabled) return new Set();
+
+  return new Set(
+    locales
+      .filter((locale) => locale?.enabled !== false && locale?.code)
+      .map((locale) => String(locale.code).toLowerCase())
+  );
+}
+
+function isConfiguredRouteLocale(value) {
+  if (!looksLikeLocale(value)) return false;
+
+  const codes = configuredLocaleCodes();
+  if (!codes) return true;
+
+  return codes.has(String(value).toLowerCase());
+}
+
 export function currentLocale() {
   const params = new URLSearchParams(window.location.search);
   const queryLocale = params.get("locale");
-  if (looksLikeLocale(queryLocale)) return queryLocale.toLowerCase();
+  if (isConfiguredRouteLocale(queryLocale)) return queryLocale.toLowerCase();
 
   const [firstPart] = pathParts();
-  return looksLikeLocale(firstPart) ? firstPart.toLowerCase() : state.config?.localization?.defaultLocale || "en";
+  return isConfiguredRouteLocale(firstPart) ? firstPart.toLowerCase() : state.config?.localization?.defaultLocale || "en";
 }
 
 export function pageSlug() {
@@ -27,7 +50,7 @@ export function pageSlug() {
   if (querySlug) return querySlug;
 
   const parts = pathParts();
-  if (looksLikeLocale(parts[0])) parts.shift();
+  if (isConfiguredRouteLocale(parts[0])) parts.shift();
   const path = parts.join("/");
 
   if (!path || path === "cy-admin" || path.startsWith("dashboard") || path.startsWith("auth/")) {
@@ -108,7 +131,7 @@ export function pageHref(slug) {
 export function publicShopRoute() {
   const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
   const parts = path.replace(/^\/+/, "").split("/").map((part) => decodeURIComponent(part));
-  if (looksLikeLocale(parts[0])) parts.shift();
+  if (isConfiguredRouteLocale(parts[0])) parts.shift();
 
   if (parts[0] !== "shop" && parts[0] !== "product") return null;
   if (parts[0] === "shop" && parts.length === 1) return { view: "shop" };
@@ -124,7 +147,7 @@ export function publicShopRoute() {
 export function publicPostRoute() {
   const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
   const parts = path.replace(/^\/+/, "").split("/").map((part) => decodeURIComponent(part));
-  if (looksLikeLocale(parts[0])) parts.shift();
+  if (isConfiguredRouteLocale(parts[0])) parts.shift();
 
   if (parts[0] !== "posts" || !parts[1]) return null;
 

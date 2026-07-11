@@ -79,7 +79,7 @@ Modules may depend on core infrastructure, but they should not silently reach ac
 
 - CMS can render product-list blocks, but product data stays owned by the products/shop modules.
 - Orders can reference products and variants because that dependency is explicit.
-- Payments can update payment/order state through signed normalized webhooks because it depends on orders.
+- Payments can update payment/order state through verified provider events or permission-protected manual actions because it depends on orders.
 - Notifications can deliver module events, but each source module owns when events are queued.
 
 ## Generated Site Guidance
@@ -88,7 +88,7 @@ AI-generated themes should read module state before rendering module-specific sc
 
 - CMS disabled: hide pages/posts builder links and block public CMS routes.
 - Products/orders disabled: hide shop navigation and checkout routes.
-- Payments disabled: do not show online-payment copy.
+- Payments disabled: do not show payment methods. When enabled, render only providers returned by the public provider-discovery endpoint.
 - Contact form block requires CMS.
 
 The dashboard should explain disabled modules with a clear empty state or upgrade/setup action instead of showing broken routes.

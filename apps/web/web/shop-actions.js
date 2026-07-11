@@ -5,7 +5,7 @@ import {
   slugFromTitle,
   state
 } from "./core.js";
-import { adminHref } from "./routes.js";
+import { adminHref, currentLocale } from "./routes.js";
 import { optionalFormValue, selectedFiles, uploadMediaFile } from "./content-actions.js";
 import { loadAdminRoute } from "./controller.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
@@ -52,6 +52,40 @@ function optionRows(formData) {
     .filter((row) => row.values.length);
 }
 
+function activeRouteLocale() {
+  const activeQueryLocale = new URLSearchParams(window.location.search || "").get("locale");
+  if (activeQueryLocale) return currentLocale();
+
+  return state.config?.localization?.defaultLocale || currentLocale();
+}
+
+function activeProductLocale() {
+  return state.shopProduct?.locale || activeRouteLocale();
+}
+
+function shouldIncludeLocale(locale) {
+  const localeCode = String(locale || "").trim().toLowerCase();
+  if (!localeCode) return false;
+
+  const activeQueryLocale = new URLSearchParams(window.location.search || "").get("locale");
+  const defaultLocale = String(state.config?.localization?.defaultLocale || "en").toLowerCase();
+
+  return Boolean(activeQueryLocale) || localeCode !== defaultLocale;
+}
+
+function withLocale(path, locale, extra = {}) {
+  const params = new URLSearchParams(extra);
+  const localeCode = String(locale || "").trim().toLowerCase();
+  if (shouldIncludeLocale(localeCode)) params.set("locale", localeCode);
+  const query = params.toString();
+
+  return query ? `${path}?${query}` : path;
+}
+
+function adminHrefWithLocale(view, slug, locale) {
+  return withLocale(adminHref(view, slug), locale);
+}
+
 async function uploadedProductImages(files, fallbackAlt = "") {
   const images = [];
 
@@ -69,18 +103,19 @@ async function uploadedProductImages(files, fallbackAlt = "") {
   return images;
 }
 
-async function selectedCategoryId(formData) {
+async function selectedCategoryId(formData, locale) {
   const categoryId = String(formData.get("categoryId") || "");
   if (categoryId !== "__new") return categoryId || undefined;
 
   const name = String(formData.get("newCategoryName") || "").trim();
   if (!name) throw new Error("Enter a name for the new category.");
 
-  const { category } = await api("/products/categories", {
+  const { category } = await api(withLocale("/products/categories", locale), {
     method: "POST",
     body: JSON.stringify({
       name,
       slug: slugFromTitle(String(formData.get("newCategorySlug") || name)),
+      locale,
       description: "",
       sortOrder: state.shopCategories?.length || 0
     })
@@ -105,18 +140,19 @@ function productMetadataPayload(formData, existingProduct = null) {
   };
 }
 
-async function productPayloadFromForm(form, existingProduct = null) {
-  const formData = new FormData(form);
+async function productPayloadFromForm(form, existingProduct = null, formData = new FormData(form)) {
   const name = String(formData.get("name") || "").trim();
   const slug = slugFromTitle(String(formData.get("slug") || name));
+  const locale = activeProductLocale();
   const imageAlt = String(formData.get("imageAlt") || name).trim();
   const images = await uploadedProductImages(formData.getAll("images"), imageAlt);
 
   return {
     payload: {
-      categoryId: await selectedCategoryId(formData),
+      categoryId: await selectedCategoryId(formData, locale),
       name,
       slug,
+      locale,
       description: optionalFormValue(formData, "description"),
       sku: optionalFormValue(formData, "sku"),
       priceCents: normalizePriceCents(formData.get("price")),
@@ -134,16 +170,16 @@ async function productPayloadFromForm(form, existingProduct = null) {
   };
 }
 
-async function addProductDetails(slug, images = [], options = []) {
+async function addProductDetails(slug, images = [], options = [], locale = activeProductLocale()) {
   for (const image of images) {
-    await api(`/products/${encodeURIComponent(slug)}/images`, {
+    await api(withLocale(`/products/${encodeURIComponent(slug)}/images`, locale), {
       method: "POST",
       body: JSON.stringify(image)
     });
   }
 
   for (const option of options) {
-    await api(`/products/${encodeURIComponent(slug)}/options`, {
+    await api(withLocale(`/products/${encodeURIComponent(slug)}/options`, locale), {
       method: "POST",
       body: JSON.stringify(option)
     });
@@ -151,7 +187,7 @@ async function addProductDetails(slug, images = [], options = []) {
 }
 
 export function createProductFromDashboard() {
-  window.history.pushState({}, "", adminHref("product-create"));
+  window.history.pushState({}, "", adminHrefWithLocale("product-create", "", activeRouteLocale()));
   void loadAdminRoute({ view: "product-create" });
 }
 
@@ -161,7 +197,7 @@ export function openProductEditor(productSlug) {
     return;
   }
 
-  window.history.pushState({}, "", adminHref("product-editor", productSlug));
+  window.history.pushState({}, "", adminHrefWithLocale("product-editor", productSlug, activeRouteLocale()));
   void loadAdminRoute({ view: "product-editor", slug: productSlug });
 }
 
@@ -173,12 +209,14 @@ export async function saveProductEditor(form) {
 
   const existingProduct = state.shopProduct;
   const originalSlug = form.dataset.productSlug || existingProduct?.slug || "";
+  const formData = new FormData(form);
 
   setFormDisabled(form, true);
   setFormMessage(form, existingProduct ? "Saving product..." : "Creating product...");
 
   try {
-    const { payload, images, options } = await productPayloadFromForm(form, existingProduct);
+    const { payload, images, options } = await productPayloadFromForm(form, existingProduct, formData);
+    const locale = payload.locale || activeProductLocale();
     const productData = existingProduct
       ? {
           categoryId: payload.categoryId,
@@ -194,16 +232,16 @@ export async function saveProductEditor(form) {
         }
       : payload;
 
-    const { product } = await api(existingProduct ? `/products/${encodeURIComponent(originalSlug)}` : "/products", {
+    const { product } = await api(withLocale(existingProduct ? `/products/${encodeURIComponent(originalSlug)}` : "/products", locale), {
       method: existingProduct ? "PATCH" : "POST",
       body: JSON.stringify(productData)
     });
 
     if (existingProduct) {
-      await addProductDetails(product.slug, images, options);
+      await addProductDetails(product.slug, images, options, product.locale || locale);
     }
 
-    window.history.pushState({}, "", adminHref("product-editor", product.slug));
+    window.history.pushState({}, "", adminHrefWithLocale("product-editor", product.slug, product.locale || locale));
     await loadAdminRoute({ view: "product-editor", slug: product.slug });
     setStatus(existingProduct ? "Product saved." : "Product created.");
   } catch (error) {
@@ -237,4 +275,137 @@ export function removeRepeaterRow(button) {
   if (!row || !list || list.querySelectorAll("[data-repeater-row]").length <= 1) return;
 
   row.remove();
+}
+
+function paymentProviderPayload(form) {
+  const formData = new FormData(form);
+  const provider = form.dataset.paymentProviderForm;
+  const payload = {
+    enabled: formData.has("enabled")
+  };
+
+  if (provider !== "MANUAL") payload.mode = String(formData.get("mode") || "SANDBOX");
+
+  for (const field of ["publishableKey", "clientId", "webhookId", "instructions"]) {
+    if (form.querySelector(`[name="${field}"]`)) {
+      payload[field] = String(formData.get(field) || "").trim();
+    }
+  }
+
+  for (const field of ["secretKey", "webhookSecret", "clientSecret"]) {
+    const value = String(formData.get(field) || "").trim();
+    if (value) payload[field] = value;
+  }
+
+  for (const field of ["clearSecretKey", "clearWebhookSecret", "clearClientSecret"]) {
+    if (formData.has(field)) payload[field] = true;
+  }
+
+  const credentialsChanged = provider !== "MANUAL" && (
+    payload.mode !== form.dataset.currentMode ||
+    payload.publishableKey !== undefined && payload.publishableKey !== form.dataset.currentPublicKey ||
+    payload.clientId !== undefined && payload.clientId !== form.dataset.currentClientId ||
+    payload.webhookId !== undefined && payload.webhookId !== form.dataset.currentWebhookId ||
+    Boolean(payload.secretKey || payload.webhookSecret || payload.clientSecret) ||
+    Boolean(payload.clearSecretKey || payload.clearWebhookSecret || payload.clearClientSecret)
+  );
+
+  if (credentialsChanged && payload.enabled) payload.enabled = false;
+
+  return { provider, payload, credentialsChanged };
+}
+
+async function persistPaymentProvider({ provider, payload, credentialsChanged }) {
+  if (!provider) throw new Error("Payment provider is missing.");
+
+  await api(`/payments/providers/${provider.toLowerCase()}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+
+  return { provider, credentialsChanged };
+}
+
+export async function savePaymentProvider(form) {
+  const submission = paymentProviderPayload(form);
+  setFormDisabled(form, true);
+  setFormMessage(form, "Saving payment settings...");
+
+  try {
+    const { provider, credentialsChanged } = await persistPaymentProvider(submission);
+    await loadAdminRoute({ view: "shop-configuration" });
+    setStatus(
+      credentialsChanged && provider !== "MANUAL"
+        ? `${provider} credentials saved. The provider was disabled until it is tested again.`
+        : `${provider} payment settings saved.`
+    );
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to save payment settings.", true);
+    setStatus(error.message || "Unable to save payment settings.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function testPaymentProvider(button) {
+  const form = button?.closest?.("[data-payment-provider-form]");
+  if (!form) return;
+  const submission = paymentProviderPayload(form);
+
+  setFormDisabled(form, true);
+  setFormMessage(form, "Saving and testing provider connection...");
+
+  try {
+    const { provider } = await persistPaymentProvider(submission);
+    const result = await api(`/payments/providers/${provider.toLowerCase()}/test`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    await loadAdminRoute({ view: "shop-configuration" });
+    setStatus(result.message || `${provider} connection test passed.`);
+  } catch (error) {
+    setFormMessage(form, error.message || "Provider connection test failed.", true);
+    setStatus(error.message || "Provider connection test failed.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function copyPaymentWebhook(button) {
+  const value = button?.dataset?.copyPaymentWebhook || "";
+  if (!value) return;
+
+  try {
+    await navigator.clipboard.writeText(value);
+    setStatus("Webhook endpoint copied.");
+  } catch {
+    const input = button.closest(".payment-webhook-copy")?.querySelector("input");
+    input?.select?.();
+    const copied = typeof document.execCommand === "function" && document.execCommand("copy");
+    setStatus(copied ? "Webhook endpoint copied." : "Unable to copy the webhook endpoint.", !copied);
+  }
+}
+
+export async function updateManualPayment(button) {
+  const paymentId = button?.dataset?.paymentId;
+  const action = button?.dataset?.manualPaymentAction;
+  if (!paymentId || !["SUCCEED", "FAIL", "REFUND"].includes(action)) return;
+
+  const labels = {
+    SUCCEED: "mark this payment paid",
+    FAIL: "mark this payment failed and release reserved inventory",
+    REFUND: "mark this payment and order refunded"
+  };
+  if (!window.confirm(`Are you sure you want to ${labels[action]}?`)) return;
+
+  button.disabled = true;
+  try {
+    await api(`/payments/manual/${encodeURIComponent(paymentId)}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action })
+    });
+    await loadAdminRoute({ view: "shop-orders" });
+    setStatus("Manual payment updated.");
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to update manual payment.", true);
+  }
 }

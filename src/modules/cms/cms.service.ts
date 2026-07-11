@@ -1,6 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
-import { localizedPath, normalizeLocale } from "../localization/localization.service.js";
+import { localizedPath, normalizeLocale, readLocalizationSettings } from "../localization/localization.service.js";
 
 type CmsDatabase = PrismaClient | Prisma.TransactionClient;
 
@@ -417,12 +417,13 @@ function normalizePublicBaseUrl(value: unknown) {
   }
 }
 
-function localizedResourcePath(prefix: string, slug: string, locale: string) {
+function localizedResourcePath(prefix: string, slug: string, locale: string, defaultLocale = "en") {
   const localeCode = normalizeLocale(locale);
+  const defaultLocaleCode = normalizeLocale(defaultLocale);
   const normalizedSlug = slug.replace(/^\/+|\/+$/g, "");
   const path = `/${prefix}/${normalizedSlug}`;
 
-  return localeCode === "en" ? path : `/${localeCode}${path}`;
+  return localeCode === defaultLocaleCode ? path : `/${localeCode}${path}`;
 }
 
 function emptySitemapXml() {
@@ -536,7 +537,8 @@ function changedFields(
 
 function visibleMenuItems(
   items: Prisma.MenuItemGetPayload<{ include: { page: true } }>[],
-  canReadDrafts: boolean
+  canReadDrafts: boolean,
+  defaultLocale = "en"
 ) {
   const allowedItems = items.filter((item) => {
     if (!item.page) return true;
@@ -563,7 +565,7 @@ function visibleMenuItems(
       return {
         id: item.id,
         label: item.label,
-        url: item.url ?? (item.page ? localizedPath(item.page.slug, item.page.locale) : null),
+        url: item.url ?? (item.page ? localizedPath(item.page.slug, item.page.locale, defaultLocale) : null),
         pageId: item.pageId,
         sortOrder: item.sortOrder,
         openInNewTab: item.openInNewTab,
@@ -1271,13 +1273,16 @@ export class CmsService {
   }
 
   async getMenu(slug: string, canReadDrafts: boolean, locale = "en") {
-    const menu = await this.prisma.menu.findFirstOrThrow({
-      where: {
-        slug,
-        locale: normalizeLocale(locale)
-      },
-      include: menuInclude
-    });
+    const [menu, localization] = await Promise.all([
+      this.prisma.menu.findFirstOrThrow({
+        where: {
+          slug,
+          locale: normalizeLocale(locale)
+        },
+        include: menuInclude
+      }),
+      readLocalizationSettings(this.prisma)
+    ]);
 
     return {
       id: menu.id,
@@ -1285,7 +1290,7 @@ export class CmsService {
       locale: menu.locale,
       name: menu.name,
       location: menu.location,
-      items: visibleMenuItems(menu.items, canReadDrafts)
+      items: visibleMenuItems(menu.items, canReadDrafts, localization.defaultLocale)
     };
   }
 
@@ -1529,7 +1534,10 @@ export class CmsService {
   }
 
   async buildSitemap(baseUrl: string) {
-    const seoSettings = await this.readSeoSettings(baseUrl);
+    const [seoSettings, localization] = await Promise.all([
+      this.readSeoSettings(baseUrl),
+      readLocalizationSettings(this.prisma)
+    ]);
     const origin = trimTrailingSlash(seoSettings.baseUrl);
     if (!seoSettings.searchIndexing || !seoSettings.sitemapEnabled) return emptySitemapXml();
 
@@ -1572,18 +1580,18 @@ export class CmsService {
     }
     const urls = [
       ...pages.map((page) => ({
-        loc: `${origin}${localizedPath(page.slug, page.locale)}`,
+        loc: `${origin}${localizedPath(page.slug, page.locale, localization.defaultLocale)}`,
         lastmod: page.updatedAt
       })),
       ...posts.map((post) => {
         return {
-          loc: `${origin}${localizedResourcePath("posts", post.slug, post.locale)}`,
+          loc: `${origin}${localizedResourcePath("posts", post.slug, post.locale, localization.defaultLocale)}`,
           lastmod: post.updatedAt
         };
       }),
       ...products.map((product) => {
         return {
-          loc: `${origin}${localizedResourcePath("product", product.slug, product.locale)}`,
+          loc: `${origin}${localizedResourcePath("product", product.slug, product.locale, localization.defaultLocale)}`,
           lastmod: product.updatedAt
         };
       })

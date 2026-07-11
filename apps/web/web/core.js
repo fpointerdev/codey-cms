@@ -753,7 +753,71 @@ function headers() {
   return requestHeaders;
 }
 
-export async function api(path, options = {}) {
+function clearStoredSession() {
+  state.token = "";
+  state.refreshToken = "";
+  state.user = null;
+  localStorage.removeItem("cms_access_token");
+  localStorage.removeItem("cms_refresh_token");
+}
+
+async function readApiBody(response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+let refreshSessionPromise = null;
+
+async function refreshSession() {
+  if (!state.refreshToken) return false;
+  if (refreshSessionPromise) return refreshSessionPromise;
+
+  const pendingRefresh = (async () => {
+    const response = await fetch(`${state.apiUrl}/auth/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: state.refreshToken })
+    });
+    const body = await readApiBody(response);
+
+    if (!response.ok || !body?.success || !body.data?.tokens) {
+      clearStoredSession();
+      return false;
+    }
+
+    state.token = body.data.tokens.accessToken;
+    state.refreshToken = body.data.tokens.refreshToken;
+    state.user = body.data.user || state.user;
+    localStorage.setItem("cms_access_token", state.token);
+    localStorage.setItem("cms_refresh_token", state.refreshToken);
+    return true;
+  })();
+
+  refreshSessionPromise = pendingRefresh;
+
+  try {
+    return await pendingRefresh;
+  } catch {
+    clearStoredSession();
+    return false;
+  } finally {
+    if (refreshSessionPromise === pendingRefresh) refreshSessionPromise = null;
+  }
+}
+
+function canRefreshRequest(path) {
+  return Boolean(
+    state.token &&
+    state.refreshToken &&
+    !["/auth/login", "/auth/refresh", "/auth/logout"].includes(path.split("?")[0])
+  );
+}
+
+async function apiRequest(path, options, allowRefresh) {
+  const requestAccessToken = state.token;
   const response = await fetch(`${state.apiUrl}${path}`, {
     ...options,
     headers: {
@@ -761,13 +825,29 @@ export async function api(path, options = {}) {
       ...options.headers
     }
   });
-  const body = await response.json();
+  const body = await readApiBody(response);
 
-  if (!response.ok || !body.success) {
-    throw new Error(body.error?.message || "Request failed.");
+  if (response.status === 401 && allowRefresh && canRefreshRequest(path)) {
+    if (requestAccessToken && requestAccessToken !== state.token) {
+      return apiRequest(path, options, false);
+    }
+    if (await refreshSession()) return apiRequest(path, options, false);
+  } else if (response.status === 401 && state.token && !state.refreshToken) {
+    clearStoredSession();
+  }
+
+  if (!response.ok || !body?.success) {
+    const error = new Error(body?.error?.message || `Request failed with status ${response.status}.`);
+    error.status = response.status;
+    error.code = body?.error?.code;
+    throw error;
   }
 
   return body.data;
+}
+
+export async function api(path, options = {}) {
+  return apiRequest(path, options, true);
 }
 
 export function setStatus(message, isError = false) {
@@ -794,11 +874,14 @@ export function moduleEnabled(moduleId) {
   if (!moduleId) return true;
   if (!state.config) return true;
 
+  const featureFlag = state.config.features?.[moduleId];
+  if (featureFlag === false) return false;
+
   const installedModules = state.config.installedModules || [];
   const installedModule = installedModules.find((module) => module.moduleId === moduleId);
 
   if (installedModule) return installedModule.status === "ENABLED";
-  if (typeof state.config.features?.[moduleId] === "boolean") return state.config.features[moduleId];
+  if (typeof featureFlag === "boolean") return featureFlag;
 
   return Boolean(state.config.modules?.[moduleId]?.required);
 }
@@ -1032,9 +1115,10 @@ export function buildSectionPattern(patternId, page, sortOrder = 0) {
     label: pattern.label,
     sortOrder,
     settings: {
-      template: "section-pattern",
-      elementId: pattern.elements[0] || "structured-content",
-      ...clonePlain(pattern.settings)
+      ...clonePlain(pattern.settings),
+      template: "content",
+      patternId: pattern.id,
+      elementId: pattern.elements[0] || "structured-content"
     },
     blocks
   };

@@ -3,6 +3,7 @@ import {
   elements,
   moduleEnabled,
   sectionFromTemplate,
+  setRuntimeConfig,
   setStatus,
   slugFromTitle,
   state
@@ -23,7 +24,8 @@ import { structuredContentEditor } from "./structured-content-editor.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
 import {
   advancedSettingsFromValues,
-  animationEffectOptions
+  animationEffectOptions,
+  sanitizeAnimationSettings
 } from "./custom-css.js";
 
 export function optionalFormValue(formData, key) {
@@ -126,10 +128,37 @@ export async function uploadedGalleryItems(files = [], fallbackAlt = "Slider ima
 
   for (const file of selectedFiles(files)) {
     const asset = await uploadMediaFile(file, file.name || fallbackAlt);
-    uploadedItems.push({ url: asset.url, alt: asset.altText || file.name || "" });
+    uploadedItems.push({
+      url: asset.url,
+      mediaAssetId: asset.id,
+      alt: asset.altText || file.name || ""
+    });
   }
 
   return uploadedItems;
+}
+
+export async function uploadedGalleryItemFiles(items = [], fallbackAlt = "Slider image") {
+  const nextItems = [];
+
+  for (const item of Array.isArray(items) ? items : []) {
+    const { file: itemFile, ...cleanItem } = item || {};
+    const file = selectedFile(itemFile);
+    if (!file) {
+      nextItems.push(cleanItem);
+      continue;
+    }
+
+    const asset = await uploadMediaFile(file, cleanItem.alt || file.name || fallbackAlt);
+    nextItems.push({
+      ...cleanItem,
+      url: asset.url,
+      mediaAssetId: asset.id || cleanItem.mediaAssetId,
+      alt: cleanItem.alt || asset.altText || file.name || fallbackAlt
+    });
+  }
+
+  return nextItems;
 }
 
 export async function loadMediaImageAssets() {
@@ -171,7 +200,10 @@ function cssSettingsPayload(block, values) {
   };
 }
 
-function withCustomCssField(block, fields) {
+function withCustomCssField(block, fields, options = {}) {
+  const animationGroup = options.animationGroup || "Configuration";
+  const animation = sanitizeAnimationSettings(block.settings?.animation || {});
+
   return [
     ...fields,
     {
@@ -194,31 +226,32 @@ function withCustomCssField(block, fields) {
       name: "animationEffect",
       label: "Animation",
       type: "select",
-      value: block.settings?.animation?.effect || "none",
+      value: animation.effect,
       options: animationEffectOptions,
-      group: "Configuration"
+      required: false,
+      group: animationGroup
     },
     {
       name: "animationDuration",
       label: "Duration ms",
       type: "number",
-      value: block.settings?.animation?.durationMs ?? 700,
+      value: animation.durationMs,
       min: 120,
       max: 3000,
       step: 50,
       required: false,
-      group: "Configuration"
+      group: animationGroup
     },
     {
       name: "animationDelay",
       label: "Delay ms",
       type: "number",
-      value: block.settings?.animation?.delayMs ?? 0,
+      value: animation.delayMs,
       min: 0,
       max: 5000,
       step: 50,
       required: false,
-      group: "Configuration"
+      group: animationGroup
     },
     {
       name: "customCss",
@@ -299,13 +332,20 @@ export async function editContentBlock(page, blockKey) {
       label: "Slider media",
       title: block.label || "Edit slider",
       description: "Choose images, visible count, overlay, caption, and loop behavior.",
-      fields: withCustomCssField(block, sliderModalFields(block.value, { mediaAssets })),
+      fields: withCustomCssField(block, sliderModalFields(block.value, { mediaAssets }), { animationGroup: "Settings" }),
       submitLabel: "Save slider"
     });
     if (!values) return null;
 
+    const existingSlides = await uploadedGalleryItemFiles(values.slides?.existing, block.label || "Slider image");
     const uploadedItems = await uploadedGalleryItems(values.slides?.files, block.label || "Slider image");
-    const sliderValue = sliderValueFromModal(values, block.value, uploadedItems);
+    const sliderValue = sliderValueFromModal({
+      ...values,
+      slides: {
+        ...(values.slides || {}),
+        existing: existingSlides
+      }
+    }, block.value, uploadedItems);
     if (!sliderSlides(sliderValue).length) {
       setStatus("Keep or upload at least one slider image.", true);
       return null;
@@ -634,6 +674,7 @@ export async function addProduct() {
     body: JSON.stringify({
       name: values.name,
       slug,
+      locale: currentLocale(),
       priceCents: Number.isFinite(priceCents) ? priceCents : 0,
       currency: "EUR",
       stockQuantity: Number.isFinite(stockQuantity) ? stockQuantity : 0,
@@ -867,6 +908,12 @@ export async function saveLocalizationSettings(form) {
     if (state.config && response.installedModules) {
       state.config.installedModules = response.installedModules;
     }
+    if (state.config && response.localization) {
+      setRuntimeConfig({
+        ...state.config,
+        localization: response.localization
+      });
+    }
     setFormMessage(form, "Localization saved.");
     setStatus("Localization saved.");
   } catch (error) {
@@ -1066,7 +1113,14 @@ export async function addElementTemplate(templateId) {
       });
       if (!values) return;
 
-      block.value = sliderValueFromModal(values, block.value, await uploadedGalleryItems(values.slides?.files));
+      const existingSlides = await uploadedGalleryItemFiles(values.slides?.existing, "Slider image");
+      block.value = sliderValueFromModal({
+        ...values,
+        slides: {
+          ...(values.slides || {}),
+          existing: existingSlides
+        }
+      }, block.value, await uploadedGalleryItems(values.slides?.files));
       if (!sliderSlides(block.value).length) {
         setStatus("Upload at least one image for the slider.", true);
         return;

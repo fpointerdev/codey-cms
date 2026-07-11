@@ -40,10 +40,7 @@ const envSchema = z.object({
   AUTH_ALLOW_REGISTRATION: booleanFromEnv.default(true),
   AUTH_REQUIRE_EMAIL_VERIFICATION: booleanFromEnv.default(false),
   AUTH_RECOVERY_TOKEN_DELIVERY: z.enum(["response", "email", "disabled"]).optional(),
-  PAYMENTS_WEBHOOK_SECRET: optionalStringFromEnv,
-  PAYMENT_STRIPE_WEBHOOK_SECRET: optionalStringFromEnv,
-  PAYMENT_PAYPAL_WEBHOOK_SECRET: optionalStringFromEnv,
-  PAYMENT_WEBHOOK_TOLERANCE_SECONDS: z.coerce.number().int().positive().max(86_400).default(300),
+  CMS_CREDENTIAL_ENCRYPTION_KEY: z.string().trim().min(32).optional(),
   EMAIL_DRIVER: z.enum(["disabled", "http"]).default("disabled"),
   EMAIL_FROM: optionalStringFromEnv,
   EMAIL_HTTP_ENDPOINT: optionalUrlFromEnv,
@@ -125,8 +122,12 @@ const envSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["EMAIL_DRIVER"], message: "AUTH_RECOVERY_TOKEN_DELIVERY=email requires EMAIL_DRIVER=http." });
   }
 
-  if (value.APP_MODE === "shop" && !value.PAYMENTS_WEBHOOK_SECRET && !value.PAYMENT_STRIPE_WEBHOOK_SECRET && !value.PAYMENT_PAYPAL_WEBHOOK_SECRET) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["PAYMENTS_WEBHOOK_SECRET"], message: "At least one payment webhook secret is required for production payment webhooks." });
+  if (value.APP_MODE === "shop" && !value.CMS_CREDENTIAL_ENCRYPTION_KEY) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["CMS_CREDENTIAL_ENCRYPTION_KEY"],
+      message: "CMS_CREDENTIAL_ENCRYPTION_KEY is required to encrypt end-user payment credentials in production."
+    });
   }
 
   if (value.APP_MODE === "shop" && value.EMAIL_DRIVER === "disabled") {

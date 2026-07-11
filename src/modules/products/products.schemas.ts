@@ -16,6 +16,25 @@ export const localeQuerySchema = z.object({
   locale: z.string().trim().toLowerCase().min(2).max(16).optional()
 });
 
+const productImageUrlSchema = z.string().trim().max(1000).refine((value) => {
+  if (/^(https?:\/\/|s3:\/\/)/i.test(value)) {
+    try {
+      new URL(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (!value.startsWith("/uploads/") || /[<>"\\]/.test(value)) return false;
+
+  try {
+    return !decodeURIComponent(value.split("?")[0] || "").split("/").includes("..");
+  } catch {
+    return false;
+  }
+}, "Image URL must be an absolute URL or a safe /uploads path.");
+
 export const listProductsQuery = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
@@ -45,7 +64,7 @@ export const createProductSchema = z.object({
   images: z.array(
     z.object({
       mediaAssetId: z.string().cuid().optional(),
-      url: z.string().url(),
+      url: productImageUrlSchema,
       alt: z.string().trim().max(180).optional(),
       sortOrder: z.number().int().default(0),
       isPrimary: z.boolean().default(false)
@@ -102,7 +121,7 @@ export const updateProductAttributeSchema = createProductAttributeSchema.partial
 
 export const createProductImageSchema = z.object({
   mediaAssetId: z.string().cuid().optional(),
-  url: z.string().url(),
+  url: productImageUrlSchema,
   alt: z.string().trim().max(180).optional(),
   sortOrder: z.number().int().default(0),
   isPrimary: z.boolean().default(false)

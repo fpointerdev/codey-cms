@@ -12,6 +12,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "pnpm prisma:generate && tsc -p tsconfig.build.json",
     "start": "node dist/src/server.js",
+    "test": "node --import tsx --test test/*.test.ts",
+    "validate": "pnpm run typecheck && pnpm run test && pnpm run db:validate && pnpm run build",
     "runtime:start": "pnpm db:deploy && node dist/src/server.js",
     "runtime:bootstrap": "pnpm db:deploy && pnpm db:seed",
     "setup:admin": "pnpm prisma:generate && node scripts/setup-admin.mjs",

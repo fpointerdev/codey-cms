@@ -90,10 +90,7 @@ export const config = {
     }
   },
   payments: {
-    webhookSecret: env.PAYMENTS_WEBHOOK_SECRET,
-    stripeWebhookSecret: env.PAYMENT_STRIPE_WEBHOOK_SECRET,
-    paypalWebhookSecret: env.PAYMENT_PAYPAL_WEBHOOK_SECRET,
-    webhookToleranceSeconds: env.PAYMENT_WEBHOOK_TOLERANCE_SECONDS
+    credentialEncryptionKey: env.CMS_CREDENTIAL_ENCRYPTION_KEY ?? env.JWT_ACCESS_SECRET
   },
   email: {
     driver: env.EMAIL_DRIVER,

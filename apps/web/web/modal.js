@@ -2,6 +2,196 @@ import { escapeHtml } from "./core.js";
 import { renderRichText } from "./public-renderer.js";
 import { hydrateRichEditors, syncRichEditors } from "./rich-editor.js";
 
+function richTextFieldHtml(name, label, value = "", options = {}) {
+  const help = options.help ? `<small class="field-help">${escapeHtml(options.help)}</small>` : "";
+  const fallbackHtml = options.emptyHtml === undefined ? "<p>Start writing content...</p>" : options.emptyHtml;
+  const surfaceHtml = value ? renderRichText(value) : renderRichText(fallbackHtml);
+
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+    </label>
+    <div class="rich-editor${options.compact ? " rich-editor-compact" : ""}" data-rich-editor>
+      <div class="rich-editor-header">
+        <span>${escapeHtml(label)}</span>
+        <div class="rich-toolbar" data-rich-toolbar aria-label="${escapeHtml(label)} toolbar">
+          <span class="rich-format-group">
+            <select data-rich-block aria-label="Text style">
+              <option value="">Paragraph</option>
+              <option value="h2">Heading 2</option>
+              <option value="h3">Heading 3</option>
+              <option value="h4">Heading 4</option>
+            </select>
+          </span>
+          <span class="rich-format-group">
+            <button type="button" class="rich-tool-button" data-rich-command="bold" aria-label="Bold"><strong>B</strong></button>
+            <button type="button" class="rich-tool-button" data-rich-command="italic" aria-label="Italic"><em>I</em></button>
+            <button type="button" class="rich-tool-button" data-rich-command="underline" aria-label="Underline"><u>U</u></button>
+            <button type="button" class="rich-tool-button" data-rich-command="strikeThrough" aria-label="Strikethrough"><s>S</s></button>
+          </span>
+          <span class="rich-format-group">
+            <button type="button" class="rich-tool-button" data-rich-command="insertOrderedList" aria-label="Ordered list">1.</button>
+            <button type="button" class="rich-tool-button" data-rich-command="insertUnorderedList" aria-label="Bullet list">UL</button>
+            <select data-rich-align aria-label="Text alignment">
+              <option value="">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </span>
+          <span class="rich-format-group rich-link-group">
+            <button type="button" class="rich-tool-button" data-rich-command="blockquote" aria-label="Quote">Quote</button>
+            <input type="url" data-rich-link-url placeholder="https://..." aria-label="Link URL" />
+            <button type="button" class="rich-tool-button" data-rich-command="createLink" aria-label="Apply link">Link</button>
+            <button type="button" class="rich-tool-button" data-rich-command="removeFormat" aria-label="Clear formatting">Clear</button>
+          </span>
+        </div>
+      </div>
+      <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}" data-rich-source />
+      <div class="rich-editor-surface" data-rich-surface>${surfaceHtml}</div>
+    </div>
+    ${help}
+  `;
+}
+
+function galleryItemTitle(item = {}, index = 0, itemLabel = "Image") {
+  const fallback = `${itemLabel} ${index + 1}`;
+  const text = String(item.alt || item.caption || item.url || "")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+
+  return text ? text.slice(0, 80) : fallback;
+}
+
+function galleryItemMeta(item = {}, index = 0, itemLabel = "Image") {
+  if (item.source === "library") return "Media library";
+  if (item.source === "manual") return "Manual slide";
+  return `${itemLabel} ${index + 1}`;
+}
+
+function galleryPreviewHtml(item = {}, alt = "", className = "gallery-preview-frame", emptyText = "No image") {
+  return `
+    <span class="${escapeHtml(className)}" data-gallery-preview>
+      ${
+        item.url
+          ? `<img src="${escapeHtml(item.url || "")}" alt="${escapeHtml(alt)}" />`
+          : `<span class="gallery-accordion-placeholder" aria-hidden="true">${escapeHtml(emptyText)}</span>`
+      }
+    </span>
+  `;
+}
+
+function galleryItemHtml(fieldName, item = {}, index = 0, options = {}) {
+  const itemLabel = options.itemLabel || "Image";
+  const accordion = options.accordion === true;
+  const imageInput = options.imageInput || "hidden";
+  const captionInput = options.captionInput || "textarea";
+  const showUrlInput = options.showUrlInput === true;
+  const sourceClass = item.source === "library"
+    ? " gallery-library-item"
+    : item.source === "manual"
+      ? " gallery-manual-item"
+      : "";
+  const itemTitle = galleryItemTitle(item, index, itemLabel);
+  const position = `${itemLabel} ${index + 1}`;
+  const selected = item.selected ? "checked" : "";
+  const image = accordion
+    ? galleryPreviewHtml(item, item.alt || position)
+    : `<img src="${escapeHtml(item.url || "")}" alt="${escapeHtml(item.alt || position)}" />`;
+  const selectedInput = accordion
+    ? `<input name="${escapeHtml(fieldName)}SelectedIndex" type="hidden" value="${escapeHtml(index)}" />`
+    : `
+      <input
+        name="${escapeHtml(fieldName)}SelectedIndex"
+        type="checkbox"
+        value="${escapeHtml(index)}"
+        ${selected}
+      />
+    `;
+  const hiddenUrlInput = `<input name="${escapeHtml(fieldName)}Url${index}" type="hidden" value="${escapeHtml(item.url || "")}" />`;
+  const imageField = imageInput === "file"
+    ? `
+      ${hiddenUrlInput}
+      <label class="gallery-image-picker">
+        <span class="gallery-image-label">Image</span>
+        ${galleryPreviewHtml(item, item.alt || position, "gallery-image-preview", "Upload image")}
+        <span class="gallery-image-change">${item.url ? "&#9998;" : "Upload image"}</span>
+        <input name="${escapeHtml(fieldName)}File${index}" type="file" accept="image/*" data-gallery-image-input />
+      </label>
+    `
+    : showUrlInput
+      ? `<label>
+        <span>Image URL</span>
+        <input name="${escapeHtml(fieldName)}Url${index}" value="${escapeHtml(item.url || "")}" placeholder="/uploads/image.jpg or https://..." />
+      </label>`
+      : hiddenUrlInput;
+  const captionField = captionInput === "richtext"
+    ? richTextFieldHtml(`${fieldName}Caption${index}`, "Caption", item.caption || "", { compact: true, emptyHtml: "" })
+    : `
+      <label>
+        <span>Caption</span>
+        <textarea name="${escapeHtml(fieldName)}Caption${index}" rows="3">${escapeHtml(item.caption || "")}</textarea>
+      </label>
+    `;
+  const controls = `
+    <div class="gallery-existing-toolbar">
+      <span data-gallery-position>Position ${index + 1}</span>
+      <div>
+        <button type="button" class="secondary-button compact" data-gallery-move="up">Up</button>
+        <button type="button" class="secondary-button compact" data-gallery-move="down">Down</button>
+        ${accordion ? `<button type="button" class="secondary-button compact danger" data-gallery-delete-item aria-label="Delete ${escapeHtml(itemTitle)}">Delete</button>` : ""}
+      </div>
+    </div>
+  `;
+  const fields = `
+    ${imageField}
+    <label>
+      <span>Image description</span>
+      <input name="${escapeHtml(fieldName)}Alt${index}" value="${escapeHtml(item.alt || position)}" />
+    </label>
+    ${captionField}
+    <label>
+      <span>Optional link</span>
+      <input name="${escapeHtml(fieldName)}Link${index}" value="${escapeHtml(item.link || "")}" />
+    </label>
+    ${item.source === "library" ? '<small class="field-help">Media library image. Check it to include it.</small>' : ""}
+  `;
+
+  if (accordion) {
+    return `
+      <details class="gallery-existing-item gallery-accordion-item${sourceClass}" draggable="true" data-gallery-sort-item ${item.open ? "open" : ""}>
+        <summary class="gallery-accordion-summary">
+          ${selectedInput}
+          ${image}
+          <span class="gallery-accordion-title">
+            <strong data-gallery-title-text>${escapeHtml(itemTitle)}</strong>
+            <small>${escapeHtml(galleryItemMeta(item, index, itemLabel))}</small>
+          </span>
+          <span data-gallery-position>Position ${index + 1}</span>
+        </summary>
+        <input name="${escapeHtml(fieldName)}Sort${index}" type="hidden" value="${escapeHtml(index)}" data-gallery-sort-value />
+        <input name="${escapeHtml(fieldName)}MediaAssetId${index}" type="hidden" value="${escapeHtml(item.mediaAssetId || "")}" />
+        <div class="gallery-existing-content">
+          ${controls}
+          ${fields}
+        </div>
+      </details>
+    `;
+  }
+
+  return `
+    <article class="gallery-existing-item${sourceClass}" draggable="true" data-gallery-sort-item>
+      ${selectedInput}
+      <input name="${escapeHtml(fieldName)}Sort${index}" type="hidden" value="${escapeHtml(index)}" data-gallery-sort-value />
+      <input name="${escapeHtml(fieldName)}MediaAssetId${index}" type="hidden" value="${escapeHtml(item.mediaAssetId || "")}" />
+      ${image}
+      <div class="gallery-existing-content">
+        ${controls}
+        ${fields}
+      </div>
+    </article>
+  `;
+}
+
 function modalFieldHtml(field) {
   const value = field.value ?? "";
   const required = field.required === false ? "" : " required";
@@ -41,49 +231,7 @@ function modalFieldHtml(field) {
   }
 
   if (field.type === "richtext") {
-    return `
-      <label>
-        <span>${escapeHtml(field.label)}</span>
-      </label>
-      <div class="rich-editor" data-rich-editor>
-        <div class="rich-editor-header">
-          <span>${escapeHtml(field.label)}</span>
-          <div class="rich-toolbar" data-rich-toolbar aria-label="${escapeHtml(field.label)} toolbar">
-            <span class="rich-format-group">
-              <select data-rich-block aria-label="Text style">
-                <option value="">Paragraph</option>
-                <option value="h2">Heading 2</option>
-                <option value="h3">Heading 3</option>
-                <option value="h4">Heading 4</option>
-              </select>
-            </span>
-            <span class="rich-format-group">
-              <button type="button" class="rich-tool-button" data-rich-command="bold" aria-label="Bold"><strong>B</strong></button>
-              <button type="button" class="rich-tool-button" data-rich-command="italic" aria-label="Italic"><em>I</em></button>
-              <button type="button" class="rich-tool-button" data-rich-command="underline" aria-label="Underline"><u>U</u></button>
-              <button type="button" class="rich-tool-button" data-rich-command="strikeThrough" aria-label="Strikethrough"><s>S</s></button>
-            </span>
-            <span class="rich-format-group">
-              <button type="button" class="rich-tool-button" data-rich-command="insertOrderedList" aria-label="Ordered list">1.</button>
-              <button type="button" class="rich-tool-button" data-rich-command="insertUnorderedList" aria-label="Bullet list">UL</button>
-              <select data-rich-align aria-label="Text alignment">
-                <option value="">Left</option>
-                <option value="center">Center</option>
-                <option value="right">Right</option>
-              </select>
-            </span>
-            <span class="rich-format-group rich-link-group">
-              <button type="button" class="rich-tool-button" data-rich-command="blockquote" aria-label="Quote">Quote</button>
-              <input type="url" data-rich-link-url placeholder="https://..." aria-label="Link URL" />
-              <button type="button" class="rich-tool-button" data-rich-command="createLink" aria-label="Apply link">Link</button>
-              <button type="button" class="rich-tool-button" data-rich-command="removeFormat" aria-label="Clear formatting">Clear</button>
-            </span>
-          </div>
-        </div>
-        <input type="hidden" name="${escapeHtml(field.name)}" value="${escapeHtml(value)}" data-rich-source />
-        <div class="rich-editor-surface" data-rich-surface>${renderRichText(value || "<p>Start writing content...</p>")}</div>
-      </div>
-    `;
+    return richTextFieldHtml(field.name, field.label, value, { help: field.help });
   }
 
   if (field.type === "select") {
@@ -162,6 +310,12 @@ function modalFieldHtml(field) {
   if (field.type === "gallery") {
     const items = Array.isArray(value) ? value : [];
     const mediaAssets = Array.isArray(field.mediaAssets) ? field.mediaAssets : [];
+    const accordion = field.itemLayout === "accordion";
+    const itemLabel = field.itemLabel || "Image";
+    const imageInput = field.imageInput || (accordion ? "file" : "hidden");
+    const captionInput = field.captionInput || (accordion ? "richtext" : "textarea");
+    const emptyText = field.emptyText || (accordion ? `No ${itemLabel.toLowerCase()}s yet. Add one below.` : "No images selected yet. Upload images below or add assets to the media library first.");
+    const showUrlInput = field.showUrlInput === true;
     const existingUrls = new Set(items.map((item) => item?.url).filter(Boolean));
     const libraryItems = mediaAssets
       .filter((asset) => asset?.url && !existingUrls.has(asset.url))
@@ -174,10 +328,12 @@ function modalFieldHtml(field) {
         source: "library",
         selected: false
       }));
-    const selectableItems = [
-      ...items.map((item) => ({ ...item, source: "existing", selected: true })),
-      ...libraryItems
-    ];
+    const selectableItems = accordion
+      ? items.map((item, index) => ({ ...item, source: "existing", selected: true, open: index === 0 }))
+      : [
+        ...items.map((item) => ({ ...item, source: "existing", selected: true })),
+        ...libraryItems
+      ];
 
     return `
       <div class="gallery-field" data-gallery-field>
@@ -185,57 +341,30 @@ function modalFieldHtml(field) {
           <span>${escapeHtml(field.label)}</span>
           ${help || '<small class="field-help">Choose images from the media library, upload new ones, and drag selected cards into the right order.</small>'}
         </div>
-        ${
-          selectableItems.length
-            ? `<div class="gallery-existing-list" data-gallery-sort-list>
-                ${selectableItems
-                  .map(
-                    (item, index) => `
-                      <article class="gallery-existing-item${item.source === "library" ? " gallery-library-item" : ""}" draggable="true" data-gallery-sort-item>
-                        <input
-                          name="${escapeHtml(field.name)}SelectedIndex"
-                          type="checkbox"
-                          value="${escapeHtml(index)}"
-                          ${item.selected ? "checked" : ""}
-                        />
-                        <input name="${escapeHtml(field.name)}Sort${index}" type="hidden" value="${escapeHtml(index)}" data-gallery-sort-value />
-                        <input name="${escapeHtml(field.name)}Url${index}" type="hidden" value="${escapeHtml(item.url || "")}" />
-                        <input name="${escapeHtml(field.name)}MediaAssetId${index}" type="hidden" value="${escapeHtml(item.mediaAssetId || "")}" />
-                        <img src="${escapeHtml(item.url || "")}" alt="${escapeHtml(item.alt || `Slide ${index + 1}`)}" />
-                        <div class="gallery-existing-content">
-                          <div class="gallery-existing-toolbar">
-                            <span data-gallery-position>Position ${index + 1}</span>
-                            <div>
-                              <button type="button" class="secondary-button compact" data-gallery-move="up">Up</button>
-                              <button type="button" class="secondary-button compact" data-gallery-move="down">Down</button>
-                            </div>
-                          </div>
-                          <label>
-                            <span>Image description</span>
-                            <input name="${escapeHtml(field.name)}Alt${index}" value="${escapeHtml(item.alt || `Slide ${index + 1}`)}" />
-                          </label>
-                          <label>
-                            <span>Caption</span>
-                            <textarea name="${escapeHtml(field.name)}Caption${index}" rows="3">${escapeHtml(item.caption || "")}</textarea>
-                          </label>
-                          <label>
-                            <span>Optional link</span>
-                            <input name="${escapeHtml(field.name)}Link${index}" value="${escapeHtml(item.link || "")}" />
-                          </label>
-                          ${item.source === "library" ? '<small class="field-help">Media library image. Check it to include it.</small>' : ""}
-                        </div>
-                      </article>
-                    `
-                  )
-                  .join("")}
-              </div>`
-            : '<p class="gallery-empty">No images selected yet. Upload images below or add assets to the media library first.</p>'
-        }
-        <label class="gallery-upload-box">
-          <span>Upload images</span>
-          <input name="${escapeHtml(field.name)}Files" type="file" accept="image/*" multiple data-file-preview-input />
-          <div class="file-preview-list" data-file-preview></div>
-        </label>
+        <p class="gallery-empty" data-gallery-empty ${selectableItems.length ? "hidden" : ""}>${escapeHtml(emptyText)}</p>
+        <div
+          class="gallery-existing-list${accordion ? " gallery-accordion-list" : ""}"
+          data-gallery-sort-list
+          data-gallery-field-name="${escapeHtml(field.name)}"
+          data-gallery-item-label="${escapeHtml(itemLabel)}"
+          data-gallery-image-input="${escapeHtml(imageInput)}"
+          data-gallery-caption-input="${escapeHtml(captionInput)}"
+          data-gallery-show-url-input="${showUrlInput ? "true" : "false"}"
+          data-gallery-accordion="${accordion ? "true" : "false"}"
+          ${!accordion && !selectableItems.length ? "hidden" : ""}
+        >
+          ${selectableItems
+            .map((item, index) => galleryItemHtml(field.name, item, index, { accordion, itemLabel, imageInput, captionInput, showUrlInput }))
+            .join("")}
+        </div>
+        ${accordion ? `<div class="button-row gallery-add-row"><button type="button" class="secondary-button" data-gallery-add-item="${escapeHtml(field.name)}">${escapeHtml(field.addItemLabel || "+ Add item")}</button></div>` : ""}
+        ${accordion ? "" : `
+          <label class="gallery-upload-box">
+            <span>Upload images</span>
+            <input name="${escapeHtml(field.name)}Files" type="file" accept="image/*" multiple data-file-preview-input />
+            <div class="file-preview-list" data-file-preview></div>
+          </label>
+        `}
       </div>
     `;
   }
@@ -349,7 +478,14 @@ export function parseGalleryExisting(formData, fieldName) {
     .map((indexValue, fallbackSort) => {
       const index = Number(indexValue);
       const url = String(formData.get(`${fieldName}Url${index}`) || "").trim();
-      if (!url) return null;
+      const file = formData.get(`${fieldName}File${index}`);
+      const hasFile = Boolean(
+        file &&
+        typeof file === "object" &&
+        typeof file.arrayBuffer === "function" &&
+        file.size
+      );
+      if (!url && !hasFile) return null;
 
       return {
         sortOrder: Number(formData.get(`${fieldName}Sort${index}`) ?? fallbackSort),
@@ -357,7 +493,8 @@ export function parseGalleryExisting(formData, fieldName) {
         mediaAssetId: String(formData.get(`${fieldName}MediaAssetId${index}`) || "").trim() || undefined,
         alt: String(formData.get(`${fieldName}Alt${index}`) || "").trim(),
         caption: String(formData.get(`${fieldName}Caption${index}`) || "").trim(),
-        link: String(formData.get(`${fieldName}Link${index}`) || "").trim()
+        link: String(formData.get(`${fieldName}Link${index}`) || "").trim(),
+        ...(hasFile ? { file } : {})
       };
     })
     .filter(Boolean)
@@ -368,11 +505,95 @@ export function parseGalleryExisting(formData, fieldName) {
 function renumberGalleryItems(list) {
   Array.from(list.querySelectorAll("[data-gallery-sort-item]")).forEach((item, index) => {
     const sortInput = item.querySelector("[data-gallery-sort-value]");
-    const position = item.querySelector("[data-gallery-position]");
 
     if (sortInput) sortInput.value = String(index);
-    if (position) position.textContent = `Position ${index + 1}`;
+    item.querySelectorAll("[data-gallery-position]").forEach((position) => {
+      position.textContent = `Position ${index + 1}`;
+    });
   });
+}
+
+function updateGalleryEmptyState(field) {
+  const list = field.querySelector("[data-gallery-sort-list]");
+  const empty = field.querySelector("[data-gallery-empty]");
+  if (!list || !empty) return;
+
+  empty.hidden = Boolean(list.querySelector("[data-gallery-sort-item]"));
+  list.hidden = list.dataset.galleryAccordion !== "true" && !list.querySelector("[data-gallery-sort-item]");
+}
+
+function nextGalleryItemIndex(list, fieldName) {
+  const selectedName = `${fieldName}SelectedIndex`;
+  const indices = Array.from(list.querySelectorAll("input"))
+    .filter((input) => input.name === selectedName)
+    .map((input) => Number(input.value))
+    .filter((index) => Number.isInteger(index));
+
+  return Math.max(-1, ...indices) + 1;
+}
+
+function addGalleryItem(button) {
+  const field = button.closest("[data-gallery-field]");
+  const list = field?.querySelector("[data-gallery-sort-list]");
+  const fieldName = button.dataset.galleryAddItem || list?.dataset.galleryFieldName || "";
+  if (!field || !list || !fieldName) return;
+
+  const itemLabel = list.dataset.galleryItemLabel || "Image";
+  const index = nextGalleryItemIndex(list, fieldName);
+
+  list.insertAdjacentHTML("beforeend", galleryItemHtml(
+    fieldName,
+    {
+      url: "",
+      alt: `${itemLabel} ${list.querySelectorAll("[data-gallery-sort-item]").length + 1}`,
+      caption: "",
+      link: "",
+      source: "manual",
+      selected: true,
+      open: true
+    },
+    index,
+    {
+      accordion: list.dataset.galleryAccordion === "true",
+      itemLabel,
+      imageInput: list.dataset.galleryImageInput || "hidden",
+      captionInput: list.dataset.galleryCaptionInput || "textarea",
+      showUrlInput: list.dataset.galleryShowUrlInput === "true"
+    }
+  ));
+
+  renumberGalleryItems(list);
+  updateGalleryEmptyState(field);
+  const newItem = list.querySelector("[data-gallery-sort-item]:last-child");
+  if (newItem) hydrateRichEditors(newItem);
+  newItem?.querySelector?.("[data-gallery-image-input]")?.focus?.();
+}
+
+function deleteGalleryItem(button) {
+  const item = button.closest("[data-gallery-sort-item]");
+  const field = button.closest("[data-gallery-field]");
+  const list = item?.closest("[data-gallery-sort-list]");
+  if (!item || !field || !list) return;
+
+  item.remove();
+  renumberGalleryItems(list);
+  updateGalleryEmptyState(field);
+}
+
+function updateGalleryImagePreview(input) {
+  const file = Array.from(input.files || []).find((item) => item?.type?.startsWith("image/") && item.size);
+  const item = input.closest("[data-gallery-sort-item]");
+  const canPreviewImages = typeof URL !== "undefined" && typeof URL.createObjectURL === "function";
+  if (!file || !item || !canPreviewImages) return;
+
+  const objectUrl = URL.createObjectURL(file);
+  const previewHtml = `<img src="${escapeHtml(objectUrl)}" alt="${escapeHtml(file.name || "Selected image")}" />`;
+  item.querySelectorAll("[data-gallery-preview]").forEach((preview) => {
+    preview.innerHTML = previewHtml;
+  });
+
+  const changeLabel = item.querySelector(".gallery-image-change");
+  if (changeLabel) changeLabel.innerHTML = "&#9998;";
 }
 
 function moveGalleryItem(item, direction) {
@@ -390,13 +611,46 @@ function moveGalleryItem(item, direction) {
   renumberGalleryItems(list);
 }
 
+function activateModalTab(tab) {
+  const shell = tab?.closest?.("[data-modal-tab-shell]");
+  const target = tab?.dataset?.modalTabTarget;
+  if (!shell || !target) return;
+
+  shell.querySelectorAll("[data-modal-tab-target]").forEach((button) => {
+    const selected = button.dataset.modalTabTarget === target;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+  shell.querySelectorAll("[data-modal-tab-panel]").forEach((panel) => {
+    const selected = panel.dataset.modalTabPanel === target;
+    panel.classList.toggle("active", selected);
+    panel.hidden = !selected;
+  });
+}
+
+function revealInvalidControl(form) {
+  const control = form.querySelector(":invalid");
+  if (!control) return false;
+
+  const panel = control.closest("[data-modal-tab-panel]");
+  const tabTarget = panel?.dataset?.modalTabPanel;
+  const tab = tabTarget
+    ? form.querySelector(`[data-modal-tab-target="${tabTarget}"]`)
+    : null;
+  if (tab) activateModalTab(tab);
+
+  control.focus?.();
+  control.reportValidity?.();
+  return true;
+}
+
 function openModalForm(config) {
   return new Promise((resolveModal) => {
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.innerHTML = `
       <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <form data-modal-form>
+        <form data-modal-form novalidate>
           <div class="modal-header">
             <div>
               <p class="section-label">${escapeHtml(config.label || "Editor")}</p>
@@ -432,23 +686,14 @@ function openModalForm(config) {
       if (!tab) return;
 
       event.preventDefault();
-      const shell = tab.closest("[data-modal-tab-shell]");
-      const target = tab.dataset.modalTabTarget;
-      shell?.querySelectorAll("[data-modal-tab-target]").forEach((button) => {
-        const selected = button.dataset.modalTabTarget === target;
-        button.classList.toggle("active", selected);
-        button.setAttribute("aria-selected", selected ? "true" : "false");
-      });
-      shell?.querySelectorAll("[data-modal-tab-panel]").forEach((panel) => {
-        const selected = panel.dataset.modalTabPanel === target;
-        panel.classList.toggle("active", selected);
-        panel.hidden = !selected;
-      });
+      activateModalTab(tab);
     });
 
     modal.querySelector("[data-modal-form]").addEventListener("submit", (event) => {
       event.preventDefault();
       syncRichEditors(event.currentTarget);
+      if (revealInvalidControl(event.currentTarget)) return;
+
       const formData = new FormData(event.currentTarget);
       const values = {};
 
@@ -478,6 +723,12 @@ function openModalForm(config) {
     });
 
     modal.addEventListener("change", (event) => {
+      const galleryImageInput = event.target.closest("[data-gallery-image-input]");
+      if (galleryImageInput) {
+        updateGalleryImagePreview(galleryImageInput);
+        return;
+      }
+
       const input = event.target.closest("[data-file-preview-input]");
       const preview = input?.parentElement?.querySelector?.("[data-file-preview]");
       if (!input || !preview) return;
@@ -486,6 +737,20 @@ function openModalForm(config) {
     });
 
     modal.addEventListener("click", (event) => {
+      const addButton = event.target.closest("[data-gallery-add-item]");
+      if (addButton) {
+        event.preventDefault();
+        addGalleryItem(addButton);
+        return;
+      }
+
+      const deleteButton = event.target.closest("[data-gallery-delete-item]");
+      if (deleteButton) {
+        event.preventDefault();
+        deleteGalleryItem(deleteButton);
+        return;
+      }
+
       const moveButton = event.target.closest("[data-gallery-move]");
       if (!moveButton) return;
 

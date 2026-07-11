@@ -4,6 +4,11 @@ enum PaymentProvider {
   MANUAL
 }
 
+enum PaymentProviderMode {
+  SANDBOX
+  LIVE
+}
+
 enum PaymentStatus {
   REQUIRES_ACTION
   PENDING
@@ -42,4 +47,27 @@ model PaymentWebhook {
 
   @@index([provider, eventType])
   @@index([providerReference])
+}
+
+model PaymentProviderConfig {
+  id                    String              @id @default(cuid())
+  siteId                String
+  provider              PaymentProvider
+  mode                  PaymentProviderMode @default(SANDBOX)
+  enabled               Boolean             @default(false)
+  publishableKey        String?
+  clientId              String?
+  webhookId             String?
+  encryptedCredentials  String?
+  instructions          String?
+  lastTestedAt          DateTime?
+  lastTestSucceeded     Boolean?
+  lastTestMessage       String?
+  lastWebhookAt         DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([siteId, provider])
+  @@index([siteId, enabled])
+  @@index([provider, enabled])
 }

@@ -166,7 +166,22 @@ export function sliderModalFields(value = {}, options = {}) {
   const settings = sliderSettings(value);
 
   return [
-    { name: "slides", label: "Slider images", type: "gallery", value: sliderSlides(value), mediaAssets: options.mediaAssets || [], required: false, group: "Content" },
+    {
+      name: "slides",
+      label: "Slides",
+      type: "gallery",
+      value: sliderSlides(value),
+      mediaAssets: options.mediaAssets || [],
+      required: false,
+      group: "Content",
+      itemLayout: "accordion",
+      itemLabel: "Slide",
+      addItemLabel: "+ Add new slide",
+      imageInput: "file",
+      captionInput: "richtext",
+      emptyText: "No slides yet. Add a new slide below.",
+      help: "Add, reorder, and edit each slide."
+    },
     {
       name: "slidesPerView",
       label: "Images visible at once",
@@ -175,7 +190,7 @@ export function sliderModalFields(value = {}, options = {}) {
       min: 1,
       max: 6,
       step: 1,
-      group: "Configuration",
+      group: "Settings",
       help: "Use 1 for a classic hero slider, or more for project/product rows."
     },
     {
@@ -225,7 +240,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "slider", label: "Slider" },
         { value: "carousel", label: "Carousel" }
       ],
-      group: "Configuration",
+      group: "Settings",
       help: "Slider is best for hero media. Carousel is best for projects, products, and galleries."
     },
     {
@@ -238,7 +253,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "fade", label: "Fade" },
         { value: "zoom", label: "Soft zoom" }
       ],
-      group: "Configuration"
+      group: "Settings"
     },
     {
       name: "direction",
@@ -249,7 +264,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "horizontal", label: "Horizontal" },
         { value: "vertical", label: "Vertical" }
       ],
-      group: "Configuration"
+      group: "Settings"
     },
     {
       name: "focusMode",
@@ -260,7 +275,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "standard", label: "Standard" },
         { value: "peek", label: "Focused item with side previews" }
       ],
-      group: "Configuration",
+      group: "Settings",
       help: "Use the focused option to show one main image with half previews before and after."
     },
     {
@@ -305,7 +320,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "true", label: "Infinite loop" },
         { value: "false", label: "Stop at the end" }
       ],
-      group: "Configuration"
+      group: "Settings"
     },
     {
       name: "showNavigation",
@@ -316,7 +331,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "true", label: "Show buttons" },
         { value: "false", label: "Hide buttons" }
       ],
-      group: "Configuration"
+      group: "Settings"
     },
     {
       name: "navigationStyle",
@@ -328,7 +343,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "circle", label: "Circle buttons" },
         { value: "minimal", label: "Minimal text" }
       ],
-      group: "Configuration"
+      group: "Style"
     },
     {
       name: "navigationPosition",
@@ -341,7 +356,7 @@ export function sliderModalFields(value = {}, options = {}) {
         { value: "top-right", label: "Top right" },
         { value: "center-sides", label: "Sides center" }
       ],
-      group: "Configuration"
+      group: "Style"
     }
   ];
 }
@@ -453,7 +468,10 @@ export function galleryModalFields(value = {}, options = {}) {
 }
 
 export function sliderValueFromModal(values, currentValue = {}, uploadedItems = []) {
-  const galleryItems = [...(values.slides?.existing || []), ...uploadedItems];
+  const galleryItems = [...(values.slides?.existing || []), ...uploadedItems].map((item) => {
+    const { file, ...cleanItem } = item || {};
+    return cleanItem;
+  });
 
   return {
     slides: galleryItems,
@@ -478,7 +496,10 @@ export function sliderValueFromModal(values, currentValue = {}, uploadedItems = 
 }
 
 export function galleryValueFromModal(values, currentValue = {}, uploadedItems = []) {
-  const items = [...(values.items?.existing || []), ...uploadedItems];
+  const items = [...(values.items?.existing || []), ...uploadedItems].map((item) => {
+    const { file, ...cleanItem } = item || {};
+    return cleanItem;
+  });
 
   return {
     items,

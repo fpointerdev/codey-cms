@@ -6,6 +6,11 @@ import { AppError } from "../../core/errors/app-error.js";
 import { createStorageAdapter } from "../../infrastructure/storage/s3-storage.js";
 import type { StorageAdapter } from "../../infrastructure/storage/storage.types.js";
 import { extractImageMetadata } from "./media-metadata.js";
+import {
+  isOptimizableImageMimeType,
+  optimizedImageMimeType,
+  optimizedImageStorageKey
+} from "./media-optimizer.js";
 
 type MediaDatabase = PrismaClient | Prisma.TransactionClient;
 
@@ -67,6 +72,18 @@ type CleanupInput = {
   dryRun?: boolean;
   olderThanDays?: number;
   limit?: number;
+};
+
+type MediaUsageAsset = {
+  id: string;
+  url: string;
+  storageKey: string | null;
+};
+
+type ProductImageUsageReader = {
+  findMany: (args: {
+    select: { mediaAssetId: true; url: true };
+  }) => Promise<Array<{ mediaAssetId: string | null; url: string }>>;
 };
 
 function checksumSha256(buffer: Buffer) {
@@ -132,25 +149,16 @@ function normalizedMimeType(mimeType?: string) {
   return mimeType?.split(";")[0]?.trim().toLowerCase();
 }
 
-function imageVariantMimeType(mimeType?: string) {
-  const normalized = normalizedMimeType(mimeType);
-  if (!normalized) return "image/webp";
-  if (normalized === "image/jpg") return "image/jpeg";
-  if (normalized === "image/jpeg" || normalized === "image/png" || normalized === "image/webp") {
-    return normalized;
-  }
-
-  return undefined;
-}
-
-function imageVariantFormat(mimeType: string) {
-  if (mimeType === "image/png") return "png";
-  if (mimeType === "image/jpeg") return "jpeg";
-  return "webp";
-}
-
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Image variant generation failed.";
+}
+
+export function containsMediaReference(value: unknown, references: ReadonlySet<string>): boolean {
+  if (typeof value === "string") return references.has(value);
+  if (Array.isArray(value)) return value.some((item) => containsMediaReference(item, references));
+  if (!value || typeof value !== "object") return false;
+
+  return Object.values(value).some((item) => containsMediaReference(item, references));
 }
 
 export class MediaService {
@@ -378,8 +386,14 @@ export class MediaService {
       throw new AppError(404, "media_asset_not_found", "Media asset not found.");
     }
 
-    if (asset._count.blocks > 0 && !force) {
-      throw new AppError(409, "media_asset_in_use", "Media asset is still used by content blocks.");
+    if (!force) {
+      const usedAssetIds = asset._count.blocks > 0
+        ? new Set([asset.id])
+        : await this.findUsedMediaAssetIds([asset]);
+
+      if (usedAssetIds.has(asset.id)) {
+        throw new AppError(409, "media_asset_in_use", "Media asset is still used by content or products.");
+      }
     }
 
     await this.deleteStoredObjects(asset);
@@ -396,21 +410,34 @@ export class MediaService {
     const limit = input.limit ?? 50;
     const olderThanDays = input.olderThanDays ?? 1;
     const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
-    const assets = await this.prisma.mediaAsset.findMany({
-      where: {
-        deletedAt: null,
-        createdAt: {
-          lt: cutoff
+    const assets: Prisma.MediaAssetGetPayload<{}>[] = [];
+    const batchSize = Math.max(limit, 50);
+    let cursorId: string | undefined;
+
+    while (assets.length < limit) {
+      const candidates = await this.prisma.mediaAsset.findMany({
+        where: {
+          deletedAt: null,
+          createdAt: {
+            lt: cutoff
+          },
+          blocks: {
+            none: {}
+          }
         },
-        blocks: {
-          none: {}
-        }
-      },
-      orderBy: {
-        createdAt: "asc"
-      },
-      take: limit
-    });
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: batchSize,
+        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {})
+      });
+      if (candidates.length === 0) break;
+
+      const usedAssetIds = await this.findUsedMediaAssetIds(candidates);
+      assets.push(...candidates.filter((asset) => !usedAssetIds.has(asset.id)));
+      cursorId = candidates.at(-1)?.id;
+      if (candidates.length < batchSize) break;
+    }
+
+    assets.splice(limit);
 
     if (input.dryRun ?? true) {
       return {
@@ -544,24 +571,21 @@ export class MediaService {
     input: { kind: MediaKind; width?: number; height?: number; mimeType?: string }
   ): ImageVariant[] {
     if (input.kind !== "IMAGE" || !input.width || !input.height) return [];
-    if (!imageVariantMimeType(input.mimeType)) return [];
+    if (!isOptimizableImageMimeType(input.mimeType)) return [];
 
     return this.config.storage.imageVariantWidths
-      .filter((width) => width < input.width!)
+      .filter((width) => width <= input.width!)
       .map((width) => ({
         name: `w${width}`,
         width,
         height: Math.round((input.height! / input.width!) * width),
-        storageKey: storageKey.replace(/([^/.]+)(\.[^/.]+)?$/, `$1-w${width}$2`),
+        storageKey: optimizedImageStorageKey(storageKey, width),
         status: "PENDING"
       }));
   }
 
   private async generateImageVariants(body: Buffer, mimeType: string | undefined, variants: ImageVariant[]) {
-    const outputMimeType = imageVariantMimeType(mimeType);
-    if (!outputMimeType) return variants;
-
-    const format = imageVariantFormat(outputMimeType);
+    if (!isOptimizableImageMimeType(mimeType)) return variants;
 
     return Promise.all(
       variants.map(async (variant): Promise<ImageVariant> => {
@@ -569,16 +593,16 @@ export class MediaService {
           const variantBody = await sharp(body)
             .rotate()
             .resize({ width: variant.width, withoutEnlargement: true })
-            .toFormat(format)
+            .webp({ quality: 78, effort: 4 })
             .toBuffer();
 
-          await this.storage.putObject(variant.storageKey, variantBody, outputMimeType);
+          await this.storage.putObject(variant.storageKey, variantBody, optimizedImageMimeType);
 
           return {
             ...variant,
             status: "READY",
             url: this.storage.publicUrl(variant.storageKey),
-            mimeType: outputMimeType,
+            mimeType: optimizedImageMimeType,
             sizeBytes: variantBody.byteLength
           };
         } catch (error) {
@@ -598,13 +622,76 @@ export class MediaService {
       .map((variant) => variant.storageKey);
   }
 
+  private async findUsedMediaAssetIds(assets: MediaUsageAsset[]) {
+    if (assets.length === 0) return new Set<string>();
+
+    const [blocks, sections, productImages] = await Promise.all([
+      this.prisma.contentBlock.findMany({
+        select: {
+          mediaAssetId: true,
+          value: true,
+          settings: true
+        }
+      }),
+      this.prisma.pageSection.findMany({
+        select: {
+          settings: true
+        }
+      }),
+      this.listProductImageUsage()
+    ]);
+    const values: unknown[] = [
+      ...blocks.flatMap((block) => [block.mediaAssetId, block.value, block.settings]),
+      ...sections.map((section) => section.settings),
+      ...productImages.flatMap((image) => [image.mediaAssetId, image.url])
+    ];
+    const usedAssetIds = new Set<string>();
+
+    for (const asset of assets) {
+      const references = new Set(
+        [asset.id, asset.url, asset.storageKey].filter((value): value is string => Boolean(value))
+      );
+
+      if (values.some((value) => containsMediaReference(value, references))) {
+        usedAssetIds.add(asset.id);
+      }
+    }
+
+    return usedAssetIds;
+  }
+
+  private async listProductImageUsage() {
+    const productImage = (this.prisma as unknown as { productImage?: ProductImageUsageReader }).productImage;
+    if (!productImage) return [];
+
+    try {
+      return await productImage.findMany({
+        select: {
+          mediaAssetId: true,
+          url: true
+        }
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
+        return [];
+      }
+
+      throw error;
+    }
+  }
+
   private async deleteStoredObjects(asset: { storageKey: string | null; variants?: Prisma.JsonValue | null }) {
     if (!asset.storageKey) return;
 
     this.assertStorageEnabled();
-    const storageKeys = [asset.storageKey, ...collectVariantStorageKeys(asset.variants)];
+    const storageKeys = [
+      asset.storageKey,
+      ...collectVariantStorageKeys(asset.variants),
+      optimizedImageStorageKey(asset.storageKey),
+      ...this.config.storage.imageVariantWidths.map((width) => optimizedImageStorageKey(asset.storageKey!, width))
+    ];
 
-    await this.deleteStorageKeys(storageKeys);
+    await this.deleteStorageKeys([...new Set(storageKeys)]);
   }
 
   private async deleteStorageKeys(storageKeys: string[]) {

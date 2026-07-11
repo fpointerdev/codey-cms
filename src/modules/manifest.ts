@@ -317,7 +317,7 @@ export const moduleCatalog = {
   payments: {
     id: "payments",
     label: "Payments",
-    description: "Payment intent records linked to stored orders and provider handoff payloads.",
+    description: "Site-owned Stripe, PayPal, and manual payment configuration with verified order settlement.",
     version: baseVersion,
     category: "commerce",
     dependencies: ["orders"],
@@ -326,7 +326,18 @@ export const moduleCatalog = {
     plans: ["shop", "pro"],
     monthlyEuroCents: 300,
     compatibility,
-    permissions: [],
+    permissions: [
+      {
+        action: "read",
+        subject: "payments",
+        description: "View payments and payment provider configuration"
+      },
+      {
+        action: "update",
+        subject: "payments",
+        description: "Configure payment providers and manage payment status"
+      }
+    ],
     lifecycle: standardLifecycle
   }
 } satisfies Record<ModuleId, ModuleManifestEntry>;

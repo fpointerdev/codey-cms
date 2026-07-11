@@ -2,8 +2,6 @@
 
 This repo is copied per client site. The platform owns provisioning, writes the environment, runs bootstrap once, and then starts the runtime with migrations on startup.
 
-The public CodeY platform itself uses `APP_MODE=platform`. That mode serves the selling/generation surface and does not expose copied CMS public pages, `/cy-admin`, or `/dashboard/*`.
-
 ## Required Per Site
 
 - `NODE_ENV=production`
@@ -36,6 +34,8 @@ PATCH  /api/v1/config/modules/:moduleId/settings
 ```
 
 Use `GET /api/v1/config/compatibility` before enabling paid modules. It returns the module version, dependency, profile, plan, lifecycle, and base-version compatibility matrix used by the platform generator.
+
+Runtime enable/disable takes effect immediately for modules included in the deployed profile. Enabling a module outside that profile is rejected because its Prisma schema and routes are not part of the built runtime.
 
 ## Storage
 
@@ -78,30 +78,13 @@ For AWS S3, use the AWS regional endpoint, the real region such as `eu-central-1
 
 Store `STORAGE_S3_ACCESS_KEY_ID` and `STORAGE_S3_SECRET_ACCESS_KEY` only in the real server/VPS environment or secret manager. Never commit those values.
 
-Run the optional S3-compatible storage smoke test before enabling production media for a new provider:
-
-```bash
-RUN_S3_STORAGE_SMOKE=true \
-STORAGE_S3_ENDPOINT=https://<cloudflare-account-id>.r2.cloudflarestorage.com \
-STORAGE_S3_REGION=auto \
-STORAGE_S3_BUCKET=codey-media-prod \
-STORAGE_S3_ACCESS_KEY_ID=replace-with-r2-access-key-id \
-STORAGE_S3_SECRET_ACCESS_KEY=replace-with-r2-secret-access-key \
-STORAGE_S3_FORCE_PATH_STYLE=true \
-STORAGE_KEY_PREFIX=sites/codey-smoke/media \
-pnpm run test:storage:s3
-```
-
-The smoke test expects the bucket to already exist. CI creates a MinIO bucket and runs this check automatically.
+Before launch, verify upload, responsive variant delivery, signed download, and deletion against the configured S3-compatible bucket.
 
 ## Payments And Email
 
 Shop runtimes need:
 
-- `PAYMENTS_WEBHOOK_SECRET` for platform/manual payment webhooks
-- `PAYMENT_STRIPE_WEBHOOK_SECRET` for Stripe `stripe-signature` verification
-- `PAYMENT_PAYPAL_WEBHOOK_SECRET` for PayPal adapter webhook signatures using `paypal-transmission-sig`
-- `PAYMENT_WEBHOOK_TOLERANCE_SECONDS`
+- `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned provider credentials at rest
 - `EMAIL_DRIVER=http`
 - `EMAIL_FROM`
 - `EMAIL_HTTP_ENDPOINT`
@@ -109,6 +92,12 @@ Shop runtimes need:
 - `EMAIL_TIMEOUT_MS`
 
 Order received, paid, refunded, and status-change notifications are queued in the database and delivered through the configured HTTP email adapter.
+
+Stripe API keys, Stripe webhook signing secrets, PayPal client credentials, and PayPal webhook IDs are not runtime environment variables. A site owner configures them under **Shop > Shop Configuration**. The API only returns public provider identifiers and write-only secret status; encrypted credentials never leave the server.
+
+`CMS_CREDENTIAL_ENCRYPTION_KEY` is deployment-owned infrastructure material, not a payment-provider credential. Use a unique high-entropy value, store it in the platform secret manager, back it up securely, and do not rotate it without re-encrypting or re-entering every saved provider secret.
+
+See [payment-providers.md](payment-providers.md) for setup, checkout, webhook, retry, and credential-rotation flows.
 
 ## Auth Recovery
 

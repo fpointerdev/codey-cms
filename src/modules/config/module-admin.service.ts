@@ -3,6 +3,7 @@ import { writeAuditLog } from "../../core/audit/audit-log.js";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext, ModuleId } from "../../core/types/module.js";
 import {
+  deploymentProfiles,
   moduleCatalog,
   type ModuleLifecycleHook,
   type ModuleManifestEntry
@@ -131,6 +132,7 @@ export class ModuleAdminService {
     const module = moduleCatalog[moduleId];
     const site = await this.getOrCreateDefaultSite();
 
+    this.assertAvailableInDeployment(moduleId);
     await this.assertDependenciesEnabled(module);
 
     const existing = await this.context.prisma.installedModule.findUnique({
@@ -177,6 +179,7 @@ export class ModuleAdminService {
     const module = moduleCatalog[moduleId];
     const site = await this.getOrCreateDefaultSite();
 
+    this.assertAvailableInDeployment(moduleId);
     await this.assertDependenciesEnabled(module);
 
     const installedModule = await this.context.prisma.installedModule.upsert({
@@ -331,8 +334,10 @@ export class ModuleAdminService {
 
   async runLifecycle(moduleId: ModuleId, hook: ModuleLifecycleHook, audit?: ModuleAuditMeta) {
     await this.assertInstalled(moduleId);
-    await runModuleLifecycleHook(this.context, moduleId, hook);
+    const handled = await runModuleLifecycleHook(this.context, moduleId, hook);
     await this.audit("module.lifecycle.run", moduleId, audit, { hook });
+
+    return handled;
   }
 
   private async getOrCreateDefaultSite() {
@@ -347,6 +352,23 @@ export class ModuleAdminService {
         deploymentProfile: this.context.config.app.mode === "landing" ? "presentation" : this.context.config.app.mode
       }
     });
+  }
+
+  private assertAvailableInDeployment(moduleId: ModuleId) {
+    const configuredMode = this.context.config.app.mode === "landing"
+      ? "presentation"
+      : this.context.config.app.mode;
+    const profile = deploymentProfiles[configuredMode];
+    const available = profile.modules.includes(moduleId) ||
+      (moduleId === "localization" && profile.modules.includes("cms"));
+
+    if (!available) {
+      throw new AppError(
+        409,
+        "module_not_in_deployment",
+        `${moduleCatalog[moduleId].label} is not included in the ${profile.label} deployment. Change the deployment profile and rebuild first.`
+      );
+    }
   }
 
   private async assertDependenciesEnabled(module: ModuleManifestEntry) {

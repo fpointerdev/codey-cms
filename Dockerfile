@@ -8,8 +8,8 @@ RUN apk add --no-cache openssl postgresql16-client \
 
 FROM base AS development
 
-COPY package.json pnpm-workspace.yaml ./
-RUN pnpm install --no-frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
@@ -18,8 +18,8 @@ CMD ["pnpm", "dev"]
 
 FROM base AS builder
 
-COPY package.json pnpm-workspace.yaml ./
-RUN pnpm install --no-frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm build

@@ -12,6 +12,11 @@ import { adminHref, publicPageHref, publicPostHref, publicProductHref } from "./
 import { renderComponentPalette } from "./public-renderer.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
 
+function moduleAvailableInRuntime(config, moduleId) {
+  if (moduleId === "localization") return config.features?.cms !== false;
+  return config.features?.[moduleId] !== false;
+}
+
 function renderInstalledModuleSummary(config = {}) {
   const installedModules = new Map((config.installedModules || []).map((module) => [module.moduleId, module]));
   const modules = Object.values(config.modules || {});
@@ -23,7 +28,8 @@ function renderInstalledModuleSummary(config = {}) {
       ${modules
         .map((module) => {
           const installed = installedModules.get(module.id);
-          const enabled = installed?.status === "ENABLED" || module.required;
+          const enabled = moduleAvailableInRuntime(config, module.id) &&
+            (installed?.status === "ENABLED" || module.required);
 
           return `
             <article class="admin-card module-card">
@@ -235,7 +241,8 @@ function renderModuleStatusList(config = {}) {
       ${modules
         .map((module) => {
           const installed = installedModules.get(module.id);
-          const enabled = installed?.status === "ENABLED" || module.required;
+          const enabled = moduleAvailableInRuntime(config, module.id) &&
+            (installed?.status === "ENABLED" || module.required);
 
           return `
             <div class="module-status-row">
@@ -767,7 +774,30 @@ export function renderProductAttributesPage(attributes, errorMessage = "") {
   setStatus(errorMessage ? "Product attributes could not be loaded." : `${attributes.length} product attributes loaded.`);
 }
 
-export function renderShopOrdersPage(orders, errorMessage = "") {
+function paymentForOrder(payments, orderId) {
+  return payments.find((payment) => payment.orderId === orderId) || null;
+}
+
+function manualPaymentActions(payment) {
+  if (!payment || payment.provider !== "MANUAL" || !hasPermission("update", "payments")) return "";
+
+  if (["PENDING", "REQUIRES_ACTION"].includes(payment.status)) {
+    return `
+      <div class="payment-order-actions">
+        <button type="button" class="link-button" data-manual-payment-action="SUCCEED" data-payment-id="${escapeHtml(payment.id)}">Mark paid</button>
+        <button type="button" class="link-button danger" data-manual-payment-action="FAIL" data-payment-id="${escapeHtml(payment.id)}">Mark failed</button>
+      </div>
+    `;
+  }
+
+  if (payment.status === "SUCCEEDED") {
+    return `<button type="button" class="link-button danger" data-manual-payment-action="REFUND" data-payment-id="${escapeHtml(payment.id)}">Mark refunded</button>`;
+  }
+
+  return "";
+}
+
+export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
   renderShopShell(
     "shop-orders",
     `
@@ -776,26 +806,30 @@ export function renderShopOrdersPage(orders, errorMessage = "") {
         ${errorMessage ? `<p class="form-message error">Orders are not available yet: ${escapeHtml(errorMessage)}</p>` : ""}
         <div class="admin-card table-card">
           <table class="admin-table">
-            <thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Checkout</th><th>Total</th><th>Created</th></tr></thead>
+            <thead><tr><th>Order</th><th>Customer</th><th>Status</th><th>Payment</th><th>Total</th><th>Created</th><th>Actions</th></tr></thead>
             <tbody>
               ${
                 orders.length
                   ? orders
-                      .map(
-                        (order) => `
+                      .map((order) => {
+                        const payment = paymentForOrder(payments, order.id);
+                        return `
                           <tr>
                             <td><strong>${escapeHtml(order.orderNumber || order.id)}</strong></td>
                             <td>${escapeHtml(order.customerName || order.customerEmail)}</td>
                             <td><span class="status-pill">${escapeHtml(order.status)}</span></td>
-                            <td>${escapeHtml(order.checkoutStatus)}</td>
+                            <td>${payment
+                              ? `<strong>${escapeHtml(payment.provider)}</strong><small class="payment-order-status">${escapeHtml(payment.status)}</small>`
+                              : escapeHtml(order.checkoutStatus)}</td>
                             <td>${escapeHtml(formatMoney(order.totalCents, order.currency || "EUR"))}</td>
                             <td>${escapeHtml(formatDate(order.createdAt))}</td>
+                            <td>${manualPaymentActions(payment)}</td>
                           </tr>
-                        `
-                      )
+                        `;
+                      })
                       .join("")
                   : renderEmptyTableRow(
-                      6,
+                      7,
                       "No orders yet",
                       "Orders will appear here after customers complete checkout or the API creates them."
                     )
@@ -809,7 +843,138 @@ export function renderShopOrdersPage(orders, errorMessage = "") {
   setStatus(errorMessage ? "Orders could not be loaded." : `${orders.length} orders loaded.`);
 }
 
-export function renderShopConfigurationPage(config) {
+function paymentProviderConfig(providers, provider) {
+  return providers.find((item) => item.provider === provider) || {
+    provider,
+    mode: "SANDBOX",
+    enabled: false,
+    ready: false,
+    canEnable: false,
+    missingFields: []
+  };
+}
+
+function providerStatus(config) {
+  if (config.enabled) return '<span class="status-pill success">Enabled</span>';
+  if (config.lastTestSucceeded === false) return '<span class="status-pill error">Test failed</span>';
+  if (config.lastTestSucceeded === true) return '<span class="status-pill">Ready</span>';
+  return '<span class="status-pill">Disabled</span>';
+}
+
+function secretField({ name, label, configured, placeholder, clearName }) {
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+      <input type="password" name="${escapeHtml(name)}" autocomplete="new-password" spellcheck="false" placeholder="${escapeHtml(configured ? "Configured - leave blank to keep" : placeholder)}" />
+    </label>
+    ${configured
+      ? `<label class="payment-clear-secret"><input type="checkbox" name="${escapeHtml(clearName)}" /> <span>Remove saved ${escapeHtml(label.toLowerCase())}</span></label>`
+      : ""}
+  `;
+}
+
+function providerModeControl(config) {
+  return `
+    <fieldset class="payment-mode-control">
+      <legend>Environment</legend>
+      <label><input type="radio" name="mode" value="SANDBOX" ${config.mode !== "LIVE" ? "checked" : ""} /><span>Sandbox</span></label>
+      <label><input type="radio" name="mode" value="LIVE" ${config.mode === "LIVE" ? "checked" : ""} /><span>Live</span></label>
+    </fieldset>
+  `;
+}
+
+function webhookEndpoint(url, events) {
+  return `
+    <div class="payment-webhook-box">
+      <div><span>Webhook endpoint</span><small>${escapeHtml(events)}</small></div>
+      <div class="payment-webhook-copy">
+        <input type="text" readonly value="${escapeHtml(url || "")}" aria-label="Webhook endpoint" />
+        <button type="button" class="secondary-button" data-copy-payment-webhook="${escapeHtml(url || "")}">Copy</button>
+      </div>
+    </div>
+  `;
+}
+
+function providerHealth(config) {
+  const tested = config.lastTestedAt
+    ? `${config.lastTestSucceeded ? "Connection passed" : "Connection failed"} ${formatDate(config.lastTestedAt)}`
+    : "Connection not tested";
+  const webhook = config.lastWebhookAt
+    ? `Last verified webhook ${formatDate(config.lastWebhookAt)}`
+    : "No verified webhook received";
+
+  return `
+    <div class="payment-provider-health">
+      <span>${escapeHtml(tested)}</span>
+      <span>${escapeHtml(webhook)}</span>
+      ${config.lastTestMessage ? `<small>${escapeHtml(config.lastTestMessage)}</small>` : ""}
+    </div>
+  `;
+}
+
+function renderStripeProvider(config, webhookUrl, canUpdate) {
+  return `
+    <article class="admin-card payment-provider-card">
+      <header><div><p class="section-label">Card payments</p><h3>Stripe</h3></div>${providerStatus(config)}</header>
+      <form class="settings-form payment-provider-form" data-payment-provider-form="STRIPE"
+        data-current-mode="${escapeHtml(config.mode || "SANDBOX")}" data-current-public-key="${escapeHtml(config.publishableKey || "")}">
+        ${providerModeControl(config)}
+        <label><span>Publishable key</span><input name="publishableKey" spellcheck="false" autocomplete="off" value="${escapeHtml(config.publishableKey || "")}" placeholder="pk_test_..." /></label>
+        ${secretField({ name: "secretKey", label: "Secret key", configured: config.secretKeyConfigured, placeholder: "sk_test_...", clearName: "clearSecretKey" })}
+        ${secretField({ name: "webhookSecret", label: "Webhook signing secret", configured: config.webhookSecretConfigured, placeholder: "whsec_...", clearName: "clearWebhookSecret" })}
+        ${webhookEndpoint(webhookUrl, "payment_intent.succeeded, payment_intent.payment_failed, payment_intent.canceled, charge.refunded")}
+        ${providerHealth(config)}
+        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} ${!config.enabled && !config.canEnable ? "disabled" : ""} /><span>Accept new Stripe payments</span></label>
+        <p class="form-message" data-form-message>${config.canEnable || config.enabled ? "Configuration is ready." : "Save credentials and run a successful connection test before enabling."}</p>
+        ${canUpdate ? `<div class="payment-provider-actions"><button type="button" class="secondary-button" data-test-payment-provider="STRIPE" ${!config.ready ? "disabled" : ""}>Test connection</button><button type="submit">Save Stripe</button></div>` : ""}
+      </form>
+    </article>
+  `;
+}
+
+function renderPayPalProvider(config, webhookUrl, canUpdate) {
+  return `
+    <article class="admin-card payment-provider-card">
+      <header><div><p class="section-label">Wallet payments</p><h3>PayPal</h3></div>${providerStatus(config)}</header>
+      <form class="settings-form payment-provider-form" data-payment-provider-form="PAYPAL"
+        data-current-mode="${escapeHtml(config.mode || "SANDBOX")}" data-current-client-id="${escapeHtml(config.clientId || "")}" data-current-webhook-id="${escapeHtml(config.webhookId || "")}">
+        ${providerModeControl(config)}
+        <label><span>Client ID</span><input name="clientId" spellcheck="false" autocomplete="off" value="${escapeHtml(config.clientId || "")}" /></label>
+        ${secretField({ name: "clientSecret", label: "Client secret", configured: config.clientSecretConfigured, placeholder: "PayPal client secret", clearName: "clearClientSecret" })}
+        <label><span>Webhook ID</span><input name="webhookId" spellcheck="false" autocomplete="off" value="${escapeHtml(config.webhookId || "")}" placeholder="Webhook ID from PayPal" /></label>
+        ${webhookEndpoint(webhookUrl, "PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, CHECKOUT.ORDER.VOIDED, PAYMENT.CAPTURE.REFUNDED")}
+        ${providerHealth(config)}
+        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} ${!config.enabled && !config.canEnable ? "disabled" : ""} /><span>Accept new PayPal payments</span></label>
+        <p class="form-message" data-form-message>${config.canEnable || config.enabled ? "Configuration is ready." : "Save credentials and run a successful connection test before enabling."}</p>
+        ${canUpdate ? `<div class="payment-provider-actions"><button type="button" class="secondary-button" data-test-payment-provider="PAYPAL" ${!config.ready ? "disabled" : ""}>Test connection</button><button type="submit">Save PayPal</button></div>` : ""}
+      </form>
+    </article>
+  `;
+}
+
+function renderManualProvider(config, canUpdate) {
+  return `
+    <article class="admin-card payment-provider-card payment-provider-card-manual">
+      <header><div><p class="section-label">Offline payments</p><h3>Manual</h3></div>${providerStatus(config)}</header>
+      <form class="settings-form payment-provider-form" data-payment-provider-form="MANUAL">
+        <label><span>Customer instructions</span><textarea name="instructions" rows="4" placeholder="Bank transfer or payment-on-delivery instructions">${escapeHtml(config.instructions || "Contact us to arrange payment.")}</textarea></label>
+        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} /><span>Offer manual payment at checkout</span></label>
+        <p class="form-message" data-form-message>Manual payments remain pending until an authorized user marks the order paid.</p>
+        ${canUpdate ? '<div class="payment-provider-actions"><button type="submit">Save manual payment</button></div>' : ""}
+      </form>
+    </article>
+  `;
+}
+
+export function renderShopConfigurationPage(config, paymentConfig = {}, errorMessage = "") {
+  const providers = paymentConfig.providers || [];
+  const urls = paymentConfig.webhookUrls || {};
+  const stripe = paymentProviderConfig(providers, "STRIPE");
+  const paypal = paymentProviderConfig(providers, "PAYPAL");
+  const manual = paymentProviderConfig(providers, "MANUAL");
+  const canRead = hasPermission("read", "payments");
+  const canUpdate = hasPermission("update", "payments");
+
   renderShopShell(
     "shop-configuration",
     `
@@ -823,6 +988,17 @@ export function renderShopConfigurationPage(config) {
             )
           )
         })}
+      </section>
+      <section class="admin-section payment-configuration-section">
+        <div class="section-heading-row"><div><p class="section-label">Checkout</p><h2>Payment providers</h2><p class="dashboard-copy">Credentials are encrypted and stored for this site. Saved secrets are never displayed again.</p></div></div>
+        ${errorMessage ? `<p class="form-message error">Payment settings are not available: ${escapeHtml(errorMessage)}</p>` : ""}
+        ${canRead && !errorMessage
+          ? `<div class="payment-provider-grid">
+              ${renderStripeProvider(stripe, urls.stripe, canUpdate)}
+              ${renderPayPalProvider(paypal, urls.paypal, canUpdate)}
+              ${renderManualProvider(manual, canUpdate)}
+            </div>`
+          : !errorMessage ? '<p class="form-message error">You do not have permission to view payment settings.</p>' : ""}
       </section>
     `
   );
@@ -1061,7 +1237,7 @@ export function renderSettingsPage(config) {
               </div>
               <div class="translation-help">
                 <strong>Deployment rule</strong>
-                <span>The platform may reuse the same S3 endpoint, bucket, and connection for many websites. It must generate a different <code>STORAGE_KEY_PREFIX</code> for every copied runtime, such as <code>sites/paiqi-metal</code>.</span>
+                <span>The platform may reuse the same S3 endpoint, bucket, and connection for many websites. It must generate a different <code>STORAGE_KEY_PREFIX</code> for every copied runtime, such as <code>sites/client-site</code>.</span>
               </div>
             </div>
           </section>

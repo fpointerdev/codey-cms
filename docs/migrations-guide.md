@@ -38,6 +38,12 @@ Full local validation:
 pnpm run validate
 ```
 
+## Existing `db push` Databases
+
+The development Compose stack uses `db push` and does not create Prisma migration history. Do not promote that database or run production `migrate deploy` against it. Use a fresh migrated database for staging/production, or create and verify a deliberate Prisma baseline after taking a backup.
+
+Production containers run `db:deploy` and expect either an empty database or an existing database already managed by these committed migrations.
+
 ## Current Migrations
 
 ### `20260611000000_initial`
@@ -157,6 +163,29 @@ Forward deploy notes:
 Rollback notes:
 
 - Restore from backup if domain records were created or verified after deploy.
+
+### `20260711000000_payment_provider_configuration`
+
+Purpose:
+
+- Adds site-scoped Stripe, PayPal, and manual payment configuration.
+- Stores public provider identifiers separately from encrypted write-only credentials.
+- Tracks provider connection tests and verified webhook health.
+
+Risk:
+
+- Medium to high for shop deployments. Existing manual payment records are unchanged, but new provider configuration requires `CMS_CREDENTIAL_ENCRYPTION_KEY`.
+
+Forward deploy notes:
+
+- Back up `CMS_CREDENTIAL_ENCRYPTION_KEY` before accepting provider credentials.
+- Deploy the migration before saving payment settings in the dashboard.
+- Configure and test sandbox mode before entering live credentials.
+
+Rollback notes:
+
+- Disable online providers before rolling back.
+- Reconcile pending payments with Stripe or PayPal and retain the encryption key with the database backup.
 
 ## Clean Clone Migration Smoke
 

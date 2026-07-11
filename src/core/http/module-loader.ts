@@ -1,6 +1,7 @@
-import { Router, type Express } from "express";
+import { Router, type Express, type NextFunction, type Request, type Response } from "express";
 import { Prisma } from "@prisma/client";
 import { moduleCatalog } from "../../modules/manifest.js";
+import { AppError } from "../errors/app-error.js";
 import type { AppModule, ModuleContext, ModuleId } from "../types/module.js";
 
 const moduleIds = new Set(Object.keys(moduleCatalog));
@@ -100,21 +101,75 @@ export async function loadModules(
   const apiRouter = Router();
   const loadedModules: string[] = [];
   const enabledModuleIds = await resolveEnabledModuleIds(modules, context);
+  const availableModuleIds = removeModulesWithMissingDependencies(
+    resolveConfigEnabledModules(modules, context),
+    context
+  );
 
   for (const module of modules) {
-    if (!enabledModuleIds.has(module.id)) {
-      context.logger.info({ module: module.id }, "Module disabled");
+    if (!availableModuleIds.has(module.id)) {
+      context.logger.info({ module: module.id }, "Module is not included in this deployment profile");
       continue;
     }
 
     const router = Router();
+    if (!moduleCatalog[module.id].required) {
+      router.use(createRuntimeModuleGate(module, context));
+    }
     await module.register(router, context);
     apiRouter.use(module.basePath, router);
-    loadedModules.push(module.id);
-    context.logger.info({ module: module.id, basePath: module.basePath }, "Module loaded");
+
+    if (enabledModuleIds.has(module.id)) {
+      loadedModules.push(module.id);
+      context.logger.info({ module: module.id, basePath: module.basePath }, "Module loaded");
+    } else {
+      context.logger.info({ module: module.id, basePath: module.basePath }, "Disabled module routes mounted behind runtime gate");
+    }
   }
 
   app.use(context.config.api.prefix, apiRouter);
 
   return loadedModules;
+}
+
+function createRuntimeModuleGate(module: AppModule, context: ModuleContext) {
+  return async function runtimeModuleGate(
+    _req: Request,
+    _res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const installedModules = await context.prisma.installedModule.findMany({
+        where: {
+          site: { slug: "default" }
+        },
+        select: {
+          moduleId: true,
+          status: true
+        }
+      });
+      const installedModule = installedModules.find((item) => item.moduleId === module.id);
+      const enabled = installedModules.length === 0
+        ? module.enabled(context.config)
+        : installedModule?.status === "ENABLED";
+
+      if (!enabled) {
+        next(new AppError(404, "module_disabled", `${moduleCatalog[module.id].label} module is disabled.`));
+        return;
+      }
+
+      next();
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
+        if (module.enabled(context.config)) {
+          next();
+        } else {
+          next(new AppError(404, "module_disabled", `${moduleCatalog[module.id].label} module is disabled.`));
+        }
+        return;
+      }
+
+      next(error);
+    }
+  };
 }

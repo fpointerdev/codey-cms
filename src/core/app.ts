@@ -4,7 +4,9 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { Prisma } from "@prisma/client";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
@@ -16,9 +18,16 @@ import { notFoundHandler } from "./http/not-found.middleware.js";
 import { requestContext } from "./http/request-context.middleware.js";
 import { prisma } from "../infrastructure/database/prisma.js";
 import { logger } from "../infrastructure/logging/logger.js";
+import { createStorageAdapter } from "../infrastructure/storage/s3-storage.js";
+import type { StorageAdapter } from "../infrastructure/storage/storage.types.js";
 import { modules } from "../modules/index.js";
 import { CmsService } from "../modules/cms/cms.service.js";
-import { localizedPath, normalizeLocale } from "../modules/localization/localization.service.js";
+import {
+  isOptimizableImageKey,
+  optimizedImageStorageKey,
+  requestedImageWidth
+} from "../modules/cms/media-optimizer.js";
+import { localizedPath, normalizeLocale, readLocalizationSettings } from "../modules/localization/localization.service.js";
 
 function normalizeOrigin(origin: string | undefined) {
   if (!origin) return undefined;
@@ -138,16 +147,37 @@ function createRateLimiter(
 }
 
 function createHelmetOptions() {
+  const openerPolicy = config.features.payments
+    ? "same-origin-allow-popups" as const
+    : "same-origin" as const;
+  const stripeScriptSources = [
+    "https://js.stripe.com",
+    "https://*.js.stripe.com",
+    "https://maps.googleapis.com"
+  ];
+  const stripeFrameSources = [
+    "https://js.stripe.com",
+    "https://*.js.stripe.com",
+    "https://hooks.stripe.com"
+  ];
   const contentSecurityPolicyDirectives = {
     "img-src": ["'self'", "data:", "blob:", "https:"],
-    "frame-src": ["'self'", "blob:"],
-    "child-src": ["'self'", "blob:"],
+    "script-src": ["'self'", ...(config.features.payments ? stripeScriptSources : [])],
+    "connect-src": [
+      "'self'",
+      ...(config.features.payments ? ["https://api.stripe.com", "https://maps.googleapis.com"] : [])
+    ],
+    "frame-src": ["'self'", "blob:", ...(config.features.payments ? stripeFrameSources : [])],
+    "child-src": ["'self'", "blob:", ...(config.features.payments ? stripeFrameSources : [])],
     ...(config.env === "production" ? {} : { "upgrade-insecure-requests": null })
   };
 
   return {
     contentSecurityPolicy: {
       directives: contentSecurityPolicyDirectives
+    },
+    crossOriginOpenerPolicy: {
+      policy: openerPolicy
     }
   };
 }
@@ -155,6 +185,7 @@ function createHelmetOptions() {
 type SeoMeta = {
   title: string;
   description: string;
+  htmlLang: string;
   canonicalUrl?: string;
   imageUrl?: string;
   noindex?: boolean;
@@ -201,28 +232,43 @@ function looksLikeLocale(value: string | undefined) {
   return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(value || "");
 }
 
-function publicContentRouteFromRequest(req: Request): PublicContentRoute {
+function htmlLangFromLocale(locale: string) {
+  return normalizeLocale(locale);
+}
+
+type RouteLocalizationSettings = Awaited<ReturnType<typeof readLocalizationSettings>>;
+
+function isConfiguredRouteLocale(value: string | undefined, localization?: RouteLocalizationSettings) {
+  if (!looksLikeLocale(value)) return false;
+  if (!localization) return true;
+  if (!localization.enabled) return false;
+
+  return localization.locales.some((locale) => locale.enabled !== false && locale.code === normalizeLocale(value));
+}
+
+function publicContentRouteFromRequest(req: Request, localization?: RouteLocalizationSettings): PublicContentRoute {
   const querySlug = firstQueryValue(req.query.slug);
   const parts = req.path
     .replace(/^\/+|\/+$/g, "")
     .split("/")
     .filter(Boolean)
     .map((part) => decodeURIComponent(part));
-  let locale = "en";
+  let locale = normalizeLocale(localization?.defaultLocale || "en");
 
-  if (looksLikeLocale(parts[0])) locale = normalizeLocale(parts.shift());
+  if (isConfiguredRouteLocale(parts[0], localization)) locale = normalizeLocale(parts.shift());
   if (parts[0] === "posts" && parts[1]) return { type: "post", slug: parts.slice(1).join("/"), locale };
   if (parts[0] === "product" && parts[1]) return { type: "product", slug: parts.slice(1).join("/"), locale };
 
   return { type: "page", slug: querySlug || parts.join("/") || "home", locale };
 }
 
-function localizedResourcePath(prefix: string, slug: string, locale: string) {
+function localizedResourcePath(prefix: string, slug: string, locale: string, defaultLocale = "en") {
   const localeCode = normalizeLocale(locale);
+  const defaultLocaleCode = normalizeLocale(defaultLocale);
   const normalizedSlug = slug.replace(/^\/+|\/+$/g, "");
   const path = `/${prefix}/${encodeSlugPath(normalizedSlug)}`;
 
-  return localeCode === "en" ? path : `/${localeCode}${path}`;
+  return localeCode === defaultLocaleCode ? path : `/${localeCode}${path}`;
 }
 
 export function shouldRenderPublicShell(path: string, copiedRuntimeEnabled = true) {
@@ -302,7 +348,12 @@ function visiblePublishedWhere(slug: string, locale: string) {
   };
 }
 
-async function resolvePostSeo(route: Extract<PublicContentRoute, { type: "post" }>, origin: string, site: Awaited<ReturnType<typeof readSiteSeoDefaults>>) {
+async function resolvePostSeo(
+  route: Extract<PublicContentRoute, { type: "post" }>,
+  origin: string,
+  site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
+  defaultLocale: string
+) {
   const post = await prisma.cmsPost.findFirst({
     where: visiblePublishedWhere(route.slug, route.locale),
     select: {
@@ -320,13 +371,19 @@ async function resolvePostSeo(route: Extract<PublicContentRoute, { type: "post" 
   return {
     title: post.metaTitle || post.title || site.title || config.app.name,
     description: post.metaDescription || post.excerpt || site.description || "Published article.",
-    canonicalUrl: `${origin}${localizedResourcePath("posts", post.slug, post.locale)}`,
+    htmlLang: htmlLangFromLocale(post.locale),
+    canonicalUrl: `${origin}${localizedResourcePath("posts", post.slug, post.locale, defaultLocale)}`,
     imageUrl: readSeoImage(post.seo ?? null),
     noindex: site.noindex
   };
 }
 
-async function resolveProductSeo(route: Extract<PublicContentRoute, { type: "product" }>, origin: string, site: Awaited<ReturnType<typeof readSiteSeoDefaults>>) {
+async function resolveProductSeo(
+  route: Extract<PublicContentRoute, { type: "product" }>,
+  origin: string,
+  site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
+  defaultLocale: string
+) {
   const product = await prisma.product.findFirst({
     where: {
       slug: route.slug,
@@ -358,7 +415,8 @@ async function resolveProductSeo(route: Extract<PublicContentRoute, { type: "pro
   return {
     title: product.metaTitle || product.name || site.title || config.app.name,
     description: product.metaDescription || product.description || site.description || "Product details.",
-    canonicalUrl: `${origin}${localizedResourcePath("product", product.slug, product.locale)}`,
+    htmlLang: htmlLangFromLocale(product.locale),
+    canonicalUrl: `${origin}${localizedResourcePath("product", product.slug, product.locale, defaultLocale)}`,
     imageUrl: readSeoImage(product.seo ?? null) || product.images[0]?.url,
     noindex: site.noindex
   };
@@ -369,24 +427,29 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
     return {
       title: "Code Epsylon Admin",
       description: "Code Epsylon administration console.",
+      htmlLang: "en",
       noindex: true
     };
   }
 
   const fallbackOrigin = requestOrigin(req).replace(/\/+$/g, "");
-  const route = publicContentRouteFromRequest(req);
+  let route = publicContentRouteFromRequest(req);
 
   try {
-    const site = await readSiteSeoDefaults();
+    const [site, localization] = await Promise.all([
+      readSiteSeoDefaults(),
+      readLocalizationSettings(prisma)
+    ]);
+    route = publicContentRouteFromRequest(req, localization);
     const origin = (site.publicBaseUrl || fallbackOrigin).replace(/\/+$/g, "");
 
     if (route.type === "post") {
-      const postMeta = await resolvePostSeo(route, origin, site);
+      const postMeta = await resolvePostSeo(route, origin, site, localization.defaultLocale);
       if (postMeta) return postMeta;
     }
 
     if (route.type === "product") {
-      const productMeta = await resolveProductSeo(route, origin, site);
+      const productMeta = await resolveProductSeo(route, origin, site, localization.defaultLocale);
       if (productMeta) return productMeta;
     }
 
@@ -404,11 +467,12 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
           }
         })
       : null;
-    const path = page ? localizedPath(page.slug, page.locale) : "/";
+    const path = page ? localizedPath(page.slug, page.locale, localization.defaultLocale) : "/";
 
     return {
       title: page?.metaTitle || page?.title || site.title || config.app.name,
       description: page?.metaDescription || page?.excerpt || site.description || "Modular project foundation.",
+      htmlLang: htmlLangFromLocale(page?.locale || route.locale),
       canonicalUrl: `${origin}${path}`,
       imageUrl: readSeoImage(page?.seo ?? null),
       noindex: site.noindex
@@ -418,6 +482,7 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
       return {
         title: config.app.name,
         description: "Modular project foundation.",
+        htmlLang: htmlLangFromLocale(route.locale),
         canonicalUrl: `${fallbackOrigin}/`
       };
     }
@@ -426,12 +491,14 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
     return {
       title: config.app.name,
       description: "Modular project foundation.",
+      htmlLang: htmlLangFromLocale(route.locale),
       canonicalUrl: `${fallbackOrigin}/`
     };
   }
 }
 
 function injectSeoMeta(html: string, meta: SeoMeta) {
+  const htmlLang = escapeHtml(meta.htmlLang || "en");
   const tags = [
     `<title>${escapeHtml(meta.title)}</title>`,
     `<meta name="description" content="${escapeHtml(meta.description)}" />`,
@@ -446,8 +513,13 @@ function injectSeoMeta(html: string, meta: SeoMeta) {
   ].filter(Boolean).join("\n    ");
 
   return html
-    .replace(/\n\s*<meta name="description" content="[^"]*" \/>/i, "")
-    .replace(/<title>.*?<\/title>/, tags);
+    .replace(/<html\b[^>]*>/i, (tag) => {
+      if (/\slang=(["']).*?\1/i.test(tag)) return tag.replace(/\slang=(["']).*?\1/i, ` lang="${htmlLang}"`);
+
+      return tag.replace(/<html\b/i, `<html lang="${htmlLang}"`);
+    })
+    .replace(/\n?\s*<meta\s+name=(["'])description\1[^>]*\/?>/gis, "")
+    .replace(/<title>.*?<\/title>/is, tags);
 }
 
 function createAppShellRenderer(webRoot: string) {
@@ -479,6 +551,149 @@ function createStaticShellRenderer(root: string) {
   };
 }
 
+function normalizeUploadStorageKey(value = "") {
+  try {
+    const key = decodeURIComponent(value).replace(/^\/+/, "");
+    const keyParts = key.split("/");
+    const keyPrefix = config.storage.keyPrefix.replace(/^\/+|\/+$/g, "");
+
+    if (!key || keyParts.includes("..")) return "";
+    if (keyPrefix && key !== keyPrefix && !key.startsWith(`${keyPrefix}/`)) return "";
+
+    return key;
+  } catch {
+    return "";
+  }
+}
+
+function createS3UploadProxy() {
+  const storage = createStorageAdapter(config.storage);
+
+  return async function proxyS3Upload(req: Request, res: Response, next: NextFunction) {
+    try {
+      const key = normalizeUploadStorageKey(req.params[0] || "");
+      if (!key) {
+        res.status(404).end();
+        return;
+      }
+
+      if (await serveOptimizedUpload(req, res, storage, key)) {
+        return;
+      }
+
+      const storageResponse = await fetchStorageObject(storage, key);
+      if (!storageResponse.ok) {
+        res.status(storageResponse.status === 404 ? 404 : 502).end();
+        return;
+      }
+
+      await sendStorageResponse(res, storageResponse);
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+function createLocalUploadVariantProxy(root: string) {
+  return async function proxyLocalUploadVariant(req: Request, res: Response, next: NextFunction) {
+    try {
+      const key = normalizeUploadStorageKey(req.params[0] || "");
+      const width = requestedImageWidth(req.query.w, config.storage.imageVariantWidths);
+      if (!key || !width || !acceptsWebp(req) || !isOptimizableImageKey(key)) {
+        next();
+        return;
+      }
+
+      const variantPath = resolve(root, optimizedImageStorageKey(key, width));
+      const relativePath = relative(root, variantPath);
+      if (!relativePath || relativePath === ".." || relativePath.startsWith("../") || isAbsolute(relativePath)) {
+        next();
+        return;
+      }
+
+      try {
+        await sendBufferResponse(res, await readFile(variantPath), "image/webp", true);
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+          next();
+          return;
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+function acceptsWebp(req: Request) {
+  return /\bimage\/webp\b/i.test(req.header("accept") || "");
+}
+
+async function fetchStorageObject(storage: StorageAdapter, key: string) {
+  const download = await storage.createDownloadUrl(key);
+
+  return fetch(download.url);
+}
+
+function setPublicUploadCacheHeaders(res: Response, varyAccept = false) {
+  if (varyAccept) res.setHeader("vary", "Accept");
+  res.setHeader("cache-control", "public, max-age=31536000, immutable");
+}
+
+async function sendBufferResponse(
+  res: Response,
+  body: Buffer,
+  contentType: string | null | undefined,
+  varyAccept = false
+) {
+  if (contentType) res.type(contentType);
+  res.setHeader("content-length", String(body.byteLength));
+  setPublicUploadCacheHeaders(res, varyAccept);
+  res.send(body);
+}
+
+async function sendStorageResponse(res: Response, storageResponse: globalThis.Response, varyAccept = false) {
+  const contentType = storageResponse.headers.get("content-type");
+  const contentLength = storageResponse.headers.get("content-length");
+
+  if (contentType) res.type(contentType);
+  if (contentLength) res.setHeader("content-length", contentLength);
+  setPublicUploadCacheHeaders(res, varyAccept);
+
+  if (!storageResponse.body) {
+    res.end();
+    return;
+  }
+
+  await new Promise<void>((resolveStream, rejectStream) => {
+    const stream = Readable.fromWeb(storageResponse.body! as unknown as NodeReadableStream<Uint8Array>);
+
+    stream.on("error", rejectStream);
+    res.on("error", rejectStream);
+    res.on("finish", resolveStream);
+    stream.pipe(res);
+  });
+}
+
+async function serveOptimizedUpload(req: Request, res: Response, storage: StorageAdapter, key: string) {
+  if (!acceptsWebp(req) || !isOptimizableImageKey(key)) return false;
+
+  const width = requestedImageWidth(req.query.w, config.storage.imageVariantWidths);
+  if (!width) return false;
+
+  const variantKey = optimizedImageStorageKey(key, width);
+  const variantResponse = await fetchStorageObject(storage, variantKey);
+
+  if (variantResponse.ok) {
+    await sendStorageResponse(res, variantResponse, true);
+    return true;
+  }
+
+  return false;
+}
+
 export async function createApp() {
   const app = express();
   const webRoot = resolve(process.cwd(), "apps/web");
@@ -495,6 +710,9 @@ export async function createApp() {
   app.use(cors(createCorsOptions()));
   app.use(compression());
   app.use(cookieParser());
+  app.use(config.api.prefix, createApiLimiter());
+  app.use(`${config.api.prefix}/auth`, createAuthLimiter());
+  app.use(`${config.api.prefix}/config/modules`, createAdminWriteLimiter());
   app.use(express.json({
     limit: config.storage.requestBodyLimit,
     verify: (req, _res, buffer) => {
@@ -520,7 +738,10 @@ export async function createApp() {
     app.use(express.static(webRoot, { index: false }));
   }
   if (config.storage.driver === "local") {
+    app.get("/uploads/*", createLocalUploadVariantProxy(localStorageRoot));
     app.use("/uploads", express.static(localStorageRoot, { dotfiles: "deny", index: false }));
+  } else if (config.storage.driver === "s3") {
+    app.get("/uploads/*", createS3UploadProxy());
   }
   app.get("/favicon.ico", (_req, res) => {
     res.status(204).end();
@@ -529,9 +750,6 @@ export async function createApp() {
   if (copiedRuntimeEnabled) {
     app.get(["/cy-admin", "/auth/reset-password", "/dashboard", "/dashboard/*"], renderAppShell);
   }
-  app.use(config.api.prefix, createApiLimiter());
-  app.use(`${config.api.prefix}/auth`, createAuthLimiter());
-  app.use(`${config.api.prefix}/config/modules`, createAdminWriteLimiter());
 
   const loadedModules = await loadModules(app, modules, {
     config,

@@ -12,7 +12,7 @@ Use this checklist before a generated site is published.
 - `EMAIL_DRIVER=http` is configured for auth recovery and shop notifications.
 - `STORAGE_DRIVER=s3` is enabled for production media.
 - `STORAGE_KEY_PREFIX` is unique per customer site.
-- Payment webhook secrets are unique per copied site.
+- `CMS_CREDENTIAL_ENCRYPTION_KEY` is unique, backed up, and stored in the platform secret manager.
 
 ## Content And Access
 
@@ -25,11 +25,15 @@ Use this checklist before a generated site is published.
 ## Payments
 
 - Checkout prices are calculated server-side.
-- Stock is reserved in the order transaction.
-- Stripe webhooks use `PAYMENT_STRIPE_WEBHOOK_SECRET`.
-- PayPal adapter webhooks use `PAYMENT_PAYPAL_WEBHOOK_SECRET`.
-- Legacy `PAYMENTS_WEBHOOK_SECRET` is used only for platform/manual payment webhooks.
+- Stock is reserved in the order transaction and unpaid reservations expire after 30 minutes.
+- Cancellation, abandonment, expiry, and failed payment release stock and coupon usage atomically.
+- Provider credentials are configured through the authenticated dashboard and never returned by read APIs.
+- Stripe and PayPal remain disabled until required credentials are saved and the connection test succeeds.
+- Stripe webhook signatures use the raw request body and enforce replay tolerance.
+- PayPal webhook signatures are verified with PayPal using the configured webhook ID.
+- Provider webhook endpoints use HTTPS and subscribe only to the documented payment events.
 - Payment status changes are idempotent through `providerEventId`.
+- Provider amount and currency must match the stored server-side order before payment succeeds.
 
 ## Launch
 

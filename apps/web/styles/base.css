@@ -172,6 +172,16 @@ button:disabled {
   padding: 48px 32px 96px;
 }
 
+body:not(.auth-enabled):not(.dashboard-enabled) .page-shell {
+  min-height: calc(100vh - 68px);
+  min-height: calc(100svh - 68px);
+}
+
+body:not(.auth-enabled):not(.dashboard-enabled) [data-page]:empty {
+  min-height: calc(100vh - 68px);
+  min-height: calc(100svh - 68px);
+}
+
 .page-status {
   min-height: 24px;
   margin-bottom: 16px;

@@ -21,10 +21,15 @@ async function buildAndValidate(env = process.env) {
   await run("pnpm", ["exec", "prisma", "validate", "--schema", "prisma/generated/schema.prisma"], env);
 }
 
-await buildAndValidate();
-await buildAndValidate({ ...process.env, PRISMA_SCHEMA_MODULES: "cms" });
-await buildAndValidate({ ...process.env, PRISMA_SCHEMA_MODULES: "payments" });
-await buildAndValidate({ ...process.env, PRISMA_SCHEMA_MODULES: "all" });
+const validationEnv = {
+  ...process.env,
+  DATABASE_URL: process.env.DATABASE_URL ?? "postgresql://codey:codey@127.0.0.1:5432/codey_validation"
+};
+
+await buildAndValidate(validationEnv);
+await buildAndValidate({ ...validationEnv, PRISMA_SCHEMA_MODULES: "cms" });
+await buildAndValidate({ ...validationEnv, PRISMA_SCHEMA_MODULES: "payments" });
+await buildAndValidate({ ...validationEnv, PRISMA_SCHEMA_MODULES: "all" });
 
 const shadowDatabaseUrl = process.env.MIGRATION_SHADOW_DATABASE_URL ?? process.env.SHADOW_DATABASE_URL;
 
@@ -41,7 +46,7 @@ if (shadowDatabaseUrl) {
     "--shadow-database-url",
     shadowDatabaseUrl,
     "--exit-code"
-  ]);
+  ], validationEnv);
 } else {
   console.warn("Skipping migration diff: MIGRATION_SHADOW_DATABASE_URL is not set.");
 }

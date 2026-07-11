@@ -16,7 +16,7 @@ Codey is the runtime base. The later selling/deployment platform can copy this r
 - Optional localization is controlled by the `localization` module and `ModuleSetting`, not by `.env`.
 - Media is stored through the storage adapter and referenced by `MediaAsset`.
 - Shop checkout uses server-side products, variants, shipping, coupons, tax, and order totals.
-- Payment providers must call signed normalized webhook endpoints before order payment state changes.
+- Enabled payment methods come from `/api/v1/payments/providers/public`; Stripe and PayPal credentials are site-owned dashboard settings and manual state changes require payment-management permission.
 
 ## What A Generated Theme May Change
 
@@ -54,37 +54,7 @@ The platform should refine the customer prompt into a strict `WebsiteSpec`.
 4. Use `dryRun: true` before writing real content.
 5. Run validation and a browser smoke test before publish.
 
-Fixture specs live in `fixtures/website-specs/`.
-
-Run the local generation contract check before publishing generated output:
-
-```bash
-pnpm run generation:simulate
-```
-
-The simulation validates fixture specs, deployment profile selection, module resolution, navigation targets, generated block types, product references, media placeholders, SEO metadata, and gallery block shape.
-
-Run the copied-runtime check before trusting a base change for generated client projects:
-
-```bash
-pnpm run generation:simulate:copy
-```
-
-This copies Codey to a temporary runtime, installs dependencies offline, verifies `presentation`, `cms`, and `shop` profiles, generates Prisma schema/client output, runs typecheck/build, checks matching WebsiteSpec fixtures, and runs the admin SPA smoke tests. The DB-backed deploy/seed/apply smoke also boots each copied runtime and runs HTTP plus Playwright browser smoke tests. It requires an existing PostgreSQL database source.
-
-To include DB-backed migration/seed/apply/server/browser smoke against isolated schemas derived from an existing local test database URL:
-
-```bash
-CODEY_COPIED_RUNTIME_DB_SMOKE=true \
-CODEY_COPIED_RUNTIME_DATABASE_URL_SOURCE=TEST_DATABASE_URL \
-pnpm run generation:simulate:copy
-```
-
-Use `CODEY_COPIED_RUNTIME_DATABASE_URL_TEMPLATE` with `{profile}` and `{run}` placeholders when a platform or CI runner provisions separate databases per profile.
-
-Use `CODEY_COPIED_RUNTIME_DATABASE_URL_SOURCE=DATABASE_URL` for a local development check when the dedicated test database does not exist. Do not point this at production.
-
-Use `CODEY_COPIED_RUNTIME_BROWSER_SMOKE=false` only when browser binaries are intentionally unavailable. A release candidate should keep the browser smoke enabled.
+Run `pnpm validate`, validate the WebsiteSpec with `dryRun: true`, then perform a browser smoke test before publishing generated output.
 
 ## Builder Registry Contract
 
@@ -150,6 +120,15 @@ Site settings:
 - Store title, description, meta title, and meta description through settings APIs.
 - Keep module configuration in the database, not in client-side code.
 - Store localization settings through `/api/v1/config/modules/localization/settings`.
+
+Payments:
+
+- Render only providers returned by `GET /api/v1/payments/providers/public`.
+- Create the server-side order before calling `POST /api/v1/payments/intent`.
+- Use Stripe's returned publishable key and client secret only in the checkout client.
+- Send same-origin or explicitly allowed `returnUrl` and `cancelUrl` values for PayPal, redirect to `approveUrl`, then call `POST /api/v1/payments/paypal/capture` after approval.
+- Never mark an order paid from browser state; wait for the capture response or a verified provider webhook.
+- Reuse an idempotency key when retrying the same intent request.
 
 ## Example: Presentation Site
 

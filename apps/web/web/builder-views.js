@@ -322,6 +322,7 @@ function renderBuilderBlock(block) {
         <div><strong>${escapeHtml(block.label || block.key)}</strong><span>${escapeHtml(block.type.replace("_", " "))}</span></div>
         <span class="builder-drag-handle" aria-hidden="true">Drag</span>
         ${block.editable ? '<button type="button" class="secondary-button" data-builder-edit-block>Edit</button>' : ""}
+        <button type="button" class="secondary-button danger" data-delete-builder-block aria-label="Delete ${escapeHtml(block.label || block.key)}">Delete</button>
       </header>
       <div class="builder-block-preview"${styleAttribute(block.settings?.customCss)}>${renderBlock(block)}</div>
     </article>
@@ -399,6 +400,7 @@ function renderBuilderSections(page) {
               </button>
               <button type="button" class="secondary-button" data-add-element-to-section="${escapeHtml(section.id)}">Add element</button>
               <button type="button" class="secondary-button" data-edit-builder-section>Settings</button>
+              <button type="button" class="secondary-button danger" data-delete-builder-section aria-label="Delete ${escapeHtml(section.label || section.key)}">Delete</button>
             </div>
           </header>
           <div class="builder-block-list ${escapeHtml(builderSectionLayoutClasses(section))}" data-builder-dropzone data-section-id="${escapeHtml(section.id)}">

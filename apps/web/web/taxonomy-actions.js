@@ -1,6 +1,19 @@
-import { api, setStatus, slugFromTitle } from "./core.js";
+import { api, setStatus, slugFromTitle, state } from "./core.js";
 import { loadAdminRoute } from "./controller.js";
 import { getModalFormHandler } from "./modal.js";
+
+function activeAdminLocale() {
+  const queryLocale = new URLSearchParams(window.location.search || "").get("locale");
+
+  return String(queryLocale || state.config?.localization?.defaultLocale || "en").toLowerCase();
+}
+
+function withLocale(path) {
+  const locale = activeAdminLocale();
+  const separator = path.includes("?") ? "&" : "?";
+
+  return `${path}${separator}locale=${encodeURIComponent(locale)}`;
+}
 
 function categoryFields(category = {}) {
   return [
@@ -33,6 +46,7 @@ function categoryPayload(values) {
   return {
     name: values.name,
     slug: slugFromTitle(values.slug || values.name),
+    locale: activeAdminLocale(),
     description: values.description || "",
     sortOrder: Number.parseInt(values.sortOrder || "0", 10) || 0
   };
@@ -63,7 +77,7 @@ async function confirmDelete(title, name) {
 }
 
 export async function savePostCategory(slug = "") {
-  const { categories } = await api("/cms/categories");
+  const { categories } = await api(withLocale("/cms/categories"));
   const category = categories.find((item) => item.slug === slug) || {};
   const values = await getModalFormHandler()({
     label: "Post category",
@@ -73,7 +87,7 @@ export async function savePostCategory(slug = "") {
   });
   if (!values) return;
 
-  await api(slug ? `/cms/categories/${encodeURIComponent(slug)}` : "/cms/categories", {
+  await api(slug ? withLocale(`/cms/categories/${encodeURIComponent(slug)}`) : withLocale("/cms/categories"), {
     method: slug ? "PATCH" : "POST",
     body: JSON.stringify(categoryPayload(values))
   });
@@ -82,17 +96,17 @@ export async function savePostCategory(slug = "") {
 }
 
 export async function deletePostCategory(slug) {
-  const { categories } = await api("/cms/categories");
+  const { categories } = await api(withLocale("/cms/categories"));
   const category = categories.find((item) => item.slug === slug);
   if (!category || !await confirmDelete("Delete post category", category.name)) return;
 
-  await api(`/cms/categories/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  await api(withLocale(`/cms/categories/${encodeURIComponent(slug)}`), { method: "DELETE" });
   await loadAdminRoute({ view: "post-categories" });
   setStatus("Post category deleted.");
 }
 
 export async function saveProductCategory(slug = "") {
-  const { categories } = await api("/products/categories");
+  const { categories } = await api(withLocale("/products/categories"));
   const category = categories.find((item) => item.slug === slug) || {};
   const values = await getModalFormHandler()({
     label: "Product category",
@@ -102,7 +116,7 @@ export async function saveProductCategory(slug = "") {
   });
   if (!values) return;
 
-  await api(slug ? `/products/categories/${encodeURIComponent(slug)}` : "/products/categories", {
+  await api(slug ? withLocale(`/products/categories/${encodeURIComponent(slug)}`) : withLocale("/products/categories"), {
     method: slug ? "PATCH" : "POST",
     body: JSON.stringify(categoryPayload(values))
   });
@@ -111,17 +125,17 @@ export async function saveProductCategory(slug = "") {
 }
 
 export async function deleteProductCategory(slug) {
-  const { categories } = await api("/products/categories");
+  const { categories } = await api(withLocale("/products/categories"));
   const category = categories.find((item) => item.slug === slug);
   if (!category || !await confirmDelete("Delete product category", category.name)) return;
 
-  await api(`/products/categories/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  await api(withLocale(`/products/categories/${encodeURIComponent(slug)}`), { method: "DELETE" });
   await loadAdminRoute({ view: "shop-categories" });
   setStatus("Product category deleted.");
 }
 
 export async function saveProductAttribute(slug = "") {
-  const { attributes } = await api("/products/attributes");
+  const { attributes } = await api(withLocale("/products/attributes"));
   const attribute = attributes.find((item) => item.slug === slug) || {};
   const values = await getModalFormHandler()({
     label: "Product attribute",
@@ -131,7 +145,7 @@ export async function saveProductAttribute(slug = "") {
   });
   if (!values) return;
 
-  await api(slug ? `/products/attributes/${encodeURIComponent(slug)}` : "/products/attributes", {
+  await api(slug ? withLocale(`/products/attributes/${encodeURIComponent(slug)}`) : withLocale("/products/attributes"), {
     method: slug ? "PATCH" : "POST",
     body: JSON.stringify(attributePayload(values))
   });
@@ -140,12 +154,11 @@ export async function saveProductAttribute(slug = "") {
 }
 
 export async function deleteProductAttribute(slug) {
-  const { attributes } = await api("/products/attributes");
+  const { attributes } = await api(withLocale("/products/attributes"));
   const attribute = attributes.find((item) => item.slug === slug);
   if (!attribute || !await confirmDelete("Delete product attribute", attribute.name)) return;
 
-  await api(`/products/attributes/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  await api(withLocale(`/products/attributes/${encodeURIComponent(slug)}`), { method: "DELETE" });
   await loadAdminRoute({ view: "shop-attributes" });
   setStatus("Product attribute deleted.");
 }
-

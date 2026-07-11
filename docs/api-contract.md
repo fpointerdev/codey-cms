@@ -102,6 +102,8 @@ Core permissions include:
 - `update:products`
 - `read:orders`
 - `update:orders`
+- `read:payments`
+- `update:payments`
 - `read:modules`
 - `manage:modules`
 - `read:audit`
@@ -125,35 +127,12 @@ Stable `/api/v1` endpoint families:
 - `cms`: pages, posts, sections, blocks, revisions, menus, redirects, media, forms, sitemap, robots.
 - `products`: catalog, product media, options, variants.
 - `orders`: orders, carts, checkout, shipping, tax, coupons, order notifications.
-- `payments`: payment intents and signed normalized webhooks.
+- `payments`: site payment-provider configuration, public provider discovery, Stripe intents, PayPal orders/capture, manual settlement, and verified idempotent webhooks.
 - `health`: liveness, readiness, metrics.
 
-## Machine-Readable Contract
+## Contract Source
 
-The committed OpenAPI inventory lives at [`docs/openapi.json`](./openapi.json).
-
-Regenerate it after any route change:
-
-```bash
-pnpm run api:contract
-```
-
-CI checks drift with:
-
-```bash
-pnpm run api:contract:check
-```
-
-The generator scans the Express route files and records:
-
-- mounted `/api/v1` paths
-- HTTP methods
-- auth requirements
-- `requirePermission` action/subject metadata
-- `validateRequest` Zod schema names for params, query, and body
-- standard success/error response envelopes
-
-Current limitation: request schemas are referenced by Zod schema name and emitted as placeholder JSON schemas. Full Zod-to-JSON-Schema conversion is intentionally deferred until the API surface is more stable, so payload-level shape checks still live in the Zod schemas and route tests.
+Express route files and their referenced Zod schemas are the current executable API contract. This repository does not currently generate or commit an OpenAPI document.
 
 ## Compatibility Checklist
 
@@ -165,7 +144,7 @@ Before changing an existing `/api/v1` endpoint, verify:
 - Auth and permission requirements are unchanged or explicitly documented.
 - Public visibility rules still block drafts, archived records, and private data.
 - Generated-site contract docs are updated when CMS, media, shop, config, or auth behavior changes.
-- `pnpm run api:contract` was run and `docs/openapi.json` changed only as expected.
+- `pnpm validate` passes and focused route/service tests cover the changed behavior.
 - Existing route/contract tests either stay green or the change moves to `/api/v2`.
 
 ## Contract Tests

@@ -1,4 +1,4 @@
-import { api, defaultPage, elements, modulesEnabled, setRuntimeConfig, setStatus, state } from "./core.js";
+import { api, defaultPage, elements, moduleEnabled, modulesEnabled, setRuntimeConfig, setStatus, state } from "./core.js";
 import { currentAdminRoute, currentLocale, pageSlug, publicPostRoute, publicShopRoute } from "./routes.js";
 import { loadMenu } from "./content-actions.js";
 import { renderPage, renderPost } from "./public-renderer.js";
@@ -151,10 +151,13 @@ export async function loadAdminRoute(route) {
   if (route.view === "shop-orders") {
     const { renderShopOrdersPage } = await adminViews();
     try {
-      const { orders } = await api("/orders");
-      renderShopOrdersPage(orders);
+      const [{ orders }, paymentResponse] = await Promise.all([
+        api("/orders"),
+        moduleEnabled("payments") ? api("/payments") : Promise.resolve({ payments: [] })
+      ]);
+      renderShopOrdersPage(orders, paymentResponse.payments || []);
     } catch (error) {
-      renderShopOrdersPage([], error.message || "Unable to load orders.");
+      renderShopOrdersPage([], [], error.message || "Unable to load orders.");
     }
     return;
   }
@@ -183,7 +186,17 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "shop-configuration") {
     const { renderShopConfigurationPage } = await adminViews();
-    renderShopConfigurationPage(await api("/config"));
+    const config = await api("/config");
+    if (!moduleEnabled("payments")) {
+      renderShopConfigurationPage(config, {}, "Payments module is disabled for this project.");
+      return;
+    }
+
+    try {
+      renderShopConfigurationPage(config, await api("/payments/providers"));
+    } catch (error) {
+      renderShopConfigurationPage(config, {}, error.message || "Unable to load payment settings.");
+    }
     return;
   }
 
@@ -240,7 +253,7 @@ export async function loadAdminRoute(route) {
   if (route.view === "post-categories") {
     const { renderPostCategoriesPage } = await adminViews();
     try {
-      const { categories } = await api("/cms/categories");
+      const { categories } = await api(adminLocaleUrl("/cms/categories"));
       renderPostCategoriesPage(categories);
     } catch (error) {
       renderPostCategoriesPage([], error.message || "Unable to load post categories.");

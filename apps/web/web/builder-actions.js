@@ -16,6 +16,7 @@ import {
   editContentBlock,
   loadMediaImageAssets,
   optionalFormValue,
+  uploadedGalleryItemFiles,
   uploadedGalleryItems
 } from "./content-actions.js";
 import {
@@ -29,7 +30,8 @@ import {
 } from "./slider-config.js";
 import {
   advancedSettingsFromValues,
-  animationEffectOptions
+  animationEffectOptions,
+  sanitizeAnimationSettings
 } from "./custom-css.js";
 
 const containerLayoutOptions = [
@@ -377,6 +379,7 @@ function sectionControlFields(section = {}) {
   const responsive = settings.responsive || {};
   const tablet = responsive.tablet || {};
   const mobile = responsive.mobile || {};
+  const animation = sanitizeAnimationSettings(settings.animation || {});
 
   return [
     { name: "label", label: "Container label", value: section.label || section.key || "", group: "Layout" },
@@ -558,15 +561,16 @@ function sectionControlFields(section = {}) {
       name: "animationEffect",
       label: "Animation",
       type: "select",
-      value: settings.animation?.effect || "none",
+      value: animation.effect,
       options: animationEffectOptions,
+      required: false,
       group: "Motion"
     },
     {
       name: "animationDuration",
       label: "Duration ms",
       type: "number",
-      value: settings.animation?.durationMs ?? 700,
+      value: animation.durationMs,
       min: 120,
       max: 3000,
       step: 50,
@@ -577,7 +581,7 @@ function sectionControlFields(section = {}) {
       name: "animationDelay",
       label: "Delay ms",
       type: "number",
-      value: settings.animation?.delayMs ?? 0,
+      value: animation.delayMs,
       min: 0,
       max: 5000,
       step: 50,
@@ -922,6 +926,56 @@ export async function reorderBuilderBlock(blockKey, targetSectionId, beforeBlock
   }
 }
 
+export async function deleteBuilderSection(sectionId) {
+  if (!state.builderPage || !sectionId) return;
+
+  const sections = [...(state.builderPage.sections || [])];
+  const section = sections.find((item) => item.id === sectionId);
+  if (!section) return;
+
+  const blockCount = section.blocks?.length || 0;
+  const message = blockCount
+    ? `Delete "${section.label || "this container"}" and its ${blockCount} element${blockCount === 1 ? "" : "s"}?`
+    : `Delete "${section.label || "this container"}"?`;
+  if (typeof window !== "undefined" && !window.confirm(message)) return;
+
+  const nextSections = sections.filter((item) => item.id !== sectionId);
+  const nextActiveSection = nextSections.find((item) => item.id === state.activeBuilderSectionId) || nextSections[0];
+
+  try {
+    await saveBuilderSections(nextSections, "Container deleted.", nextActiveSection?.key || "");
+  } catch (error) {
+    setStatus(error.message || "Unable to delete container.", true);
+  }
+}
+
+export async function deleteBuilderBlock(blockKey) {
+  if (!state.builderPage || !blockKey) return;
+
+  let deletedBlock = null;
+  let activeSectionKey = "";
+  const sections = (state.builderPage.sections || []).map((section) => {
+    const blocks = [...(section.blocks || [])];
+    const blockIndex = blocks.findIndex((block) => block.key === blockKey);
+
+    if (blockIndex >= 0) {
+      [deletedBlock] = blocks.splice(blockIndex, 1);
+      activeSectionKey = section.key;
+    }
+
+    return { ...section, blocks };
+  });
+  if (!deletedBlock) return;
+
+  if (typeof window !== "undefined" && !window.confirm(`Delete "${deletedBlock.label || "this element"}"?`)) return;
+
+  try {
+    await saveBuilderSections(sections, "Element deleted.", activeSectionKey);
+  } catch (error) {
+    setStatus(error.message || "Unable to delete element.", true);
+  }
+}
+
 export async function editBuilderSection(sectionId) {
   if (!state.builderPage || !sectionId) return;
 
@@ -1011,7 +1065,14 @@ async function prepareTemplateBlock(templateBlock, section, index) {
   });
   if (!values) return null;
 
-  const sliderValue = sliderValueFromModal(values, templateBlock.value, await uploadedGalleryItems(values.slides?.files));
+  const existingSlides = await uploadedGalleryItemFiles(values.slides?.existing, "Slider image");
+  const sliderValue = sliderValueFromModal({
+    ...values,
+    slides: {
+      ...(values.slides || {}),
+      existing: existingSlides
+    }
+  }, templateBlock.value, await uploadedGalleryItems(values.slides?.files));
   if (!sliderSlides(sliderValue).length) {
     setStatus("Upload at least one image for the slider.", true);
     return null;

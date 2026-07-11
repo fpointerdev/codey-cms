@@ -239,12 +239,96 @@ function safePublicHref(value = "") {
   return safeRichHref(value);
 }
 
+function encodePathSegment(segment) {
+  return encodeURIComponent(segment).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+function uploadPathForStorageKey(key = "") {
+  const cleanKey = String(key || "").replace(/^\/+/, "");
+  if (!cleanKey || cleanKey.split("/").includes("..")) return "";
+
+  return `/uploads/${cleanKey.split("/").map(encodePathSegment).join("/")}`;
+}
+
+function decodedStorageKey(key = "") {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return key;
+  }
+}
+
+function uploadPathForS3Url(src = "") {
+  const value = String(src || "").trim();
+  if (!/^s3:\/\//i.test(value)) return "";
+
+  const bucketAndKey = value.replace(/^s3:\/\//i, "");
+  const slashIndex = bucketAndKey.indexOf("/");
+  const key = slashIndex >= 0 ? bucketAndKey.slice(slashIndex + 1) : "";
+
+  return uploadPathForStorageKey(decodedStorageKey(key));
+}
+
+function uploadPathForConfiguredStorageUrl(src = "") {
+  const publicBaseUrl = String(state.config?.storage?.publicBaseUrl || "").replace(/\/+$/g, "");
+  if (!publicBaseUrl || !src.startsWith(`${publicBaseUrl}/`)) return "";
+
+  return uploadPathForStorageKey(decodedStorageKey(src.slice(publicBaseUrl.length + 1)));
+}
+
 function safeMediaSrc(value = "") {
   const src = String(value || "").trim();
+  if (!src) return "";
+
+  const s3Src = uploadPathForS3Url(src);
+  if (s3Src) return s3Src;
+
+  const configuredStorageSrc = uploadPathForConfiguredStorageUrl(src);
+  if (configuredStorageSrc) return configuredStorageSrc;
+
   if (/^(https?:\/\/|\/|\.\/)/i.test(src)) return src;
   if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,[a-z0-9+/=]+$/i.test(src)) return src;
 
   return "";
+}
+
+function responsiveImageWidths() {
+  const configuredWidths = state.config?.storage?.imageVariantWidths;
+
+  if (!Array.isArray(configuredWidths)) return [320, 640, 1200];
+
+  const widths = configuredWidths
+    .map(Number)
+    .filter((width) => Number.isInteger(width) && width >= 160 && width <= 2400);
+
+  return widths.length ? [...new Set(widths)].sort((left, right) => left - right) : [320, 640, 1200];
+}
+
+function isUploadedImageSrc(src = "") {
+  const cleanSrc = String(src || "").split("?")[0] || "";
+
+  return /\/uploads\//.test(cleanSrc) && /\.(png|jpe?g|webp)$/i.test(cleanSrc);
+}
+
+function imageVariantSrc(src, width) {
+  return `${src}${src.includes("?") ? "&" : "?"}w=${width}`;
+}
+
+function imageSizesForContext(context = "") {
+  if (/gallery|card|structured/.test(context)) return "(max-width: 760px) 92vw, 34vw";
+
+  return "(max-width: 760px) 92vw, 50vw";
+}
+
+function renderImageTag(src, alt = "", context = "section-image", className = "") {
+  const widths = responsiveImageWidths();
+  const responsiveAttrs = isUploadedImageSrc(src)
+    ? ` srcset="${escapeHtml(widths.map((width) => `${imageVariantSrc(src, width)} ${width}w`).join(", "))}" sizes="${escapeHtml(imageSizesForContext(context))}"`
+    : "";
+
+  return `<img${className ? ` class="${escapeHtml(className)}"` : ""} src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${responsiveAttrs} loading="lazy" decoding="async" />`;
 }
 
 function isRecord(value) {
@@ -286,7 +370,7 @@ function renderStructuredImage(image, fallbackAlt = "") {
 
   return `
     <figure class="structured-media">
-      <img class="block-image" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />
+      ${renderImageTag(src, alt, "structured-media", "block-image")}
       ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ""}
     </figure>
   `;
@@ -723,7 +807,7 @@ export function renderBlock(block) {
     const src = safeMediaSrc(image.url || image.src);
     if (!src) return '<div class="fallback-content">Image source is not available.</div>';
 
-    return `<img class="block-image" src="${escapeHtml(src)}" alt="${escapeHtml(image.alt || block.label || "")}" />`;
+    return renderImageTag(src, image.alt || block.label || "", "section-image", "block-image");
   }
 
   if (block.type === "GALLERY") {
@@ -750,7 +834,7 @@ export function renderBlock(block) {
             .map((item, index) => {
               const src = safeMediaSrc(item.url);
               if (!src) return "";
-              const image = `<img class="block-image" src="${escapeHtml(src)}" alt="${escapeHtml(item.alt || `Gallery image ${index + 1}`)}" />`;
+              const image = renderImageTag(src, item.alt || `Gallery image ${index + 1}`, "gallery-block", "block-image");
               const href = item.link ? safePublicHref(item.link) : settings.lightbox ? src : "";
 
               return `
@@ -792,7 +876,7 @@ export function renderBlock(block) {
                 const src = safeMediaSrc(item.url);
                 return src
                   ? `<figure class="slider-slide ${index === 0 ? "active" : ""}">
-                      <img class="block-image" src="${escapeHtml(src)}" alt="${escapeHtml(item.alt || `Slide ${index + 1}`)}" />
+                      ${renderImageTag(src, item.alt || `Slide ${index + 1}`, "gallery-block", "block-image")}
                     </figure>`
                   : "";
               })

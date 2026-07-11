@@ -6,7 +6,7 @@ import { readLocalizationSettings } from "./localization.service.js";
 export const localizationModule: AppModule = {
   id: "localization",
   basePath: "/localization",
-  enabled: () => false,
+  enabled: (config) => config.features.cms,
   register: (router, context) => {
     router.get(
       "/",

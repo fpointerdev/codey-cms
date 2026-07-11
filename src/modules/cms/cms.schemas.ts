@@ -65,7 +65,7 @@ const contentBlockTypeSchema = z.enum([
 
 const sectionSettingsSchema = z.object({
   template: z
-    .enum(["hero", "content", "gallery", "products", "contact", "custom"])
+    .enum(["hero", "content", "gallery", "products", "contact", "custom", "section-pattern"])
     .default("custom"),
   layout: z
     .enum(["one-column", "two-column", "three-column", "four-column", "sidebar-left", "sidebar-right", "full-bleed", "asymmetric"])

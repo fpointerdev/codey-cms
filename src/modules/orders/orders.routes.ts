@@ -1,4 +1,5 @@
 import type { Router } from "express";
+import rateLimit from "express-rate-limit";
 import type { ModuleContext } from "../../core/types/module.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
@@ -26,15 +27,46 @@ import {
   createCart,
   createOrder,
   getCart,
-  lookupOrder
+  lookupOrder,
+  releaseExpiredOrderReservations,
+  releaseOrderInventoryReservation
 } from "./checkout.service.js";
 import { deliverQueuedOrderEmails, queueOrderEmail } from "./order-email.service.js";
 
+function createCheckoutLimiter() {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 60,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({
+        success: false,
+        data: null,
+        error: {
+          code: "checkout_rate_limit_exceeded",
+          message: "Too many checkout requests. Please try again later."
+        },
+        meta: null
+      });
+    }
+  });
+}
+
 export function registerOrderRoutes(router: Router, context: ModuleContext) {
+  const checkoutLimiter = createCheckoutLimiter();
+  const cleanupTimer = setInterval(() => {
+    void releaseExpiredOrderReservations(context).catch((error) => {
+      context.logger.error({ err: error }, "Unable to release expired order reservations");
+    });
+  }, 60_000);
+  cleanupTimer.unref();
+
   router.get(
     "/",
     requirePermission(context, "read", "orders"),
     asyncHandler(async (_req, res) => {
+      await releaseExpiredOrderReservations(context);
       const orders = await context.prisma.order.findMany({
         orderBy: { createdAt: "desc" },
         include: { items: true, notifications: true },
@@ -47,6 +79,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/",
+    requirePermission(context, "update", "orders"),
     validateRequest({ body: createOrderSchema }),
     asyncHandler(async (req, res) => {
       const order = await createOrder(context, req.body);
@@ -68,6 +101,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/carts",
+    checkoutLimiter,
     validateRequest({ body: createCartSchema }),
     asyncHandler(async (req, res) => {
       const cart = await createCart(context, req.body);
@@ -88,6 +122,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/carts/:token/items",
+    checkoutLimiter,
     validateRequest({ params: cartTokenParams, body: addCartItemSchema }),
     asyncHandler(async (req, res) => {
       const cart = await addCartItem(context, req.params.token, req.body);
@@ -98,6 +133,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/carts/:token/checkout",
+    checkoutLimiter,
     validateRequest({ params: cartTokenParams, body: checkoutCartSchema }),
     asyncHandler(async (req, res) => {
       const order = await checkoutCart(context, req.params.token, req.body);
@@ -114,6 +150,16 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       const delivery = await deliverQueuedOrderEmails(context);
 
       return sendSuccess(res, { delivery });
+    })
+  );
+
+  router.post(
+    "/reservations/release-expired",
+    requirePermission(context, "update", "orders"),
+    asyncHandler(async (_req, res) => {
+      const released = await releaseExpiredOrderReservations(context);
+
+      return sendSuccess(res, { released });
     })
   );
 
@@ -230,10 +276,22 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     requirePermission(context, "update", "orders"),
     validateRequest({ params: orderIdParams, body: updateCheckoutStatusSchema }),
     asyncHandler(async (req, res) => {
-      const order = await context.prisma.order.update({
-        where: { id: req.params.id },
-        data: { checkoutStatus: req.body.checkoutStatus },
-        include: { items: true }
+      const order = await context.prisma.$transaction(async (tx) => {
+        if (req.body.checkoutStatus === "ABANDONED") {
+          const released = await releaseOrderInventoryReservation(tx, req.params.id);
+          if (released) {
+            return tx.order.findUniqueOrThrow({
+              where: { id: req.params.id },
+              include: { items: true }
+            });
+          }
+        }
+
+        return tx.order.update({
+          where: { id: req.params.id },
+          data: { checkoutStatus: req.body.checkoutStatus },
+          include: { items: true }
+        });
       });
 
       return sendSuccess(res, { order });
@@ -250,11 +308,19 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
           where: { id: req.params.id },
           include: { items: true }
         });
-        const updatedOrder = await tx.order.update({
-          where: { id: req.params.id },
-          data: { status: req.body.status },
-          include: { items: true }
-        });
+        const released = req.body.status === "CANCELLED"
+          ? await releaseOrderInventoryReservation(tx, req.params.id)
+          : false;
+        const updatedOrder = released
+          ? await tx.order.findUniqueOrThrow({
+              where: { id: req.params.id },
+              include: { items: true }
+            })
+          : await tx.order.update({
+              where: { id: req.params.id },
+              data: { status: req.body.status },
+              include: { items: true }
+            });
 
         if (currentOrder.status !== updatedOrder.status) {
           await queueOrderEmail(tx, updatedOrder, {
