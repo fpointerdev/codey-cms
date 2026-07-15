@@ -1038,7 +1038,10 @@ export function validateBuilderBlockContract(
   const pageSlug = options.pageSlug || "page";
   const sectionKey = options.sectionKey || "section";
   const label = blockLabel(pageSlug, sectionKey, block.key);
-  const registeredElement = builderElementById(options.elementId);
+  const blockElementId = hasText(block.settings?.elementId)
+    ? String(block.settings.elementId)
+    : options.elementId;
+  const registeredElement = builderElementById(blockElementId);
   const supportedTypes = new Set<string>(contentBlockTypes());
 
   if (!hasText(block.key)) {
@@ -1048,6 +1051,10 @@ export function validateBuilderBlockContract(
   if (!hasText(block.type)) {
     result.errors.push(issue("missing_block_type", `${label} has no block type.`));
     return result;
+  }
+
+  if (blockElementId && !registeredElement) {
+    result.errors.push(issue("unknown_block_element_id", `${label} references unknown builder element ${blockElementId}.`));
   }
 
   const blockType = block.type;
@@ -1116,7 +1123,7 @@ export function validateBuilderBlockContract(
 
     validateCustomElementValue(result, label, registeredElement?.id, customValue);
 
-    if (options.elementId === "structured-content" && isRecord(block.value) && Array.isArray(block.value.items) && block.value.items.length) {
+    if (blockElementId === "structured-content" && isRecord(block.value) && Array.isArray(block.value.items) && block.value.items.length) {
       result.warnings.push(issue("fallback_structured_content", `${label} custom items render as structured content but still need richer visual templates.`));
     }
   }

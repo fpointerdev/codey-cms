@@ -297,6 +297,27 @@ function modalFieldHtml(field) {
   }
 
   if (field.type === "file") {
+    if (field.imagePicker) {
+      const previewUrl = String(field.previewUrl || "").trim();
+      const previewAlt = field.previewAlt || field.label || "Selected image";
+
+      return `
+        <label class="gallery-image-picker modal-image-picker">
+          <span class="gallery-image-label">${escapeHtml(field.label)}</span>
+          <span class="gallery-image-preview" data-image-picker-preview>
+            ${
+              previewUrl
+                ? `<img src="${escapeHtml(previewUrl)}" alt="${escapeHtml(previewAlt)}" />`
+                : '<span class="gallery-accordion-placeholder" aria-hidden="true">Upload image</span>'
+            }
+          </span>
+          <span class="gallery-image-change">${previewUrl ? "&#9998;" : "Upload image"}</span>
+          <input name="${escapeHtml(field.name)}" type="file" accept="${escapeHtml(field.accept || "image/*")}"${required} data-image-picker-input />
+        </label>
+        ${help}
+      `;
+    }
+
     return `
       <label>
         <span>${escapeHtml(field.label)}</span>
@@ -372,7 +393,7 @@ function modalFieldHtml(field) {
   return `
     <label>
       <span>${escapeHtml(field.label)}</span>
-      <input name="${escapeHtml(field.name)}" type="${escapeHtml(field.type || "text")}" value="${escapeHtml(value)}"${numericAttrs ? ` ${numericAttrs}` : ""}${required} />
+      <input name="${escapeHtml(field.name)}" type="${escapeHtml(field.type || "text")}" value="${escapeHtml(value)}"${numericAttrs ? ` ${numericAttrs}` : ""}${field.readOnly ? " readonly" : ""}${required} />
       ${help}
     </label>
   `;
@@ -596,6 +617,18 @@ function updateGalleryImagePreview(input) {
   if (changeLabel) changeLabel.innerHTML = "&#9998;";
 }
 
+function updateImagePickerPreview(input) {
+  const file = Array.from(input.files || []).find((item) => item?.type?.startsWith("image/") && item.size);
+  const picker = input.closest(".gallery-image-picker");
+  const preview = picker?.querySelector?.("[data-image-picker-preview]");
+  const canPreviewImages = typeof URL !== "undefined" && typeof URL.createObjectURL === "function";
+  if (!file || !picker || !preview || !canPreviewImages) return;
+
+  preview.innerHTML = `<img src="${escapeHtml(URL.createObjectURL(file))}" alt="${escapeHtml(file.name || "Selected image")}" />`;
+  const changeLabel = picker.querySelector(".gallery-image-change");
+  if (changeLabel) changeLabel.innerHTML = "&#9998;";
+}
+
 function moveGalleryItem(item, direction) {
   const list = item.closest("[data-gallery-sort-list]");
   if (!list) return;
@@ -646,33 +679,41 @@ function revealInvalidControl(form) {
 
 function openModalForm(config) {
   return new Promise((resolveModal) => {
+    const fields = Array.isArray(config.fields) ? config.fields : [];
+    const previouslyFocused = document.activeElement;
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.innerHTML = `
-      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <section class="modal-panel${fields.length ? "" : " modal-panel-confirmation"}" role="dialog" aria-modal="true" aria-labelledby="modal-title"${config.description ? ' aria-describedby="modal-description"' : ""}>
         <form data-modal-form novalidate>
           <div class="modal-header">
             <div>
               <p class="section-label">${escapeHtml(config.label || "Editor")}</p>
               <h2 id="modal-title">${escapeHtml(config.title)}</h2>
-              ${config.description ? `<p>${escapeHtml(config.description)}</p>` : ""}
+              ${config.description ? `<p id="modal-description">${escapeHtml(config.description)}</p>` : ""}
             </div>
             <button type="button" class="modal-close" data-modal-cancel aria-label="Close">×</button>
           </div>
-          <div class="modal-body">
-            ${modalFieldsHtml(config.fields)}
-          </div>
+          ${fields.length ? `<div class="modal-body">${modalFieldsHtml(fields)}</div>` : ""}
           <div class="modal-actions">
             <button type="button" class="secondary-button" data-modal-cancel>Cancel</button>
-            <button type="submit">${escapeHtml(config.submitLabel || "Save")}</button>
+            <button type="submit"${config.destructive ? ' class="danger-button"' : ""}>${escapeHtml(config.submitLabel || "Save")}</button>
           </div>
         </form>
       </section>
     `;
 
     function close(result) {
+      document.removeEventListener("keydown", handleKeydown);
       modal.remove();
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
       resolveModal(result);
+    }
+
+    function handleKeydown(event) {
+      if (event.key === "Escape") close(null);
     }
 
     modal.addEventListener("click", (event) => {
@@ -697,7 +738,7 @@ function openModalForm(config) {
       const formData = new FormData(event.currentTarget);
       const values = {};
 
-      config.fields.forEach((field) => {
+      fields.forEach((field) => {
         if (field.type === "section") return;
 
         if (field.type === "gallery") {
@@ -723,6 +764,12 @@ function openModalForm(config) {
     });
 
     modal.addEventListener("change", (event) => {
+      const imagePickerInput = event.target.closest("[data-image-picker-input]");
+      if (imagePickerInput) {
+        updateImagePickerPreview(imagePickerInput);
+        return;
+      }
+
       const galleryImageInput = event.target.closest("[data-gallery-image-input]");
       if (galleryImageInput) {
         updateGalleryImagePreview(galleryImageInput);
@@ -788,9 +835,11 @@ function openModalForm(config) {
     });
 
     document.body.append(modal);
+    document.addEventListener("keydown", handleKeydown);
     modal.querySelectorAll("[data-gallery-sort-list]").forEach(renumberGalleryItems);
     hydrateRichEditors(modal);
-    modal.querySelector("input, textarea, select, button")?.focus();
+    const firstField = modal.querySelector(".modal-body input, .modal-body textarea, .modal-body select, .modal-body button");
+    (firstField || modal.querySelector('button[type="submit"]'))?.focus();
   });
 }
 

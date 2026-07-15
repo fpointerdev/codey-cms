@@ -1,26 +1,21 @@
 import type { Router } from "express";
-import type { PrismaClient } from "@prisma/client";
 import type { ModuleContext } from "../../core/types/module.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
 import { requirePermission } from "../auth/auth.middleware.js";
 import { createRoleSchema, roleIdParams, updateRoleSchema } from "./roles.schemas.js";
+import { roleInclude, RoleService } from "./roles.service.js";
 
-const roleInclude = {
-  permissions: {
-    include: {
-      permission: true
-    }
-  }
-} as const;
-
-type TransactionClient = Omit<
-  PrismaClient,
-  "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
->;
+function requestMeta(req: { header: (name: string) => string | undefined; ip?: string }) {
+  return {
+    userAgent: req.header("user-agent"),
+    ipAddress: req.ip
+  };
+}
 
 export function registerRoleRoutes(router: Router, context: ModuleContext) {
+  const roleService = new RoleService(context.prisma);
   router.get(
     "/permissions",
     requirePermission(context, "read", "roles"),
@@ -51,20 +46,9 @@ export function registerRoleRoutes(router: Router, context: ModuleContext) {
     requirePermission(context, "create", "roles"),
     validateRequest({ body: createRoleSchema }),
     asyncHandler(async (req, res) => {
-      const { permissionIds, ...roleData } = req.body as {
-        name: string;
-        description?: string;
-        permissionIds: string[];
-      };
-
-      const role = await context.prisma.role.create({
-        data: {
-          ...roleData,
-          permissions: {
-            create: permissionIds.map((permissionId) => ({ permissionId }))
-          }
-        },
-        include: roleInclude
+      const role = await roleService.create(req.body, {
+        actor: req.user!,
+        ...requestMeta(req)
       });
 
       return sendCreated(res, { role });
@@ -76,29 +60,9 @@ export function registerRoleRoutes(router: Router, context: ModuleContext) {
     requirePermission(context, "update", "roles"),
     validateRequest({ params: roleIdParams, body: updateRoleSchema }),
     asyncHandler(async (req, res) => {
-      const { permissionIds, ...roleData } = req.body as {
-        name?: string;
-        description?: string;
-        permissionIds?: string[];
-      };
-
-      const role = await context.prisma.$transaction(async (tx: TransactionClient) => {
-        if (permissionIds) {
-          await tx.rolePermission.deleteMany({ where: { roleId: req.params.id } });
-          await tx.rolePermission.createMany({
-            data: permissionIds.map((permissionId) => ({
-              roleId: req.params.id,
-              permissionId
-            })),
-            skipDuplicates: true
-          });
-        }
-
-        return tx.role.update({
-          where: { id: req.params.id },
-          data: roleData,
-          include: roleInclude
-        });
+      const role = await roleService.update(req.params.id, req.body, {
+        actor: req.user!,
+        ...requestMeta(req)
       });
 
       return sendSuccess(res, { role });

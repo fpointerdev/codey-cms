@@ -5,6 +5,14 @@ import { renderAdminLogin } from "./ui.js";
 import { optionalFormValue } from "./content-actions.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
 
+function storeSession(user, tokens) {
+  state.token = tokens.accessToken;
+  state.refreshToken = tokens.refreshToken;
+  state.user = user;
+  localStorage.setItem("cms_access_token", state.token);
+  localStorage.setItem("cms_refresh_token", state.refreshToken);
+}
+
 export async function loadUser() {
   if (!state.token) return null;
 
@@ -65,11 +73,7 @@ export async function loginAdmin(form) {
       body: JSON.stringify({ email, password })
     });
 
-    state.token = tokens.accessToken;
-    state.refreshToken = tokens.refreshToken;
-    state.user = user;
-    localStorage.setItem("cms_access_token", state.token);
-    localStorage.setItem("cms_refresh_token", state.refreshToken);
+    storeSession(user, tokens);
     window.history.pushState({}, "", "/dashboard");
     const { bootstrap } = await import("./controller.js");
     await bootstrap();
@@ -155,6 +159,54 @@ export async function confirmPasswordReset(form) {
     renderAdminLogin("Password reset. Sign in with your new password.");
   } catch (error) {
     setFormMessage(form, error.message || "Unable to reset password.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function acceptUserInvite(form) {
+  const formData = new FormData(form);
+  const token = String(formData.get("token") || "").trim();
+  const name = String(formData.get("name") || "").trim();
+  const password = String(formData.get("password") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (password !== confirmPassword) {
+    setFormMessage(form, "Passwords do not match.", true);
+    return;
+  }
+
+  setFormDisabled(form, true);
+  setFormMessage(form, "Creating your account...");
+
+  try {
+    const { user, tokens } = await api("/auth/invites/accept", {
+      method: "POST",
+      body: JSON.stringify({ token, name, password })
+    });
+    storeSession(user, tokens);
+    window.history.pushState({}, "", "/dashboard");
+    const { bootstrap } = await import("./controller.js");
+    await bootstrap();
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to accept this invitation.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function confirmEmailVerification(form) {
+  const token = String(new FormData(form).get("token") || "").trim();
+  setFormDisabled(form, true);
+  setFormMessage(form, "Verifying email...");
+
+  try {
+    await api("/auth/email-verification/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token })
+    });
+    window.history.pushState({}, "", "/cy-admin");
+    renderAdminLogin("Email verified. You can now sign in.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to verify this email.", true);
     setFormDisabled(form, false);
   }
 }

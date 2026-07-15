@@ -6,7 +6,6 @@ import {
   addLocaleRow,
   addMenuItem,
   addSection,
-  createUserInvite,
   editBlock,
   editFooter,
   editMenuItem,
@@ -31,28 +30,44 @@ import {
   createPostTranslation,
   deleteBuilderBlock,
   deleteBuilderSection,
+  duplicateBuilderBlock,
+  duplicateBuilderSection,
   editBuilderBlock,
   editBuilderSection,
   insertTemplateIntoPost,
   linkExistingPageTranslation,
   linkExistingPostTranslation,
   loadPageRevisions,
+  moveBuilderBlock,
+  moveBuilderSection,
   openOrCreatePageTranslation,
   openOrCreatePostTranslation,
   reorderBuilderBlock,
   reorderBuilderSection,
+  redoBuilderChange,
   restorePageRevision,
   savePageBuilderSettings,
-  savePostEditor
+  savePostEditor,
+  undoBuilderChange
 } from "./builder-actions.js";
 import { insertIntoTextarea, refreshRichPreview } from "./builder-views.js";
 import {
+  acceptUserInvite,
+  confirmEmailVerification,
   confirmPasswordReset,
   loginAdmin,
   logoutAdmin,
   requestPasswordResetFromLogin,
   submitContactForm
 } from "./session-actions.js";
+import {
+  createUserInvite,
+  deleteUser,
+  filterUsers,
+  resendUserInvite,
+  revokeUserInvite,
+  updateUser
+} from "./user-actions.js";
 import {
   addRepeaterRow,
   copyPaymentWebhook,
@@ -128,6 +143,34 @@ function bindSubmitEvents() {
     if (resetForm) {
       event.preventDefault();
       void confirmPasswordReset(resetForm);
+      return;
+    }
+
+    const inviteAcceptanceForm = event.target.closest("[data-invite-acceptance-form]");
+    if (inviteAcceptanceForm) {
+      event.preventDefault();
+      void acceptUserInvite(inviteAcceptanceForm);
+      return;
+    }
+
+    const emailVerificationForm = event.target.closest("[data-email-verification-form]");
+    if (emailVerificationForm) {
+      event.preventDefault();
+      void confirmEmailVerification(emailVerificationForm);
+      return;
+    }
+
+    const userFilterForm = event.target.closest("[data-user-filter-form]");
+    if (userFilterForm) {
+      event.preventDefault();
+      void filterUsers(userFilterForm);
+      return;
+    }
+
+    const userEditForm = event.target.closest("[data-user-edit-form]");
+    if (userEditForm) {
+      event.preventDefault();
+      void updateUser(userEditForm);
       return;
     }
 
@@ -285,6 +328,35 @@ function bindBuilderClick(event) {
     return true;
   }
 
+  const previewDeviceButton = event.target.closest("button[data-builder-preview-device]");
+  if (previewDeviceButton?.dataset.builderPreviewDevice) {
+    const device = previewDeviceButton.dataset.builderPreviewDevice;
+    if (!["desktop", "tablet", "mobile"].includes(device)) return true;
+
+    state.builderPreviewDevice = device;
+    const builder = previewDeviceButton.closest("[data-page-builder]");
+    const canvas = builder?.querySelector?.("[data-builder-canvas-dropzone]");
+    if (canvas) canvas.dataset.builderPreviewDevice = device;
+    builder?.querySelectorAll?.("[data-builder-preview-device]").forEach((button) => {
+      const active = button.dataset.builderPreviewDevice === device;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    return true;
+  }
+
+  if (event.target.closest("[data-builder-undo]")) {
+    event.preventDefault();
+    void undoBuilderChange();
+    return true;
+  }
+
+  if (event.target.closest("[data-builder-redo]")) {
+    event.preventDefault();
+    void redoBuilderChange();
+    return true;
+  }
+
   const editSlugButton = event.target.closest("[data-edit-slug]");
   if (editSlugButton) {
     const field = editSlugButton.closest("[data-slug-field]");
@@ -406,6 +478,22 @@ function bindBuilderClick(event) {
     return true;
   }
 
+  const sectionDuplicateButton = event.target.closest("[data-duplicate-builder-section]");
+  const duplicatedSection = sectionDuplicateButton?.closest("[data-builder-section]");
+  if (duplicatedSection?.dataset.builderSection) {
+    event.preventDefault();
+    void duplicateBuilderSection(duplicatedSection.dataset.builderSection);
+    return true;
+  }
+
+  const sectionMoveButton = event.target.closest("[data-move-builder-section]");
+  const movedSection = sectionMoveButton?.closest("[data-builder-section]");
+  if (movedSection?.dataset.builderSection) {
+    event.preventDefault();
+    void moveBuilderSection(movedSection.dataset.builderSection, sectionMoveButton.dataset.moveBuilderSection);
+    return true;
+  }
+
   const sectionDeleteButton = event.target.closest("[data-delete-builder-section]");
   const deletedSection = sectionDeleteButton?.closest("[data-builder-section]");
   if (deletedSection?.dataset.builderSection) {
@@ -419,6 +507,22 @@ function bindBuilderClick(event) {
   if (deletedBlock?.dataset.builderBlockKey) {
     event.preventDefault();
     void deleteBuilderBlock(deletedBlock.dataset.builderBlockKey);
+    return true;
+  }
+
+  const blockDuplicateButton = event.target.closest("[data-duplicate-builder-block]");
+  const duplicatedBlock = blockDuplicateButton?.closest("[data-builder-block-key]");
+  if (duplicatedBlock?.dataset.builderBlockKey) {
+    event.preventDefault();
+    void duplicateBuilderBlock(duplicatedBlock.dataset.builderBlockKey);
+    return true;
+  }
+
+  const blockMoveButton = event.target.closest("[data-move-builder-block]");
+  const movedBlock = blockMoveButton?.closest("[data-builder-block-key]");
+  if (movedBlock?.dataset.builderBlockKey) {
+    event.preventDefault();
+    void moveBuilderBlock(movedBlock.dataset.builderBlockKey, blockMoveButton.dataset.moveBuilderBlock);
     return true;
   }
 
@@ -479,6 +583,24 @@ function bindAdminClick(event) {
 
   if (event.target.closest("[data-invite-user]")) {
     void createUserInvite();
+    return true;
+  }
+
+  const deleteUserButton = event.target.closest("[data-delete-user]");
+  if (deleteUserButton?.dataset.deleteUser) {
+    void deleteUser(deleteUserButton.dataset.deleteUser, deleteUserButton.dataset.userEmail);
+    return true;
+  }
+
+  const resendInviteButton = event.target.closest("[data-resend-user-invite]");
+  if (resendInviteButton?.dataset.resendUserInvite) {
+    void resendUserInvite(resendInviteButton.dataset.resendUserInvite, resendInviteButton.dataset.inviteEmail);
+    return true;
+  }
+
+  const revokeInviteButton = event.target.closest("[data-revoke-user-invite]");
+  if (revokeInviteButton?.dataset.revokeUserInvite) {
+    void revokeUserInvite(revokeInviteButton.dataset.revokeUserInvite, revokeInviteButton.dataset.inviteEmail);
     return true;
   }
 
@@ -790,6 +912,37 @@ function bindFilePreviewEvents() {
   });
 }
 
+function bindBuilderControlEvents() {
+  elements.page.addEventListener("change", (event) => {
+    const containerSelect = event.target.closest("[data-move-builder-block-section]");
+    if (!containerSelect?.value || !containerSelect.dataset.moveBuilderBlockSection) return;
+
+    void reorderBuilderBlock(containerSelect.dataset.moveBuilderBlockSection, containerSelect.value);
+  });
+}
+
+function bindBuilderKeyboardEvents() {
+  if (typeof window.addEventListener !== "function") return;
+
+  window.addEventListener("keydown", (event) => {
+    if (!document.querySelector("[data-page-builder]")) return;
+    if (!event.metaKey && !event.ctrlKey) return;
+
+    const target = event.target;
+    if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+
+    const key = String(event.key || "").toLowerCase();
+    if (key === "z") {
+      event.preventDefault();
+      if (event.shiftKey) void redoBuilderChange();
+      else void undoBuilderChange();
+    } else if (key === "y") {
+      event.preventDefault();
+      void redoBuilderChange();
+    }
+  });
+}
+
 function bindDragEvents() {
   elements.page.addEventListener("dragstart", (event) => {
     const builderBlock = event.target.closest("[data-builder-block-key]");
@@ -960,6 +1113,8 @@ export function bindEvents() {
   bindRichTextEvents();
   bindSlugEvents();
   bindFilePreviewEvents();
+  bindBuilderControlEvents();
+  bindBuilderKeyboardEvents();
   bindDragEvents();
   bindMenuAndFooterEvents();
 

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { sanitizeGeneratedStylesheet } from "../../core/security/css-sanitizer.js";
 import type { ModuleContext, ModuleId } from "../../core/types/module.js";
 import { CmsService } from "../cms/cms.service.js";
 import {
@@ -142,6 +143,12 @@ export type WebsiteGenerationPlan = {
     summary: string;
   };
   style: WebsiteSpec["style"];
+  branding?: {
+    logoUrl?: string;
+    logoMode: "text" | "image" | "image-and-name";
+    logoAltText?: string;
+    logoHeight: number;
+  };
   cmsPages: GeneratedCmsPage[];
   cmsPosts: GeneratedCmsPost[];
   products: GeneratedProduct[];
@@ -207,7 +214,13 @@ export function buildWebsiteGenerationPlan(input: unknown): WebsiteGenerationPla
       currency: spec.project.currency.toUpperCase(),
       summary: spec.project.summary
     },
-    style: spec.style,
+    style: {
+      ...spec.style,
+      ...(spec.style.customCss
+        ? { customCss: sanitizeGeneratedStylesheet(spec.style.customCss) }
+        : {})
+    },
+    branding: buildGeneratedBranding(spec, mediaPlaceholders),
     cmsPages: modules.includes("cms") ? spec.pages.map((page) => mapPage(spec, page, mediaPlaceholders)) : [],
     cmsPosts: modules.includes("cms") ? spec.posts.map((post) => mapPost(spec, post)) : [],
     products: modules.includes("products") ? spec.products.map((product) => mapProduct(product, mediaPlaceholders)) : [],
@@ -246,6 +259,7 @@ export async function applyWebsiteSpec(
   await syncInstalledModules(context, site.id, plan.modules);
   await syncLocalizationSettings(context, site.id, plan);
   const mediaAssetIds = await syncMediaPlaceholders(context, site.id, plan.mediaPlaceholders);
+  await syncGeneratedSiteSettings(context, site.id, plan);
   const pages = await syncCmsContent(context, plan, mediaAssetIds, user);
   const products = await syncProducts(context, plan, mediaAssetIds);
   const menuItems = await syncMainMenu(context, plan);
@@ -261,6 +275,76 @@ export async function applyWebsiteSpec(
       menuItems
     }
   };
+}
+
+function buildGeneratedBranding(
+  spec: WebsiteSpec,
+  mediaPlaceholders: GeneratedMediaPlaceholder[]
+): WebsiteGenerationPlan["branding"] {
+  if (!spec.branding) return undefined;
+
+  const logo = spec.branding.logoMediaKey
+    ? mediaPlaceholders.find((media) => media.key === spec.branding?.logoMediaKey)
+    : undefined;
+
+  return {
+    ...(logo ? { logoUrl: logo.url } : {}),
+    logoMode: spec.branding.logoMode,
+    logoAltText: spec.branding.logoAltText || logo?.altText,
+    logoHeight: spec.branding.logoHeight
+  };
+}
+
+async function syncGeneratedSiteSettings(
+  context: ModuleContext,
+  siteId: string,
+  plan: WebsiteGenerationPlan
+) {
+  const key = { siteId, moduleId: "config", key: "site" };
+  const existing = await context.prisma.moduleSetting.findUnique({
+    where: { siteId_moduleId_key: key },
+    select: { value: true }
+  });
+  const stored = existing?.value && typeof existing.value === "object" && !Array.isArray(existing.value)
+    ? existing.value as Record<string, unknown>
+    : {};
+  const value = {
+    ...stored,
+    title: plan.site.name,
+    description: plan.site.summary,
+    metaTitle: plan.site.name,
+    metaDescription: plan.site.summary.slice(0, 300),
+    siteUrl: typeof stored.siteUrl === "string" ? stored.siteUrl : "",
+    searchIndexing: stored.searchIndexing !== false,
+    sitemapEnabled: stored.sitemapEnabled !== false,
+    customCss: plan.style.customCss || (typeof stored.customCss === "string" ? stored.customCss : ""),
+    ...(plan.branding
+      ? {
+          logoUrl: plan.branding.logoUrl || "",
+          logoMode: plan.branding.logoMode,
+          logoAltText: plan.branding.logoAltText || plan.site.name,
+          logoHeight: plan.branding.logoHeight
+        }
+      : {
+          logoUrl: typeof stored.logoUrl === "string" ? stored.logoUrl : "",
+          logoMode: ["text", "image", "image-and-name"].includes(String(stored.logoMode))
+            ? stored.logoMode
+            : "text",
+          logoAltText: typeof stored.logoAltText === "string" ? stored.logoAltText : "",
+          logoHeight: typeof stored.logoHeight === "number" ? stored.logoHeight : 42
+        })
+  };
+
+  await context.prisma.moduleSetting.upsert({
+    where: { siteId_moduleId_key: key },
+    update: { value: value as Prisma.InputJsonValue },
+    create: {
+      siteId,
+      moduleId: "config",
+      key: "site",
+      value: value as Prisma.InputJsonValue
+    }
+  });
 }
 
 async function syncLocalizationSettings(
@@ -418,6 +502,12 @@ function buildMediaPlaceholders(spec: WebsiteSpec) {
         add(mediaFromKey(spec, section.mediaKey), `page:${page.slug}:section:${section.key}`);
       }
 
+      for (const item of section.items) {
+        if (item.mediaKey) {
+          add(mediaFromKey(spec, item.mediaKey), `page:${page.slug}:section:${section.key}:item`);
+        }
+      }
+
       for (const mediaKey of section.galleryMediaKeys) {
         add(mediaFromKey(spec, mediaKey), `page:${page.slug}:section:${section.key}`);
       }
@@ -457,7 +547,8 @@ function mapPage(
       source: "websiteSpec",
       intent: spec.intent,
       project: spec.project,
-      style: spec.style
+      style: spec.style,
+      hideTitle: page.sections[0]?.type === "hero" && Boolean(page.sections[0].heading)
     },
     metaTitle: page.seo.title ?? page.title,
     metaDescription: page.seo.description ?? page.excerpt ?? spec.project.summary,
@@ -482,16 +573,17 @@ function mapSection(
   const sectionMedia = section.mediaKey ?? generatedSectionMediaKey(pageSlug, section);
   const media = mediaPlaceholders.find((item) => item.key === sectionMedia);
   const builderElement = builderElementForSectionType(section.type);
+  const structuredSection = ["featureGrid", "pricing", "faq", "custom"].includes(section.type);
 
   if (section.eyebrow) {
     blocks.push(textBlock(section.key, "eyebrow", section.eyebrow, blocks.length));
   }
 
-  if (section.heading) {
-    blocks.push(textBlock(section.key, "heading", section.heading, blocks.length));
+  if (section.heading && !structuredSection) {
+    blocks.push(headingBlock(section.key, section.heading, blocks.length, section.type === "hero" ? 1 : 2));
   }
 
-  if (section.body) {
+  if (section.body && !structuredSection) {
     blocks.push({
       key: `${section.key}-body`,
       type: section.type === "text" ? "TEXT" : "RICH_TEXT",
@@ -587,7 +679,7 @@ function mapSection(
     });
   }
 
-  if (["featureGrid", "pricing", "faq", "custom"].includes(section.type) || blocks.length === 0) {
+  if (structuredSection || blocks.length === 0) {
     blocks.push({
       key: `${section.key}-content`,
       type: "CUSTOM",
@@ -597,7 +689,7 @@ function mapSection(
         type: section.type,
         heading: section.heading,
         body: section.body,
-        items: section.items,
+        items: mapSectionItems(section.items, mediaPlaceholders),
         settings: section.settings
       },
       sortOrder: blocks.length,
@@ -607,7 +699,6 @@ function mapSection(
 
   return {
     key: section.key,
-    label: section.heading ?? section.type,
     sortOrder,
     settings: {
       template: sectionTemplateByType[section.type],
@@ -619,6 +710,29 @@ function mapSection(
     },
     blocks
   };
+}
+
+function headingBlock(
+  sectionKey: string,
+  value: string,
+  sortOrder: number,
+  level: 1 | 2
+): GeneratedContentBlock {
+  return {
+    key: `${sectionKey}-heading`,
+    type: "RICH_TEXT",
+    label: "Heading",
+    value: `<h${level}>${escapeGeneratedHtml(value)}</h${level}>`,
+    sortOrder,
+    editable: true
+  };
+}
+
+function escapeGeneratedHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function textBlock(sectionKey: string, key: string, value: string, sortOrder: number): GeneratedContentBlock {
@@ -650,6 +764,26 @@ function imageBlock(
     editable: true,
     mediaKey: media.key
   };
+}
+
+function mapSectionItems(
+  items: WebsiteSpecSection["items"],
+  mediaPlaceholders: GeneratedMediaPlaceholder[]
+) {
+  return items.map((item) => {
+    if (!item.mediaKey) return item;
+    const media = mediaPlaceholders.find((candidate) => candidate.key === item.mediaKey);
+    if (!media) return item;
+
+    return {
+      ...item,
+      image: {
+        url: media.url,
+        alt: media.altText,
+        mediaKey: media.key
+      }
+    };
+  });
 }
 
 function mapPost(spec: WebsiteSpec, post: WebsiteSpec["posts"][number]): GeneratedCmsPost {
@@ -1062,6 +1196,9 @@ function buildWarnings(spec: WebsiteSpec, modules: ModuleId[]) {
 }
 
 function createPlaceholderUrl(media: WebsiteSpecMedia) {
+  const sourceUrl = normalizeMediaSourceUrl(media.url);
+  if (sourceUrl) return sourceUrl;
+
   const label = media.altText.slice(0, 80);
   const escapedLabel = escapeSvg(label);
   const svg = [
@@ -1072,6 +1209,24 @@ function createPlaceholderUrl(media: WebsiteSpecMedia) {
   ].join("");
 
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+function normalizeMediaSourceUrl(value?: string) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  if (/^(https?:\/\/|\/|\.\/)/i.test(url)) return url;
+  if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,/i.test(url)) return url;
+
+  const svgUtf8Match = url.match(/^data:image\/svg\+xml;utf8,(.*)$/i);
+  if (svgUtf8Match) {
+    try {
+      return `data:image/svg+xml;base64,${Buffer.from(decodeURIComponent(svgUtf8Match[1])).toString("base64")}`;
+    } catch {
+      return "";
+    }
+  }
+
+  return "";
 }
 
 function escapeSvg(value: string) {

@@ -39,6 +39,17 @@ export const createInviteSchema = z.object({
   roleNames: z.array(z.string().trim().min(2).max(80)).min(1).default(["client_editor"])
 });
 
+export const listInvitesQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  search: z.string().trim().max(160).optional(),
+  status: z.enum(["PENDING", "ACCEPTED", "REVOKED"]).optional()
+});
+
+export const inviteIdParams = z.object({
+  id: z.string().cuid()
+});
+
 export const acceptInviteSchema = z.object({
   token: z.string().min(32),
   password: z.string().min(8).max(128),

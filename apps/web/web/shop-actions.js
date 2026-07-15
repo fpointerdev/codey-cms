@@ -8,6 +8,7 @@ import {
 import { adminHref, currentLocale } from "./routes.js";
 import { optionalFormValue, selectedFiles, uploadMediaFile } from "./content-actions.js";
 import { loadAdminRoute } from "./controller.js";
+import { getModalFormHandler } from "./modal.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
 
 function normalizePriceCents(value) {
@@ -394,7 +395,15 @@ export async function updateManualPayment(button) {
     FAIL: "mark this payment failed and release reserved inventory",
     REFUND: "mark this payment and order refunded"
   };
-  if (!window.confirm(`Are you sure you want to ${labels[action]}?`)) return;
+  const confirmation = await getModalFormHandler()({
+    label: "Manual payment",
+    title: "Confirm payment change",
+    description: `Are you sure you want to ${labels[action]}?`,
+    fields: [],
+    submitLabel: "Confirm change",
+    destructive: true
+  });
+  if (!confirmation) return;
 
   button.disabled = true;
   try {

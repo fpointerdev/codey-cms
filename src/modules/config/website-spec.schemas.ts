@@ -19,15 +19,33 @@ const urlLikeSchema = z
   .min(1)
   .max(700)
   .refine((value) => {
+    if (value.startsWith("#")) return true;
     if (value.startsWith("/")) return true;
 
     try {
       const url = new URL(value);
-      return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:";
+      return ["http:", "https:", "mailto:", "tel:"].includes(url.protocol);
     } catch {
       return false;
     }
-  }, "Use a relative path or absolute HTTP(S)/mailto URL.");
+  }, "Use a relative path or absolute HTTP(S), email, or phone URL.");
+
+const mediaSourceUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120_000)
+  .refine((value) => {
+    if (value.startsWith("/") || value.startsWith("./")) return true;
+    if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);(?:base64|utf8),/i.test(value)) return true;
+
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Use a relative, HTTP(S), or data image URL.");
 
 const ctaSchema = z
   .object({
@@ -43,6 +61,7 @@ const contentItemSchema = z
     body: z.string().trim().max(700).optional(),
     label: z.string().trim().max(80).optional(),
     value: z.string().trim().max(120).optional(),
+    mediaKey: slugSchema.optional(),
     url: urlLikeSchema.optional()
   })
   .strict();
@@ -54,9 +73,19 @@ export const websiteSpecMediaSchema = z
     prompt: z.string().trim().min(1).max(600),
     altText: z.string().trim().min(1).max(240),
     placement: z.enum(["hero", "section", "gallery", "product", "background", "other"]).default("section"),
+    url: mediaSourceUrlSchema.optional(),
     width: z.number().int().positive().max(8000).default(1200),
     height: z.number().int().positive().max(8000).default(800),
     mimeType: z.string().trim().min(1).max(160).default("image/png")
+  })
+  .strict();
+
+export const websiteSpecBrandingSchema = z
+  .object({
+    logoMediaKey: slugSchema.optional(),
+    logoMode: z.enum(["text", "image", "image-and-name"]).default("text"),
+    logoAltText: z.string().trim().max(160).optional(),
+    logoHeight: z.number().int().min(20).max(120).default(42)
   })
   .strict();
 
@@ -222,9 +251,11 @@ export const websiteSpecSchema = z
             body: z.string().trim().max(80).optional()
           })
           .strict()
-          .default({})
+          .default({}),
+        customCss: z.string().trim().max(20_000).optional()
       })
       .strict(),
+    branding: websiteSpecBrandingSchema.optional(),
     pages: z.array(websiteSpecPageSchema).min(1).max(40),
     posts: z.array(websiteSpecPostSchema).max(80).default([]),
     products: z.array(websiteSpecProductSchema).max(200).default([]),
@@ -238,6 +269,21 @@ export const websiteSpecSchema = z
     addUniqueIssues(spec.media.map((media) => media.key), context, ["media"], "Duplicate media key.");
 
     const mediaKeys = new Set(spec.media.map((media) => media.key));
+    if (spec.branding && spec.branding.logoMode !== "text" && !spec.branding.logoMediaKey) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["branding", "logoMediaKey"],
+        message: "Image logo mode requires a logo media key."
+      });
+    }
+    if (spec.branding?.logoMediaKey && !mediaKeys.has(spec.branding.logoMediaKey)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["branding", "logoMediaKey"],
+        message: "Referenced logo media key does not exist."
+      });
+    }
+
     for (const [pageIndex, page] of spec.pages.entries()) {
       addUniqueIssues(
         page.sections.map((section) => section.key),
@@ -261,6 +307,16 @@ export const websiteSpecSchema = z
               code: z.ZodIssueCode.custom,
               path: ["pages", pageIndex, "sections", sectionIndex, "galleryMediaKeys", mediaIndex],
               message: "Referenced gallery media key does not exist."
+            });
+          }
+        }
+
+        for (const [itemIndex, item] of section.items.entries()) {
+          if (item.mediaKey && !mediaKeys.has(item.mediaKey)) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["pages", pageIndex, "sections", sectionIndex, "items", itemIndex, "mediaKey"],
+              message: "Referenced item media key does not exist."
             });
           }
         }
@@ -315,4 +371,5 @@ export type WebsiteSpec = z.infer<typeof websiteSpecSchema>;
 export type WebsiteSpecPage = z.infer<typeof websiteSpecPageSchema>;
 export type WebsiteSpecSection = z.infer<typeof websiteSpecSectionSchema>;
 export type WebsiteSpecMedia = z.infer<typeof websiteSpecMediaSchema>;
+export type WebsiteSpecBranding = z.infer<typeof websiteSpecBrandingSchema>;
 export type WebsiteSpecProduct = z.infer<typeof websiteSpecProductSchema>;

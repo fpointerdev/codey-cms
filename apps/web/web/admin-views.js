@@ -3,6 +3,7 @@ import {
   formatDate,
   formatMoney,
   formatRoles,
+  hasAnyPermission,
   hasPermission,
   modulesEnabled,
   setStatus,
@@ -162,30 +163,37 @@ function renderDashboardActions() {
       body: "Create pages, open live previews, and edit page sections.",
       action: "Manage pages",
       href: "/dashboard/pages",
-      modules: ["cms"]
+      modules: ["cms"],
+      permissions: [["read", "cms"]]
     },
     {
       title: "Posts",
       body: "Prepare articles, updates, and content connected to site pages.",
       action: "Manage posts",
       href: "/dashboard/posts",
-      modules: ["cms"]
+      modules: ["cms"],
+      permissions: [["read", "cms"]]
     },
     {
       title: "Shop",
       body: "Review products, orders, and shop module configuration.",
       action: "Open shop",
       href: "/dashboard/shop",
-      modules: ["products", "orders"]
+      modules: ["products", "orders"],
+      permissions: [["read", "products"], ["read", "orders"]]
     },
     {
       title: "Users",
       body: "Invite editors and review access for this client project.",
       action: "Manage users",
       href: "/dashboard/users",
-      modules: ["users", "roles"]
+      modules: ["users", "roles"],
+      permissions: [["read", "users"]]
     }
-  ].filter((action) => modulesEnabled(action.modules));
+  ].filter((action) =>
+    modulesEnabled(action.modules) &&
+    hasAnyPermission(action.permissions || [])
+  );
 
   if (!actions.length) {
     return `
@@ -314,6 +322,7 @@ export function renderProfilePage(profile) {
 }
 
 export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
+  const canUpdatePages = hasPermission("update", "cms");
   renderAdminShell(
     { view: "pages" },
     `
@@ -337,7 +346,7 @@ export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
                       .map(
                         (page) => `
                           <tr>
-                            <td><a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link><strong>${escapeHtml(page.title)}</strong></a></td>
+                            <td><a href="${escapeHtml(canUpdatePages ? hrefWithLocale(adminHref("page-builder", page.slug), page.locale) : publicHrefForPage(page))}" ${canUpdatePages ? "data-dashboard-link" : ""}><strong>${escapeHtml(page.title)}</strong></a></td>
                             <td>${escapeHtml(page.slug)}</td>
                             <td>${localeBadge(page)}</td>
                             <td><span class="status-pill">${escapeHtml(page.status)}</span></td>
@@ -345,10 +354,12 @@ export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
                             <td>${escapeHtml(formatDate(page.updatedAt))}</td>
                             <td>
                               <a href="${escapeHtml(publicHrefForPage(page))}">View it</a>
-                              <span class="table-separator">/</span>
-                              <a href="${escapeHtml(publicHrefForPage(page))}">Frontend editor</a>
-                              <span class="table-separator">/</span>
-                              <a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link>Backend builder</a>
+                              ${canUpdatePages ? `
+                                <span class="table-separator">/</span>
+                                <a href="${escapeHtml(publicHrefForPage(page))}">Frontend editor</a>
+                                <span class="table-separator">/</span>
+                                <a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link>Backend builder</a>
+                              ` : ""}
                               ${enabledLocales(allPages).length > 1 && hasPermission("create", "cms") ? `
                                 <span class="table-separator">/</span>
                                 <button type="button" class="link-button" data-create-page-translation="${escapeHtml(page.slug)}" data-source-locale="${escapeHtml(page.locale || "en")}" data-source-title="${escapeHtml(page.title)}">Translate</button>
@@ -385,6 +396,12 @@ export function renderPostsPage(posts, errorMessage = "", allPosts = posts) {
 }
 
 function renderPostsShell(activeView, content) {
+  const tabs = [
+    { view: "posts", href: "/dashboard/posts", label: "All Posts", permissions: [["read", "cms"]] },
+    { view: "post-create", href: `/dashboard/posts/new${currentLocaleSuffix()}`, label: "New Post", permissions: [["create", "cms"]] },
+    { view: "post-categories", href: "/dashboard/posts/categories", label: "Post Categories", permissions: [["read", "cms"]] }
+  ].filter((tab) => hasAnyPermission(tab.permissions));
+
   renderAdminShell(
     { view: activeView },
     `
@@ -392,11 +409,7 @@ function renderPostsShell(activeView, content) {
         <div><p class="section-label">CMS</p><h1 class="dashboard-title">Posts</h1><p class="dashboard-copy">Manage articles, categories, and content that can be linked from pages.</p></div>
       </section>
       <nav class="admin-tabs" aria-label="Post sections">
-        ${[
-          { view: "posts", href: "/dashboard/posts", label: "All Posts" },
-          { view: "post-create", href: `/dashboard/posts/new${currentLocaleSuffix()}`, label: "New Post" },
-          { view: "post-categories", href: "/dashboard/posts/categories", label: "Post Categories" }
-        ]
+        ${tabs
           .map((tab) => `<a href="${escapeHtml(tab.href)}" data-dashboard-link class="${tab.view === activeView ? "active" : ""}">${escapeHtml(tab.label)}</a>`)
           .join("")}
       </nav>
@@ -406,6 +419,7 @@ function renderPostsShell(activeView, content) {
 }
 
 function renderPostsTable(posts, errorMessage = "", allPosts = posts) {
+  const canUpdatePosts = hasPermission("update", "cms");
   return `
       <section class="admin-section">
         <div class="section-heading-row">
@@ -427,7 +441,7 @@ function renderPostsTable(posts, errorMessage = "", allPosts = posts) {
                       .map(
                         (post) => `
                           <tr>
-                            <td><a href="${escapeHtml(hrefWithLocale(adminHref("post-builder", post.slug), post.locale))}" data-dashboard-link><strong>${escapeHtml(post.title)}</strong></a></td>
+                            <td><a href="${escapeHtml(canUpdatePosts ? hrefWithLocale(adminHref("post-builder", post.slug), post.locale) : publicHrefForPost(post))}" ${canUpdatePosts ? "data-dashboard-link" : ""}><strong>${escapeHtml(post.title)}</strong></a></td>
                             <td>${escapeHtml(post.slug)}</td>
                             <td>${localeBadge(post)}</td>
                             <td><span class="status-pill">${escapeHtml(post.status)}</span></td>
@@ -436,8 +450,10 @@ function renderPostsTable(posts, errorMessage = "", allPosts = posts) {
                             <td>${escapeHtml(formatDate(post.updatedAt))}</td>
                             <td>
                               <a href="${escapeHtml(publicHrefForPost(post))}">View it</a>
-                              <span class="table-separator">/</span>
-                              <a href="${escapeHtml(hrefWithLocale(adminHref("post-builder", post.slug), post.locale))}" data-dashboard-link>Backend builder</a>
+                              ${canUpdatePosts ? `
+                                <span class="table-separator">/</span>
+                                <a href="${escapeHtml(hrefWithLocale(adminHref("post-builder", post.slug), post.locale))}" data-dashboard-link>Backend builder</a>
+                              ` : ""}
                               ${enabledLocales(allPosts).length > 1 && hasPermission("create", "cms") ? `
                                 <span class="table-separator">/</span>
                                 <button type="button" class="link-button" data-create-post-translation="${escapeHtml(post.slug)}" data-source-locale="${escapeHtml(post.locale || "en")}" data-source-title="${escapeHtml(post.title)}">Translate</button>
@@ -486,10 +502,10 @@ export function renderPostCategoriesPage(categories, errorMessage = "") {
                             <td><strong>${escapeHtml(category.name)}</strong></td>
                             <td>${escapeHtml(category.slug)}</td>
                             <td>${escapeHtml(category.description || "")}</td>
-                            <td>
+                            <td>${hasPermission("update", "cms") ? `
                               <button type="button" class="link-button" data-edit-post-category="${escapeHtml(category.slug)}">Edit</button>
                               <button type="button" class="link-button danger" data-delete-post-category="${escapeHtml(category.slug)}">Delete</button>
-                            </td>
+                            ` : ""}</td>
                           </tr>
                         `
                       )
@@ -508,13 +524,13 @@ export function renderPostCategoriesPage(categories, errorMessage = "") {
 export function renderShopShell(activeView, content) {
   const activeTab = activeView === "product-create" || activeView === "product-editor" ? "shop-products" : activeView;
   const tabs = [
-    { view: "shop", href: "/dashboard/shop", label: "Overview", modules: ["products", "orders"] },
-    { view: "shop-products", href: "/dashboard/shop/products", label: "Products", modules: ["products"] },
-    { view: "shop-categories", href: "/dashboard/shop/categories", label: "Categories", modules: ["products"] },
-    { view: "shop-attributes", href: "/dashboard/shop/attributes", label: "Attributes", modules: ["products"] },
-    { view: "shop-orders", href: "/dashboard/shop/orders", label: "Orders", modules: ["orders"] },
-    { view: "shop-configuration", href: "/dashboard/shop/configuration", label: "Shop Configuration", modules: ["products", "orders"] }
-  ].filter((tab) => modulesEnabled(tab.modules));
+    { view: "shop", href: "/dashboard/shop", label: "Overview", modules: ["products", "orders"], permissions: [["read", "products"], ["read", "orders"]] },
+    { view: "shop-products", href: "/dashboard/shop/products", label: "Products", modules: ["products"], permissions: [["read", "products"]] },
+    { view: "shop-categories", href: "/dashboard/shop/categories", label: "Categories", modules: ["products"], permissions: [["read", "products"]] },
+    { view: "shop-attributes", href: "/dashboard/shop/attributes", label: "Attributes", modules: ["products"], permissions: [["read", "products"]] },
+    { view: "shop-orders", href: "/dashboard/shop/orders", label: "Orders", modules: ["orders"], permissions: [["read", "orders"]] },
+    { view: "shop-configuration", href: "/dashboard/shop/configuration", label: "Shop Configuration", modules: ["products", "orders"], permissions: [["read", "payments"], ["read", "modules"]] }
+  ].filter((tab) => modulesEnabled(tab.modules) && hasAnyPermission(tab.permissions));
 
   renderAdminShell(
     { view: activeView },
@@ -549,33 +565,38 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
       href: "/dashboard/shop/products",
       title: "Products",
       body: "Create draft products, update stock, and publish catalog items.",
-      modules: ["products"]
+      modules: ["products"],
+      permissions: [["read", "products"]]
     },
     {
       href: "/dashboard/shop/orders",
       title: "Orders",
       body: "Review customer orders, checkout state, and queued notifications.",
-      modules: ["orders"]
+      modules: ["orders"],
+      permissions: [["read", "orders"]]
     },
     {
       href: "/dashboard/shop/categories",
       title: "Categories",
       body: "Manage catalog taxonomy and product archive pages.",
-      modules: ["products"]
+      modules: ["products"],
+      permissions: [["read", "products"]]
     },
     {
       href: "/dashboard/shop/attributes",
       title: "Attributes",
       body: "Define reusable technical attributes and filter values.",
-      modules: ["products"]
+      modules: ["products"],
+      permissions: [["read", "products"]]
     },
     {
       href: "/dashboard/shop/configuration",
       title: "Configuration",
       body: "Review shop module state and operational requirements.",
-      modules: ["products", "orders"]
+      modules: ["products", "orders"],
+      permissions: [["read", "payments"], ["read", "modules"]]
     }
-  ].filter((action) => modulesEnabled(action.modules));
+  ].filter((action) => modulesEnabled(action.modules) && hasAnyPermission(action.permissions));
 
   renderShopShell(
     "shop",
@@ -641,6 +662,7 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
 }
 
 export function renderShopProductsPage(products, errorMessage = "") {
+  const canUpdateProducts = hasPermission("update", "products");
   renderShopShell(
     "shop-products",
     `
@@ -657,7 +679,7 @@ export function renderShopProductsPage(products, errorMessage = "") {
                       .map(
                         (product) => `
                           <tr>
-                            <td><a href="${escapeHtml(adminHref("product-editor", product.slug))}" data-dashboard-link><strong>${escapeHtml(product.name)}</strong></a></td>
+                            <td><a href="${escapeHtml(canUpdateProducts ? adminHref("product-editor", product.slug) : publicHrefForProduct(product))}" ${canUpdateProducts ? "data-dashboard-link" : ""}><strong>${escapeHtml(product.name)}</strong></a></td>
                             <td>${escapeHtml(product.slug)}</td>
                             <td><span class="status-pill">${escapeHtml(product.status)}</span></td>
                             <td>${escapeHtml(formatMoney(product.priceCents, product.currency || "EUR"))}</td>
@@ -665,8 +687,10 @@ export function renderShopProductsPage(products, errorMessage = "") {
                             <td>${escapeHtml(formatDate(product.updatedAt))}</td>
                             <td>
                               <a href="${escapeHtml(publicHrefForProduct(product))}">View it</a>
-                              <span class="table-separator">/</span>
-                              <a href="${escapeHtml(adminHref("product-editor", product.slug))}" data-dashboard-link>Edit</a>
+                              ${canUpdateProducts ? `
+                                <span class="table-separator">/</span>
+                                <a href="${escapeHtml(adminHref("product-editor", product.slug))}" data-dashboard-link>Edit</a>
+                              ` : ""}
                             </td>
                           </tr>
                         `
@@ -712,10 +736,10 @@ export function renderProductCategoriesPage(categories, errorMessage = "") {
                             <td><a href="/shop/category/${escapeHtml(category.slug)}">${escapeHtml(category.slug)}</a></td>
                             <td>${escapeHtml(category.description || "")}</td>
                             <td>${escapeHtml(category.sortOrder || 0)}</td>
-                            <td>
+                            <td>${hasPermission("update", "products") ? `
                               <button type="button" class="link-button" data-edit-product-category="${escapeHtml(category.slug)}">Edit</button>
                               <button type="button" class="link-button danger" data-delete-product-category="${escapeHtml(category.slug)}">Delete</button>
-                            </td>
+                            ` : ""}</td>
                           </tr>
                         `
                       )
@@ -755,10 +779,10 @@ export function renderProductAttributesPage(attributes, errorMessage = "") {
                             <td>${escapeHtml(attribute.slug)}</td>
                             <td>${escapeHtml((attribute.values || []).join(", "))}</td>
                             <td>${escapeHtml(attribute.sortOrder || 0)}</td>
-                            <td>
+                            <td>${hasPermission("update", "products") ? `
                               <button type="button" class="link-button" data-edit-product-attribute="${escapeHtml(attribute.slug)}">Edit</button>
                               <button type="button" class="link-button danger" data-delete-product-attribute="${escapeHtml(attribute.slug)}">Delete</button>
-                            </td>
+                            ` : ""}</td>
                           </tr>
                         `
                       )
@@ -861,21 +885,21 @@ function providerStatus(config) {
   return '<span class="status-pill">Disabled</span>';
 }
 
-function secretField({ name, label, configured, placeholder, clearName }) {
+function secretField({ name, label, configured, placeholder, clearName }, disabled = false) {
   return `
     <label>
       <span>${escapeHtml(label)}</span>
-      <input type="password" name="${escapeHtml(name)}" autocomplete="new-password" spellcheck="false" placeholder="${escapeHtml(configured ? "Configured - leave blank to keep" : placeholder)}" />
+      <input type="password" name="${escapeHtml(name)}" autocomplete="new-password" spellcheck="false" placeholder="${escapeHtml(configured ? "Configured - leave blank to keep" : placeholder)}" ${disabled ? "disabled" : ""} />
     </label>
     ${configured
-      ? `<label class="payment-clear-secret"><input type="checkbox" name="${escapeHtml(clearName)}" /> <span>Remove saved ${escapeHtml(label.toLowerCase())}</span></label>`
+      ? `<label class="payment-clear-secret"><input type="checkbox" name="${escapeHtml(clearName)}" ${disabled ? "disabled" : ""} /> <span>Remove saved ${escapeHtml(label.toLowerCase())}</span></label>`
       : ""}
   `;
 }
 
-function providerModeControl(config) {
+function providerModeControl(config, disabled = false) {
   return `
-    <fieldset class="payment-mode-control">
+    <fieldset class="payment-mode-control" ${disabled ? "disabled" : ""}>
       <legend>Environment</legend>
       <label><input type="radio" name="mode" value="SANDBOX" ${config.mode !== "LIVE" ? "checked" : ""} /><span>Sandbox</span></label>
       <label><input type="radio" name="mode" value="LIVE" ${config.mode === "LIVE" ? "checked" : ""} /><span>Live</span></label>
@@ -918,13 +942,13 @@ function renderStripeProvider(config, webhookUrl, canUpdate) {
       <header><div><p class="section-label">Card payments</p><h3>Stripe</h3></div>${providerStatus(config)}</header>
       <form class="settings-form payment-provider-form" data-payment-provider-form="STRIPE"
         data-current-mode="${escapeHtml(config.mode || "SANDBOX")}" data-current-public-key="${escapeHtml(config.publishableKey || "")}">
-        ${providerModeControl(config)}
-        <label><span>Publishable key</span><input name="publishableKey" spellcheck="false" autocomplete="off" value="${escapeHtml(config.publishableKey || "")}" placeholder="pk_test_..." /></label>
-        ${secretField({ name: "secretKey", label: "Secret key", configured: config.secretKeyConfigured, placeholder: "sk_test_...", clearName: "clearSecretKey" })}
-        ${secretField({ name: "webhookSecret", label: "Webhook signing secret", configured: config.webhookSecretConfigured, placeholder: "whsec_...", clearName: "clearWebhookSecret" })}
+        ${providerModeControl(config, !canUpdate)}
+        <label><span>Publishable key</span><input name="publishableKey" spellcheck="false" autocomplete="off" value="${escapeHtml(config.publishableKey || "")}" placeholder="pk_test_..." ${canUpdate ? "" : "disabled"} /></label>
+        ${secretField({ name: "secretKey", label: "Secret key", configured: config.secretKeyConfigured, placeholder: "sk_test_...", clearName: "clearSecretKey" }, !canUpdate)}
+        ${secretField({ name: "webhookSecret", label: "Webhook signing secret", configured: config.webhookSecretConfigured, placeholder: "whsec_...", clearName: "clearWebhookSecret" }, !canUpdate)}
         ${webhookEndpoint(webhookUrl, "payment_intent.succeeded, payment_intent.payment_failed, payment_intent.canceled, charge.refunded")}
         ${providerHealth(config)}
-        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} ${!config.enabled && !config.canEnable ? "disabled" : ""} /><span>Accept new Stripe payments</span></label>
+        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} ${!canUpdate || (!config.enabled && !config.canEnable) ? "disabled" : ""} /><span>Accept new Stripe payments</span></label>
         <p class="form-message" data-form-message>${config.canEnable || config.enabled ? "Configuration is ready." : "Save credentials and run a successful connection test before enabling."}</p>
         ${canUpdate ? `<div class="payment-provider-actions"><button type="button" class="secondary-button" data-test-payment-provider="STRIPE" ${!config.ready ? "disabled" : ""}>Test connection</button><button type="submit">Save Stripe</button></div>` : ""}
       </form>
@@ -938,13 +962,13 @@ function renderPayPalProvider(config, webhookUrl, canUpdate) {
       <header><div><p class="section-label">Wallet payments</p><h3>PayPal</h3></div>${providerStatus(config)}</header>
       <form class="settings-form payment-provider-form" data-payment-provider-form="PAYPAL"
         data-current-mode="${escapeHtml(config.mode || "SANDBOX")}" data-current-client-id="${escapeHtml(config.clientId || "")}" data-current-webhook-id="${escapeHtml(config.webhookId || "")}">
-        ${providerModeControl(config)}
-        <label><span>Client ID</span><input name="clientId" spellcheck="false" autocomplete="off" value="${escapeHtml(config.clientId || "")}" /></label>
-        ${secretField({ name: "clientSecret", label: "Client secret", configured: config.clientSecretConfigured, placeholder: "PayPal client secret", clearName: "clearClientSecret" })}
-        <label><span>Webhook ID</span><input name="webhookId" spellcheck="false" autocomplete="off" value="${escapeHtml(config.webhookId || "")}" placeholder="Webhook ID from PayPal" /></label>
+        ${providerModeControl(config, !canUpdate)}
+        <label><span>Client ID</span><input name="clientId" spellcheck="false" autocomplete="off" value="${escapeHtml(config.clientId || "")}" ${canUpdate ? "" : "disabled"} /></label>
+        ${secretField({ name: "clientSecret", label: "Client secret", configured: config.clientSecretConfigured, placeholder: "PayPal client secret", clearName: "clearClientSecret" }, !canUpdate)}
+        <label><span>Webhook ID</span><input name="webhookId" spellcheck="false" autocomplete="off" value="${escapeHtml(config.webhookId || "")}" placeholder="Webhook ID from PayPal" ${canUpdate ? "" : "disabled"} /></label>
         ${webhookEndpoint(webhookUrl, "PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, CHECKOUT.ORDER.VOIDED, PAYMENT.CAPTURE.REFUNDED")}
         ${providerHealth(config)}
-        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} ${!config.enabled && !config.canEnable ? "disabled" : ""} /><span>Accept new PayPal payments</span></label>
+        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} ${!canUpdate || (!config.enabled && !config.canEnable) ? "disabled" : ""} /><span>Accept new PayPal payments</span></label>
         <p class="form-message" data-form-message>${config.canEnable || config.enabled ? "Configuration is ready." : "Save credentials and run a successful connection test before enabling."}</p>
         ${canUpdate ? `<div class="payment-provider-actions"><button type="button" class="secondary-button" data-test-payment-provider="PAYPAL" ${!config.ready ? "disabled" : ""}>Test connection</button><button type="submit">Save PayPal</button></div>` : ""}
       </form>
@@ -957,8 +981,8 @@ function renderManualProvider(config, canUpdate) {
     <article class="admin-card payment-provider-card payment-provider-card-manual">
       <header><div><p class="section-label">Offline payments</p><h3>Manual</h3></div>${providerStatus(config)}</header>
       <form class="settings-form payment-provider-form" data-payment-provider-form="MANUAL">
-        <label><span>Customer instructions</span><textarea name="instructions" rows="4" placeholder="Bank transfer or payment-on-delivery instructions">${escapeHtml(config.instructions || "Contact us to arrange payment.")}</textarea></label>
-        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} /><span>Offer manual payment at checkout</span></label>
+        <label><span>Customer instructions</span><textarea name="instructions" rows="4" placeholder="Bank transfer or payment-on-delivery instructions" ${canUpdate ? "" : "disabled"}>${escapeHtml(config.instructions || "Contact us to arrange payment.")}</textarea></label>
+        <label class="payment-enable-toggle"><input type="checkbox" name="enabled" ${config.enabled ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Offer manual payment at checkout</span></label>
         <p class="form-message" data-form-message>Manual payments remain pending until an authorized user marks the order paid.</p>
         ${canUpdate ? '<div class="payment-provider-actions"><button type="submit">Save manual payment</button></div>' : ""}
       </form>
@@ -1005,15 +1029,101 @@ export function renderShopConfigurationPage(config, paymentConfig = {}, errorMes
   setStatus("Shop configuration loaded.");
 }
 
-export function renderUsersPage(users) {
+function userStatusBadge(status) {
+  const className = status === "ACTIVE" ? "success" : status === "SUSPENDED" ? "error" : "";
+  return `<span class="status-pill ${className}">${escapeHtml(status || "UNKNOWN")}</span>`;
+}
+
+function userListHref(page, filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.search) params.set("search", filters.search);
+  if (filters.status) params.set("status", filters.status);
+  if (page > 1) params.set("page", String(page));
+  const query = params.toString();
+
+  return query ? `/dashboard/users?${query}` : "/dashboard/users";
+}
+
+function renderUserPagination(pagination, filters) {
+  if (!pagination || pagination.pages <= 1) return "";
+
+  return `
+    <nav class="admin-pagination" aria-label="User list pages">
+      <a class="secondary-button${pagination.page <= 1 ? " disabled" : ""}" href="${escapeHtml(userListHref(Math.max(1, pagination.page - 1), filters))}" data-dashboard-link aria-disabled="${pagination.page <= 1 ? "true" : "false"}">Previous</a>
+      <span>Page ${escapeHtml(pagination.page)} of ${escapeHtml(pagination.pages)}</span>
+      <a class="secondary-button${pagination.page >= pagination.pages ? " disabled" : ""}" href="${escapeHtml(userListHref(Math.min(pagination.pages, pagination.page + 1), filters))}" data-dashboard-link aria-disabled="${pagination.page >= pagination.pages ? "true" : "false"}">Next</a>
+    </nav>
+  `;
+}
+
+function renderPendingInvites(invites, errorMessage = "") {
+  if (!hasPermission("invite", "users")) return "";
+
+  return `
+    <section class="admin-section">
+      <div class="section-heading-row">
+        <div><p class="section-label">Onboarding</p><h2>Pending invitations</h2></div>
+      </div>
+      ${errorMessage ? `<p class="form-message error" role="alert">${escapeHtml(errorMessage)}</p>` : ""}
+      <div class="admin-card table-card">
+        <table class="admin-table">
+          <thead><tr><th>Email</th><th>Role</th><th>Expires</th><th>Invited by</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${invites.length
+              ? invites.map((invite) => `
+                  <tr>
+                    <td><strong>${escapeHtml(invite.email)}</strong></td>
+                    <td>${escapeHtml((invite.roleNames || []).join(", ") || "No role")}</td>
+                    <td>${escapeHtml(formatDate(invite.expiresAt))}</td>
+                    <td>${escapeHtml(invite.invitedBy?.name || invite.invitedBy?.email || "System")}</td>
+                    <td>
+                      <div class="table-actions">
+                        <button type="button" class="link-button" data-resend-user-invite="${escapeHtml(invite.id)}" data-invite-email="${escapeHtml(invite.email)}">Resend</button>
+                        <button type="button" class="link-button danger" data-revoke-user-invite="${escapeHtml(invite.id)}" data-invite-email="${escapeHtml(invite.email)}">Revoke</button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join("")
+              : renderEmptyTableRow(5, "No pending invitations", "New invitations will appear here until they are accepted or revoked.")}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function canCreateUserInvites() {
+  return hasPermission("invite", "users") && hasPermission("read", "roles");
+}
+
+export function renderUsersPage(users, options = {}) {
+  const filters = options.filters || {};
+  const pagination = options.pagination;
+  const invites = options.invites || [];
   renderAdminShell(
     { view: "users" },
     `
       <section class="admin-section">
-        <div class="section-heading-row"><div><p class="section-label">Users</p><h1 class="dashboard-title">Users</h1></div>${hasPermission("invite", "users") ? '<button type="button" data-invite-user>Invite User</button>' : ""}</div>
+        <div class="section-heading-row"><div><p class="section-label">Users</p><h1 class="dashboard-title">Users</h1></div>${canCreateUserInvites() ? '<button type="button" data-invite-user>Invite User</button>' : ""}</div>
+        <form class="user-filter-form" data-user-filter-form>
+          <label>
+            <span class="visually-hidden">Search users</span>
+            <input name="search" type="search" value="${escapeHtml(filters.search || "")}" placeholder="Search name or email" />
+          </label>
+          <label>
+            <span class="visually-hidden">Filter by status</span>
+            <select name="status">
+              <option value="">All statuses</option>
+              ${["ACTIVE", "INVITED", "SUSPENDED"].map((status) => `<option value="${status}"${filters.status === status ? " selected" : ""}>${status}</option>`).join("")}
+            </select>
+          </label>
+          <button type="submit">Apply filters</button>
+          ${(filters.search || filters.status) ? '<a class="secondary-button" href="/dashboard/users" data-dashboard-link>Clear</a>' : ""}
+        </form>
+        ${options.errorMessage ? `<p class="form-message error" role="alert">${escapeHtml(options.errorMessage)}</p>` : ""}
         <div class="admin-card table-card">
           <table class="admin-table">
-            <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Roles</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Roles</th><th>Last login</th><th>Actions</th></tr></thead>
             <tbody>
               ${
                 users.length
@@ -1023,45 +1133,114 @@ export function renderUsersPage(users) {
                           <tr>
                             <td><a href="${escapeHtml(adminHref("user", user.id))}" data-dashboard-link>${escapeHtml(user.name || "No name")}</a></td>
                             <td>${escapeHtml(user.email)}</td>
-                            <td>${escapeHtml(user.status)}</td>
+                            <td>${userStatusBadge(user.status)}</td>
                             <td>${escapeHtml(formatRoles(user))}</td>
+                            <td>${escapeHtml(formatDate(user.lastLoginAt))}</td>
+                            <td><div class="table-actions"><a href="${escapeHtml(adminHref("user", user.id))}" data-dashboard-link>View</a>${hasPermission("update", "users") ? `<a href="${escapeHtml(adminHref("user-edit", user.id))}" data-dashboard-link>Edit</a>` : ""}</div></td>
                           </tr>
                         `
                       )
                       .join("")
                   : renderEmptyTableRow(
-                      4,
+                      6,
                       "No users yet",
-                      "Invite editors, managers, or operators when this project needs more people.",
-                      hasPermission("invite", "users") ? '<button type="button" data-invite-user>Invite User</button>' : ""
+                      filters.search || filters.status ? "No users match the current filters." : "Invite editors, managers, or operators when this project needs more people.",
+                      canCreateUserInvites() ? '<button type="button" data-invite-user>Invite User</button>' : ""
                     )
               }
             </tbody>
           </table>
         </div>
+        ${renderUserPagination(pagination, filters)}
       </section>
+      ${renderPendingInvites(invites, options.inviteError)}
     `
   );
-  setStatus(`${users.length} users loaded.`);
+  setStatus(options.errorMessage ? options.errorMessage : `${pagination?.total ?? users.length} users loaded.`, Boolean(options.errorMessage));
 }
 
 export function renderUserDetailPage(user) {
+  const canEdit = hasPermission("update", "users");
+  const canDelete = hasPermission("delete", "users") && user.id !== state.user?.id;
   renderAdminShell(
     { view: "user" },
     `
       <section class="admin-section narrow">
-        <p class="section-label">User</p>
-        <h1 class="dashboard-title">${escapeHtml(user.name || user.email)}</h1>
+        <div class="section-heading-row">
+          <div><p class="section-label">User</p><h1 class="dashboard-title">${escapeHtml(user.name || user.email)}</h1></div>
+          <div class="button-row">
+            <a class="secondary-button" href="/dashboard/users" data-dashboard-link>Back</a>
+            ${canEdit ? `<a class="admin-primary-link" href="${escapeHtml(adminHref("user-edit", user.id))}" data-dashboard-link>Edit user</a>` : ""}
+          </div>
+        </div>
         <div class="admin-card detail-list">
           <div><span>Email</span><strong>${escapeHtml(user.email)}</strong></div>
-          <div><span>Status</span><strong>${escapeHtml(user.status)}</strong></div>
+          <div><span>Status</span><strong>${userStatusBadge(user.status)}</strong></div>
           <div><span>Roles</span><strong>${escapeHtml(formatRoles(user))}</strong></div>
-          <div><span>Created</span><strong>${escapeHtml(user.createdAt || "")}</strong></div>
+          <div><span>Email verified</span><strong>${escapeHtml(formatDate(user.emailVerifiedAt))}</strong></div>
+          <div><span>Last login</span><strong>${escapeHtml(formatDate(user.lastLoginAt))}</strong></div>
+          <div><span>Created</span><strong>${escapeHtml(formatDate(user.createdAt))}</strong></div>
+          <div><span>Updated</span><strong>${escapeHtml(formatDate(user.updatedAt))}</strong></div>
         </div>
+        ${canDelete ? `<div class="user-danger-zone"><div><strong>Delete user</strong><span>Removes the account and invalidates all active sessions.</span></div><button type="button" class="secondary-button danger" data-delete-user="${escapeHtml(user.id)}" data-user-email="${escapeHtml(user.email)}">Delete user</button></div>` : ""}
       </section>
     `
   );
   setStatus("User loaded.");
+}
+
+export function renderUserEditPage(user, roles = [], options = {}) {
+  const currentRoleIds = new Set((user.roles || []).map((item) => item.role?.id).filter(Boolean));
+  const isCurrentUser = user.id === state.user?.id;
+  const canEditRoles = !isCurrentUser && roles.length > 0;
+  const canDelete = hasPermission("delete", "users") && !isCurrentUser;
+
+  renderAdminShell(
+    { view: "user-edit", userId: user.id },
+    `
+      <section class="admin-section narrow">
+        <div class="section-heading-row">
+          <div><p class="section-label">Users</p><h1 class="dashboard-title">Edit ${escapeHtml(user.name || user.email)}</h1></div>
+          <a class="secondary-button" href="${escapeHtml(adminHref("user", user.id))}" data-dashboard-link>Cancel</a>
+        </div>
+        <form class="admin-card settings-form user-edit-form" data-user-edit-form data-user-id="${escapeHtml(user.id)}" data-user-status-editable="${isCurrentUser ? "false" : "true"}" data-user-roles-editable="${canEditRoles ? "true" : "false"}">
+          <label>
+            <span>Name</span>
+            <input name="name" value="${escapeHtml(user.name || "")}" maxlength="120" required />
+          </label>
+          <label>
+            <span>Email</span>
+            <input value="${escapeHtml(user.email)}" type="email" readonly />
+            <small class="field-help">Email addresses are fixed after account creation. Re-invite the user to change ownership of an address.</small>
+          </label>
+          <label>
+            <span>Status</span>
+            <select name="status" ${isCurrentUser ? "disabled" : ""}>
+              <option value="ACTIVE"${user.status === "ACTIVE" || user.status === "INVITED" ? " selected" : ""}>Active</option>
+              <option value="SUSPENDED"${user.status === "SUSPENDED" ? " selected" : ""}>Suspended</option>
+            </select>
+            ${isCurrentUser ? '<small class="field-help">Another administrator must change your account status.</small>' : '<small class="field-help">Suspending a user immediately revokes active sessions.</small>'}
+          </label>
+          <fieldset class="user-role-fieldset" ${canEditRoles ? "" : "disabled"}>
+            <legend>Roles</legend>
+            <div class="user-role-options">
+              ${(roles.length ? roles : user.roles.map((item) => item.role).filter(Boolean)).map((role) => `
+                <label class="user-role-option">
+                  <input name="roleIds" type="checkbox" value="${escapeHtml(role.id)}" ${currentRoleIds.has(role.id) ? "checked" : ""} />
+                  <span><strong>${escapeHtml(role.name)}</strong>${role.description ? `<small>${escapeHtml(role.description)}</small>` : ""}</span>
+                </label>
+              `).join("")}
+            </div>
+            ${isCurrentUser ? '<small class="field-help">Another administrator must change your roles.</small>' : options.rolesError ? `<small class="field-help error">${escapeHtml(options.rolesError)}</small>` : !roles.length ? '<small class="field-help">Role options are unavailable for this account.</small>' : ""}
+          </fieldset>
+          ${renderFormMessage("Update the account details, status, or access roles.")}
+          <div class="form-actions"><button type="submit">Save user</button></div>
+        </form>
+        ${canDelete ? `<div class="user-danger-zone"><div><strong>Delete user</strong><span>This action permanently removes the account.</span></div><button type="button" class="secondary-button danger" data-delete-user="${escapeHtml(user.id)}" data-user-email="${escapeHtml(user.email)}">Delete user</button></div>` : ""}
+      </section>
+    `
+  );
+  setStatus("User editor loaded.");
 }
 
 function renderLocaleSettingsRows(locales = [], selectedDefaultLocale = "") {

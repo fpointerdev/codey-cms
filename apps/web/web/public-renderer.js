@@ -952,8 +952,9 @@ export function renderBlock(block) {
   return '<div class="fallback-content">This content block is not available in the public renderer.</div>';
 }
 
-export function renderSections(page) {
+export function renderSections(page, options = {}) {
   const layout = normalizePageLayout(page.content?.layout);
+  const canEdit = options.canEdit === true;
 
   if (!page.sections?.length) {
     return '<div class="fallback-content">This page does not have visible sections yet.</div>';
@@ -964,14 +965,14 @@ export function renderSections(page) {
       ${page.sections
         .map(
           (section) => `
-            <section class="${escapeHtml(sectionClassName(section))}" data-section-id="${escapeHtml(section.id)}"${advancedIdAttribute(section.settings || {})}${sectionStyleAttribute(section)}>
+            <section class="${escapeHtml(sectionClassName(section))}" data-section-id="${escapeHtml(section.id)}" data-section-key="${escapeHtml(section.key || section.id)}"${advancedIdAttribute(section.settings || {})}${sectionStyleAttribute(section)}>
               ${renderSectionDecoration(section)}
               ${section.label ? `<h2 class="section-label">${escapeHtml(section.label)}</h2>` : ""}
               ${section.blocks
                 .map(
                   (block) => `
                     <div class="${escapeHtml(blockClassName(block))}" data-block-key="${escapeHtml(block.key)}" data-editable="${block.editable}"${advancedIdAttribute(block.settings || {})}${advancedStyleAttribute(block.settings || {})}>
-                      ${block.editable ? '<button type="button" class="block-edit" data-edit-block>Edit</button>' : ""}
+                      ${canEdit && block.editable ? '<button type="button" class="block-edit" data-edit-block>Edit</button>' : ""}
                       ${renderBlock(block)}
                     </div>
                   `
@@ -982,6 +983,14 @@ export function renderSections(page) {
         )
         .join("")}
     </div>
+  `;
+}
+
+export function renderPageContent(page, options = {}) {
+  return `
+    ${page.content?.hideTitle === true ? "" : `<h1 class="page-title">${escapeHtml(page.title)}</h1>`}
+    ${page.excerpt ? `<p class="page-excerpt">${escapeHtml(page.excerpt)}</p>` : ""}
+    ${renderSections(page, options)}
   `;
 }
 
@@ -1032,15 +1041,25 @@ export function renderPage(page) {
           ${canEditCms ? renderEditorButton("Publish", "data-publish-inline") : ""}
         </div>`
       : ""}
-    <h1 class="page-title">${escapeHtml(page.title)}</h1>
-    ${page.excerpt ? `<p class="page-excerpt">${escapeHtml(page.excerpt)}</p>` : ""}
-    ${renderSections(page)}
+    ${renderPageContent(page, { canEdit: canEditCms })}
   `;
+  elements.page.removeAttribute("data-server-rendered");
   elements.footer.innerHTML = renderFooter(page, Boolean(state.user));
 
   document.body.classList.remove("auth-enabled", "dashboard-enabled");
   document.body.classList.toggle("editor-enabled", Boolean(state.user));
   setStatus(state.user ? `${page.status} preview as ${state.user.email}` : "");
+}
+
+export function renderPostContent(post) {
+  return `
+    <article class="public-post">
+      <p class="section-label">${escapeHtml(post.publishedAt ? formatPostDate(post.publishedAt) : post.status || "Post")}</p>
+      <h1 class="page-title">${escapeHtml(post.title)}</h1>
+      ${post.excerpt ? `<p class="page-excerpt">${escapeHtml(post.excerpt)}</p>` : ""}
+      <div class="public-post-body">${renderRichText(post.content?.body || "")}</div>
+    </article>
+  `;
 }
 
 export function renderPost(post) {
@@ -1049,14 +1068,8 @@ export function renderPost(post) {
   if (document.documentElement) document.documentElement.lang = post.locale || currentLocale();
   elements.brand.textContent = state.config?.siteSettings?.title || "CMS Site";
   elements.brand.href = "/";
-  elements.page.innerHTML = `
-    <article class="public-post">
-      <p class="section-label">${escapeHtml(post.publishedAt ? formatPostDate(post.publishedAt) : post.status || "Post")}</p>
-      <h1 class="page-title">${escapeHtml(post.title)}</h1>
-      ${post.excerpt ? `<p class="page-excerpt">${escapeHtml(post.excerpt)}</p>` : ""}
-      <div class="public-post-body">${renderRichText(post.content?.body || "")}</div>
-    </article>
-  `;
+  elements.page.innerHTML = renderPostContent(post);
+  elements.page.removeAttribute("data-server-rendered");
   elements.footer.innerHTML = renderFooter({ title: post.title }, Boolean(state.user));
 
   document.body.classList.remove("auth-enabled", "dashboard-enabled");

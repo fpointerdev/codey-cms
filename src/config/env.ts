@@ -37,7 +37,7 @@ const envSchema = z.object({
   MAINTENANCE_MODE: booleanFromEnv.default(false),
   MAINTENANCE_MESSAGE: z.string().trim().min(1).default("This site is temporarily unavailable for maintenance."),
   MAINTENANCE_ALLOWED_PATHS: z.string().trim().default("/health,/auth,/config"),
-  AUTH_ALLOW_REGISTRATION: booleanFromEnv.default(true),
+  AUTH_ALLOW_REGISTRATION: booleanFromEnv.default(false),
   AUTH_REQUIRE_EMAIL_VERIFICATION: booleanFromEnv.default(false),
   AUTH_RECOVERY_TOKEN_DELIVERY: z.enum(["response", "email", "disabled"]).optional(),
   CMS_CREDENTIAL_ENCRYPTION_KEY: z.string().trim().min(32).optional(),

@@ -274,21 +274,29 @@ export async function editContentBlock(page, blockKey) {
     const values = await getModalFormHandler()({
       label: "Content block",
       title: block.label || block.key,
-      description: "Upload an image through the media library or keep an external image URL.",
+      description: "Upload a replacement image and keep the existing image until it is changed.",
       fields: withCustomCssField(block, [
-        { name: "url", label: "Image URL", value: block.value?.url || "", required: false },
-        { name: "alt", label: "Alt text", value: block.value?.alt || "", required: false },
-        { name: "file", label: "Upload image", type: "file", accept: "image/*", required: false }
+        {
+          name: "file",
+          label: "Image",
+          type: "file",
+          accept: "image/*",
+          required: false,
+          imagePicker: true,
+          previewUrl: block.value?.url || "",
+          previewAlt: block.value?.alt || block.label || "Image"
+        },
+        { name: "alt", label: "Alt text", value: block.value?.alt || "", required: false }
       ])
     });
     if (!values) return null;
 
     const file = selectedFile(values.file);
     const mediaAsset = file ? await uploadMediaFile(file, values.alt || block.value?.alt || "") : null;
-    const imageUrl = mediaAsset?.url || values.url;
+    const imageUrl = mediaAsset?.url || block.value?.url;
 
     if (!imageUrl) {
-      setStatus("Choose an image file or enter an image URL.");
+      setStatus("Choose an image file.", true);
       return null;
     }
 
@@ -682,29 +690,6 @@ export async function addProduct() {
     })
   });
   setStatus(`Draft product created: ${product.slug}`);
-}
-
-export async function createUserInvite() {
-  const values = await getModalFormHandler()({
-    label: "Users",
-    title: "Invite user",
-    description: "Use comma-separated role names for advanced access.",
-    fields: [
-      { name: "email", label: "Email", type: "email", value: "editor@example.com" },
-      { name: "roles", label: "Roles", value: "client_editor" }
-    ],
-    submitLabel: "Create invite"
-  });
-  if (!values) return;
-
-  await api("/auth/invites", {
-    method: "POST",
-    body: JSON.stringify({
-      email: values.email,
-      roleNames: values.roles.split(",").map((role) => role.trim()).filter(Boolean)
-    })
-  });
-  setStatus(`Invite created for ${values.email}.`);
 }
 
 const containerLayoutOptions = [

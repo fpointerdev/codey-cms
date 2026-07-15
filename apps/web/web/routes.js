@@ -75,6 +75,8 @@ export function currentAdminRoute() {
 
   if (path === "/cy-admin" || path === "/dashboard") return { view: "dashboard" };
   if (path === "/auth/reset-password") return { view: "password-reset", token: params.get("token") || "" };
+  if (path === "/auth/invite") return { view: "invite-acceptance", token: params.get("token") || "" };
+  if (path === "/auth/verify-email") return { view: "email-verification", token: params.get("token") || "" };
   if (path === "/dashboard/profile") return { view: "profile" };
   if (path === "/dashboard/shop") return { view: "shop" };
   if (path === "/dashboard/shop/products") return { view: "shop-products" };
@@ -111,6 +113,13 @@ export function currentAdminRoute() {
   }
 
   if (path === "/dashboard/users") return { view: "users" };
+
+  if (path.startsWith("/dashboard/users/") && path.endsWith("/edit")) {
+    return {
+      view: "user-edit",
+      userId: decodeURIComponent(path.slice("/dashboard/users/".length, -"/edit".length))
+    };
+  }
 
   if (path.startsWith("/dashboard/users/")) {
     return {
@@ -195,5 +204,6 @@ export function adminHref(view, userId = "") {
   if (view === "profile") return "/dashboard/profile";
   if (view === "settings") return "/dashboard/settings";
   if (view === "user" && userId) return `/dashboard/users/${encodeURIComponent(userId)}`;
+  if (view === "user-edit" && userId) return `/dashboard/users/${encodeURIComponent(userId)}/edit`;
   return "/dashboard/users";
 }

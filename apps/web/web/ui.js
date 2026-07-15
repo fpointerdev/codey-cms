@@ -200,3 +200,75 @@ export function renderPasswordReset(token = "") {
   );
   setStatus("");
 }
+
+export function renderInviteAcceptance(token = "") {
+  const tokenField = token
+    ? `<input name="token" type="hidden" value="${escapeHtml(token)}" />`
+    : `
+      <label>
+        <span>Invite token</span>
+        <input name="token" type="text" autocomplete="one-time-code" required />
+      </label>
+    `;
+
+  renderAuthShell(
+    `
+      <section class="dashboard-auth">
+        <div>
+          <p class="section-label">Invitation</p>
+          <h1 class="dashboard-title">Set up your account</h1>
+          <p class="dashboard-copy">Add your name and choose a password to accept the invitation.</p>
+        </div>
+        <form class="admin-card login-card" data-invite-acceptance-form>
+          ${tokenField}
+          <label>
+            <span>Name</span>
+            <input name="name" type="text" autocomplete="name" maxlength="120" required />
+          </label>
+          <label>
+            <span>Password</span>
+            <input name="password" type="password" autocomplete="new-password" minlength="8" required />
+          </label>
+          <label>
+            <span>Confirm password</span>
+            <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required />
+          </label>
+          ${renderFormMessage(token ? "Complete your account setup." : "Enter the invitation token you received.")}
+          <button type="submit">Accept invitation</button>
+          <div class="login-card-actions"><a href="/cy-admin">Back to sign in</a></div>
+        </form>
+      </section>
+    `
+  );
+  setStatus("");
+}
+
+export function renderEmailVerification(token = "") {
+  const tokenField = token
+    ? `<input name="token" type="hidden" value="${escapeHtml(token)}" />`
+    : `
+      <label>
+        <span>Verification token</span>
+        <input name="token" type="text" autocomplete="one-time-code" required />
+      </label>
+    `;
+
+  renderAuthShell(
+    `
+      <section class="dashboard-auth">
+        <div>
+          <p class="section-label">Email Verification</p>
+          <h1 class="dashboard-title">Verify your email</h1>
+          <p class="dashboard-copy">Confirm the email address connected to your account.</p>
+        </div>
+        <form class="admin-card login-card" data-email-verification-form>
+          ${tokenField}
+          ${renderFormMessage(token ? "Your verification link is ready." : "Enter the verification token you received.")}
+          <button type="submit">Verify email</button>
+          <div class="login-card-actions"><a href="/cy-admin">Back to sign in</a></div>
+        </form>
+      </section>
+    `
+  );
+  setStatus("");
+}

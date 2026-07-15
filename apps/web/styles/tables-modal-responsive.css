@@ -410,6 +410,16 @@
   backdrop-filter: blur(8px);
 }
 
+.modal-actions .danger-button {
+  border-color: #9f2f27;
+  background: #9f2f27;
+}
+
+.modal-actions .danger-button:hover {
+  border-color: #7f241e;
+  background: #7f241e;
+}
+
 .file-preview-list,
 .gallery-existing-list {
   display: grid;
@@ -738,8 +748,9 @@
   }
 
   .admin-sidebar.collapsed {
-    gap: 18px;
-    padding: 18px 20px;
+    grid-template-rows: auto;
+    gap: 0;
+    padding: 12px 20px;
   }
 
   .admin-sidebar.collapsed .admin-sidebar-top {
@@ -760,21 +771,52 @@
   .admin-sidebar.collapsed .admin-sidebar-footer span,
   .admin-sidebar.collapsed .admin-sidebar-footer strong,
   .admin-sidebar.collapsed .admin-logout-button {
-    display: block;
+    display: none;
   }
 
-  .admin-sidebar.collapsed .admin-nav-link {
-    justify-content: flex-start;
-    padding: 0 11px;
+  .admin-sidebar.collapsed .admin-nav,
+  .admin-sidebar.collapsed .admin-sidebar-footer {
+    display: none;
   }
 
   .admin-sidebar.collapsed .admin-nav-initial {
-    display: none;
+    display: grid;
   }
 
   .builder-rail {
     position: static;
     max-height: none;
+  }
+
+  .builder-shell,
+  .builder-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .builder-main > *,
+  .builder-section-card,
+  .builder-block-list,
+  .builder-block {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .builder-sticky-actions,
+  .builder-section-actions,
+  .builder-block header {
+    flex-wrap: wrap;
+  }
+
+  .builder-section-card > header {
+    display: grid;
+  }
+
+  .builder-section-actions {
+    justify-content: flex-start;
+  }
+
+  .builder-block header > div {
+    flex: 1 1 100%;
   }
 
   .builder-shell.builder-shell-collapsed {

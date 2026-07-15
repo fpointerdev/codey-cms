@@ -1,45 +1,27 @@
 import type { Router } from "express";
-import type { PrismaClient } from "@prisma/client";
 import type { ModuleContext } from "../../core/types/module.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
 import { requireAuth, requirePermission } from "../auth/auth.middleware.js";
 import { listUsersQuery, updateUserSchema, userIdParams } from "./users.schemas.js";
+import { UserService } from "./users.service.js";
 
-const publicUserSelect = {
-  id: true,
-  email: true,
-  name: true,
-  status: true,
-  createdAt: true,
-  updatedAt: true,
-  roles: {
-    select: {
-      role: {
-        select: {
-          id: true,
-          name: true
-        }
-      }
-    }
-  }
-} as const;
-
-type TransactionClient = Omit<
-  PrismaClient,
-  "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
->;
+function requestMeta(req: { header: (name: string) => string | undefined; ip?: string }) {
+  return {
+    userAgent: req.header("user-agent"),
+    ipAddress: req.ip
+  };
+}
 
 export function registerUserRoutes(router: Router, context: ModuleContext) {
+  const userService = new UserService(context.prisma);
+
   router.get(
     "/me",
     requireAuth(context),
     asyncHandler(async (req, res) => {
-      const user = await context.prisma.user.findUniqueOrThrow({
-        where: { id: req.user!.id },
-        select: publicUserSelect
-      });
+      const user = await userService.get(req.user!.id);
 
       return sendSuccess(res, { user });
     })
@@ -50,33 +32,15 @@ export function registerUserRoutes(router: Router, context: ModuleContext) {
     requirePermission(context, "read", "users"),
     validateRequest({ query: listUsersQuery }),
     asyncHandler(async (req, res) => {
-      const { page, limit, search } = req.query as unknown as {
+      const { page, limit, search, status } = req.query as unknown as {
         page: number;
         limit: number;
         search?: string;
+        status?: "ACTIVE" | "INVITED" | "SUSPENDED";
       };
-      const skip = (page - 1) * limit;
-      const where = search
-        ? {
-            OR: [
-              { email: { contains: search, mode: "insensitive" as const } },
-              { name: { contains: search, mode: "insensitive" as const } }
-            ]
-          }
-        : undefined;
+      const result = await userService.list({ page, limit, search, status });
 
-      const [users, total] = await Promise.all([
-        context.prisma.user.findMany({
-          where,
-          skip,
-          take: limit,
-          orderBy: { createdAt: "desc" },
-          select: publicUserSelect
-        }),
-        context.prisma.user.count({ where })
-      ]);
-
-      return sendSuccess(res, { users }, { page, limit, total });
+      return sendSuccess(res, result, result.pagination);
     })
   );
 
@@ -85,10 +49,7 @@ export function registerUserRoutes(router: Router, context: ModuleContext) {
     requirePermission(context, "read", "users"),
     validateRequest({ params: userIdParams }),
     asyncHandler(async (req, res) => {
-      const user = await context.prisma.user.findUniqueOrThrow({
-        where: { id: req.params.id },
-        select: publicUserSelect
-      });
+      const user = await userService.get(req.params.id);
 
       return sendSuccess(res, { user });
     })
@@ -99,32 +60,26 @@ export function registerUserRoutes(router: Router, context: ModuleContext) {
     requirePermission(context, "update", "users"),
     validateRequest({ params: userIdParams, body: updateUserSchema }),
     asyncHandler(async (req, res) => {
-      const { roleIds, ...userData } = req.body as {
-        name?: string;
-        status?: "ACTIVE" | "INVITED" | "SUSPENDED";
-        roleIds?: string[];
-      };
-
-      const user = await context.prisma.$transaction(async (tx: TransactionClient) => {
-        if (roleIds) {
-          await tx.userRole.deleteMany({ where: { userId: req.params.id } });
-          await tx.userRole.createMany({
-            data: roleIds.map((roleId) => ({
-              userId: req.params.id,
-              roleId
-            })),
-            skipDuplicates: true
-          });
-        }
-
-        return tx.user.update({
-          where: { id: req.params.id },
-          data: userData,
-          select: publicUserSelect
-        });
+      const user = await userService.update(req.params.id, req.body, {
+        actor: req.user!,
+        ...requestMeta(req)
       });
 
       return sendSuccess(res, { user });
+    })
+  );
+
+  router.delete(
+    "/:id",
+    requirePermission(context, "delete", "users"),
+    validateRequest({ params: userIdParams }),
+    asyncHandler(async (req, res) => {
+      const user = await userService.delete(req.params.id, {
+        actor: req.user!,
+        ...requestMeta(req)
+      });
+
+      return sendSuccess(res, { deleted: true, user });
     })
   );
 }

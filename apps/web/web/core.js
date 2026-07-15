@@ -1,9 +1,15 @@
 const defaultApiUrl = "/api/v1";
 
+function storedValue(key) {
+  if (typeof localStorage === "undefined") return "";
+
+  return localStorage.getItem(key) || "";
+}
+
 export const state = {
   apiUrl: defaultApiUrl,
-  token: localStorage.getItem("cms_access_token") || "",
-  refreshToken: localStorage.getItem("cms_refresh_token") || "",
+  token: storedValue("cms_access_token"),
+  refreshToken: storedValue("cms_refresh_token"),
   user: null,
   config: null,
   menu: null,
@@ -17,6 +23,10 @@ export const state = {
   shopCategories: [],
   activeBuilderSectionId: null,
   builderRailCollapsed: false,
+  builderHistorySlug: "",
+  builderUndoStack: [],
+  builderRedoStack: [],
+  builderPreviewDevice: "desktop",
   adminSidebarCollapsed: false,
   adminSidebarRoute: ""
 };
@@ -41,12 +51,42 @@ export const elements = {
 
 export const adminNavItems = [
   { label: "Dashboard", href: "/dashboard", view: "dashboard" },
-  { label: "Shop", href: "/dashboard/shop", view: "shop", modules: ["products", "orders"] },
-  { label: "Pages", href: "/dashboard/pages", view: "pages", modules: ["cms"] },
-  { label: "Posts", href: "/dashboard/posts", view: "posts", modules: ["cms"] },
-  { label: "Users", href: "/dashboard/users", view: "users", modules: ["users", "roles"] },
+  {
+    label: "Shop",
+    href: "/dashboard/shop",
+    view: "shop",
+    modules: ["products", "orders"],
+    permissions: [["read", "products"], ["read", "orders"]]
+  },
+  {
+    label: "Pages",
+    href: "/dashboard/pages",
+    view: "pages",
+    modules: ["cms"],
+    permissions: [["read", "cms"]]
+  },
+  {
+    label: "Posts",
+    href: "/dashboard/posts",
+    view: "posts",
+    modules: ["cms"],
+    permissions: [["read", "cms"]]
+  },
+  {
+    label: "Users",
+    href: "/dashboard/users",
+    view: "users",
+    modules: ["users", "roles"],
+    permissions: [["read", "users"]]
+  },
   { label: "Profile", href: "/dashboard/profile", view: "profile", modules: ["auth"] },
-  { label: "Settings", href: "/dashboard/settings", view: "settings", modules: ["config"] }
+  {
+    label: "Settings",
+    href: "/dashboard/settings",
+    view: "settings",
+    modules: ["config"],
+    permissions: [["manage", "modules"]]
+  }
 ];
 
 function base64Encode(value) {
@@ -713,8 +753,8 @@ export const defaultPage = {
 
 export function resetState() {
   state.apiUrl = defaultApiUrl;
-  state.token = localStorage.getItem("cms_access_token") || "";
-  state.refreshToken = localStorage.getItem("cms_refresh_token") || "";
+  state.token = storedValue("cms_access_token");
+  state.refreshToken = storedValue("cms_refresh_token");
   state.user = null;
   state.config = null;
   state.menu = null;
@@ -728,6 +768,10 @@ export function resetState() {
   state.shopCategories = [];
   state.activeBuilderSectionId = null;
   state.builderRailCollapsed = false;
+  state.builderHistorySlug = "";
+  state.builderUndoStack = [];
+  state.builderRedoStack = [];
+  state.builderPreviewDevice = "desktop";
   state.adminSidebarCollapsed = false;
   state.adminSidebarRoute = "";
 }
@@ -865,6 +909,12 @@ export function hasPermission(action, subject) {
   );
 }
 
+export function hasAnyPermission(requirements = []) {
+  if (!requirements.length) return true;
+
+  return requirements.some(([action, subject]) => hasPermission(action, subject));
+}
+
 export function setRuntimeConfig(config) {
   state.config = config || null;
   return state.config;
@@ -891,7 +941,10 @@ export function modulesEnabled(moduleIds = []) {
 }
 
 export function availableAdminNavItems() {
-  return adminNavItems.filter((item) => modulesEnabled(item.modules || []));
+  return adminNavItems.filter((item) =>
+    modulesEnabled(item.modules || []) &&
+    hasAnyPermission(item.permissions || [])
+  );
 }
 
 function runtimeBuilderElements() {
@@ -980,6 +1033,8 @@ export function normalizePageLayout(value) {
 }
 
 function pathLocale() {
+  if (typeof window === "undefined") return "";
+
   const params = new URLSearchParams(window.location.search || "");
   const queryLocale = params.get("locale");
   if (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(queryLocale || "")) return queryLocale.toLowerCase();
@@ -1034,6 +1089,10 @@ export function buildTemplateSection(templateId, sectionKey, sortOrder = 0) {
       type: block.type,
       label: block.label,
       value: clonePlain(block.value),
+      settings: {
+        ...(block.settings || {}),
+        elementId: template.id
+      },
       sortOrder: index,
       editable: true
     }))
@@ -1104,6 +1163,10 @@ export function buildSectionPattern(patternId, page, sortOrder = 0) {
         type: block.type,
         label: block.label,
         value: clonePlain(block.value),
+        settings: {
+          ...(block.settings || {}),
+          elementId: template.id
+        },
         sortOrder: blocks.length,
         editable: true
       });

@@ -1,9 +1,9 @@
-import { api, defaultPage, elements, moduleEnabled, modulesEnabled, setRuntimeConfig, setStatus, state } from "./core.js";
+import { api, defaultPage, elements, hasAnyPermission, hasPermission, moduleEnabled, modulesEnabled, setRuntimeConfig, setStatus, state } from "./core.js";
 import { currentAdminRoute, currentLocale, pageSlug, publicPostRoute, publicShopRoute } from "./routes.js";
 import { loadMenu } from "./content-actions.js";
 import { renderPage, renderPost } from "./public-renderer.js";
 import { loadUser } from "./session-actions.js";
-import { renderAdminLogin, renderPasswordReset } from "./ui.js";
+import { renderAdminLogin, renderEmailVerification, renderInviteAcceptance, renderPasswordReset } from "./ui.js";
 
 async function adminViews() {
   return import("./admin-views.js");
@@ -54,6 +54,16 @@ export async function loadAdminRoute(route) {
     return;
   }
 
+  if (route.view === "invite-acceptance") {
+    renderInviteAcceptance(route.token);
+    return;
+  }
+
+  if (route.view === "email-verification") {
+    renderEmailVerification(route.token);
+    return;
+  }
+
   state.user = await loadUser();
   if (!state.user) {
     renderAdminLogin();
@@ -69,6 +79,14 @@ export async function loadAdminRoute(route) {
     return;
   }
 
+  const requiredPermissions = adminRoutePermissions(route);
+  if (!hasAnyPermission(requiredPermissions)) {
+    const { renderDashboardHome } = await adminViews();
+    renderDashboardHome(state.config || {});
+    setStatus("You do not have permission to access this dashboard section.", true);
+    return;
+  }
+
   if (route.view === "profile") {
     const { renderProfilePage } = await adminViews();
     const { user } = await api("/users/me");
@@ -79,14 +97,16 @@ export async function loadAdminRoute(route) {
   if (route.view === "shop") {
     const { renderShopPage } = await adminViews();
     try {
+      const canReadProducts = hasPermission("read", "products");
+      const canReadOrders = hasPermission("read", "orders");
       const [config, draftProducts, activeProducts, archivedProducts, orders, categories, attributes] = await Promise.all([
         api("/config"),
-        api(adminLocaleUrl("/products", { status: "DRAFT" })),
-        api(adminLocaleUrl("/products", { status: "ACTIVE" })),
-        api(adminLocaleUrl("/products", { status: "ARCHIVED" })),
-        api("/orders"),
-        api(adminLocaleUrl("/products/categories")),
-        api(adminLocaleUrl("/products/attributes"))
+        canReadProducts ? api(adminLocaleUrl("/products", { status: "DRAFT" })) : Promise.resolve({ products: [] }),
+        canReadProducts ? api(adminLocaleUrl("/products", { status: "ACTIVE" })) : Promise.resolve({ products: [] }),
+        canReadProducts ? api(adminLocaleUrl("/products", { status: "ARCHIVED" })) : Promise.resolve({ products: [] }),
+        canReadOrders ? api("/orders") : Promise.resolve({ orders: [] }),
+        canReadProducts ? api(adminLocaleUrl("/products/categories")) : Promise.resolve({ categories: [] }),
+        canReadProducts ? api(adminLocaleUrl("/products/attributes")) : Promise.resolve({ attributes: [] })
       ]);
       renderShopPage({
         config,
@@ -153,7 +173,9 @@ export async function loadAdminRoute(route) {
     try {
       const [{ orders }, paymentResponse] = await Promise.all([
         api("/orders"),
-        moduleEnabled("payments") ? api("/payments") : Promise.resolve({ payments: [] })
+        moduleEnabled("payments") && hasPermission("read", "payments")
+          ? api("/payments")
+          : Promise.resolve({ payments: [] })
       ]);
       renderShopOrdersPage(orders, paymentResponse.payments || []);
     } catch (error) {
@@ -189,6 +211,10 @@ export async function loadAdminRoute(route) {
     const config = await api("/config");
     if (!moduleEnabled("payments")) {
       renderShopConfigurationPage(config, {}, "Payments module is disabled for this project.");
+      return;
+    }
+    if (!hasPermission("read", "payments")) {
+      renderShopConfigurationPage(config);
       return;
     }
 
@@ -284,8 +310,61 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "users") {
     const { renderUsersPage } = await adminViews();
-    const { users } = await api("/users");
-    renderUsersPage(users);
+    const filters = new URLSearchParams();
+    const currentParams = new URLSearchParams(window.location.search || "");
+    const search = String(currentParams.get("search") || "").trim();
+    const status = String(currentParams.get("status") || "").trim();
+    const page = Math.max(1, Number.parseInt(currentParams.get("page") || "1", 10) || 1);
+    if (search) filters.set("search", search);
+    if (status) filters.set("status", status);
+    filters.set("page", String(page));
+
+    try {
+      const usersResponse = await api(`/users?${filters.toString()}`);
+      let invitesResponse = { invites: [] };
+      let inviteError = "";
+      if (hasPermission("invite", "users")) {
+        try {
+          invitesResponse = await api("/auth/invites?status=PENDING&limit=100");
+        } catch (error) {
+          inviteError = error.message || "Unable to load pending invitations.";
+        }
+      }
+      renderUsersPage(usersResponse.users || [], {
+        pagination: usersResponse.pagination,
+        invites: invitesResponse.invites || [],
+        filters: { search, status },
+        inviteError
+      });
+    } catch (error) {
+      renderUsersPage([], {
+        filters: { search, status },
+        errorMessage: error.message || "Unable to load users."
+      });
+    }
+    return;
+  }
+
+  if (route.view === "user-edit" && route.userId) {
+    const { renderUserDetailPage, renderUserEditPage } = await adminViews();
+    const { user } = await api(`/users/${encodeURIComponent(route.userId)}`);
+    if (!hasPermission("update", "users")) {
+      renderUserDetailPage(user);
+      setStatus("You do not have permission to edit users.", true);
+      return;
+    }
+
+    let roles = [];
+    let rolesError = "";
+    if (hasPermission("read", "roles")) {
+      try {
+        const roleResponse = await api("/roles");
+        roles = roleResponse.roles || [];
+      } catch (error) {
+        rolesError = error.message || "Unable to load role options.";
+      }
+    }
+    renderUserEditPage(user, roles, { rolesError });
     return;
   }
 
@@ -337,11 +416,38 @@ function routeModulesEnabled(route) {
     "post-categories": ["cms"],
     users: ["users", "roles"],
     user: ["users", "roles"],
+    "user-edit": ["users", "roles"],
     settings: ["config"]
   };
   const requiredModules = requiredModulesByView[route.view] || [];
 
   return modulesEnabled(requiredModules);
+}
+
+export function adminRoutePermissions(route) {
+  const requirements = {
+    shop: [["read", "products"], ["read", "orders"]],
+    "shop-products": [["read", "products"]],
+    "product-create": [["create", "products"]],
+    "product-editor": [["update", "products"]],
+    "shop-categories": [["read", "products"]],
+    "shop-attributes": [["read", "products"]],
+    "shop-orders": [["read", "orders"]],
+    "shop-configuration": [["read", "payments"], ["read", "modules"]],
+    pages: [["read", "cms"]],
+    "page-create": [["create", "cms"]],
+    "page-builder": [["update", "cms"]],
+    posts: [["read", "cms"]],
+    "post-create": [["create", "cms"]],
+    "post-builder": [["update", "cms"]],
+    "post-categories": [["read", "cms"]],
+    users: [["read", "users"]],
+    user: [["read", "users"]],
+    "user-edit": [["read", "users"]],
+    settings: [["manage", "modules"]]
+  };
+
+  return requirements[route.view] || [];
 }
 
 async function loadPage() {
@@ -417,6 +523,8 @@ export async function bootstrap() {
     return;
   }
 
+  const hasServerRenderedContent = elements.page?.dataset.serverRendered === "true";
+
   try {
     document.body.classList.remove("auth-enabled", "dashboard-enabled");
     state.user = await loadUser();
@@ -424,7 +532,7 @@ export async function bootstrap() {
     await loadMenu();
     await loadPage();
   } catch (error) {
-    elements.page.innerHTML = "";
+    if (!hasServerRenderedContent) elements.page.innerHTML = "";
     setStatus(error.message, true);
   }
 }

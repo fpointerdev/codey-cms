@@ -9,6 +9,8 @@ import {
   confirmEmailVerificationSchema,
   confirmPasswordResetSchema,
   createInviteSchema,
+  inviteIdParams,
+  listInvitesQuery,
   loginSchema,
   logoutSchema,
   refreshSchema,
@@ -107,9 +109,52 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     asyncHandler(async (req, res) => {
       const result = await authService.createInvite(req.body, {
         actorUserId: req.user!.id,
+        actorPermissions: req.user!.permissions,
         ...requestMeta(req)
       });
       return sendSuccess(res, result, undefined, 201);
+    })
+  );
+
+  router.get(
+    "/invites",
+    requirePermission(context, "invite", "users"),
+    validateRequest({ query: listInvitesQuery }),
+    asyncHandler(async (req, res) => {
+      const result = await authService.listInvites(req.query as unknown as {
+        page: number;
+        limit: number;
+        search?: string;
+        status?: "PENDING" | "ACCEPTED" | "REVOKED";
+      });
+      return sendSuccess(res, result, result.pagination);
+    })
+  );
+
+  router.post(
+    "/invites/:id/resend",
+    requirePermission(context, "invite", "users"),
+    validateRequest({ params: inviteIdParams }),
+    asyncHandler(async (req, res) => {
+      const result = await authService.resendInvite(req.params.id, {
+        actorUserId: req.user!.id,
+        actorPermissions: req.user!.permissions,
+        ...requestMeta(req)
+      });
+      return sendSuccess(res, result);
+    })
+  );
+
+  router.delete(
+    "/invites/:id",
+    requirePermission(context, "invite", "users"),
+    validateRequest({ params: inviteIdParams }),
+    asyncHandler(async (req, res) => {
+      const invite = await authService.revokeInvite(req.params.id, {
+        actorUserId: req.user!.id,
+        ...requestMeta(req)
+      });
+      return sendSuccess(res, { revoked: true, invite });
     })
   );
 

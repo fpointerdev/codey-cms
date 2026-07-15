@@ -146,6 +146,11 @@ export const moduleCatalog = {
         description: "Update users"
       },
       {
+        action: "delete",
+        subject: "users",
+        description: "Delete users"
+      },
+      {
         action: "invite",
         subject: "users",
         description: "Invite users"
@@ -395,6 +400,7 @@ export const themeManifest = {
       "/dashboard/profile",
       "/dashboard/users",
       "/dashboard/users/:id",
+      "/dashboard/users/:id/edit",
       "/dashboard/settings"
     ],
     navigation: [

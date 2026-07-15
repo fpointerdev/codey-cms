@@ -6,6 +6,7 @@ import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { hashPassword, verifyPassword } from "../../core/security/password.js";
 import { createEmailClient, isEmailDeliveryConfigured } from "../../infrastructure/email/http-email.js";
+import { assertRolesCanBeAssigned } from "../roles/role-assignment.js";
 import type { AuthenticatedUser, TokenPair } from "./auth.types.js";
 
 const encoder = new TextEncoder();
@@ -21,7 +22,45 @@ type AuditInput = RequestMeta & {
   actorUserId?: string;
 };
 
+type InviteAuditInput = AuditInput & {
+  actorPermissions: AuthenticatedUser["permissions"];
+};
+
 type RecoveryFlow = "emailVerification" | "passwordReset" | "invite";
+
+const publicInviteSelect = {
+  id: true,
+  email: true,
+  roleNames: true,
+  status: true,
+  expiresAt: true,
+  acceptedAt: true,
+  revokedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  invitedBy: {
+    select: {
+      id: true,
+      email: true,
+      name: true
+    }
+  },
+  acceptedBy: {
+    select: {
+      id: true,
+      email: true,
+      name: true
+    }
+  }
+} as const;
+
+const inviteRoleInclude = {
+  permissions: {
+    include: {
+      permission: true
+    }
+  }
+} as const;
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -468,31 +507,56 @@ export class AuthService {
 
   async createInvite(
     input: { email: string; roleNames: string[] },
-    audit: AuditInput
+    audit: InviteAuditInput
   ) {
-    this.assertRecoveryTokenDeliveryConfigured("Invite");
-
     const roleNames = [...new Set(input.roleNames)];
+    const email = input.email.toLowerCase();
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true }
+    });
+    if (existingUser) {
+      throw new AppError(409, "email_taken", "A user with this email already exists.");
+    }
+
     const roles = await this.prisma.role.findMany({
       where: {
         name: { in: roleNames }
-      }
+      },
+      include: inviteRoleInclude
     });
 
     if (roles.length !== roleNames.length) {
       throw new AppError(422, "invalid_invite_roles", "One or more invite roles do not exist.");
     }
+    assertRolesCanBeAssigned(audit.actorPermissions, roles);
 
     const token = createOpaqueToken();
-    const invite = await this.prisma.userInvite.create({
-      data: {
-        email: input.email.toLowerCase(),
-        tokenHash: hashToken(token),
-        roleNames,
-        invitedById: audit.actorUserId,
-        expiresAt: addSeconds(60 * 60 * 24 * 7)
-      }
-    });
+    const invite = await this.prisma.$transaction(async (tx) => {
+      await tx.userInvite.updateMany({
+        where: {
+          email,
+          status: "PENDING",
+          revokedAt: null,
+          acceptedAt: null
+        },
+        data: {
+          status: "REVOKED",
+          revokedAt: new Date()
+        }
+      });
+
+      return tx.userInvite.create({
+        data: {
+          email,
+          tokenHash: hashToken(token),
+          roleNames,
+          invitedById: audit.actorUserId,
+          expiresAt: addSeconds(60 * 60 * 24 * 7)
+        },
+        select: publicInviteSelect
+      });
+    }, { isolationLevel: "Serializable" });
 
     await this.audit({
       actorUserId: audit.actorUserId,
@@ -513,8 +577,162 @@ export class AuthService {
 
     return {
       invite,
-      token: this.exposeSensitiveToken(token)
+      ...this.inviteDelivery(token)
     };
+  }
+
+  async listInvites(input: {
+    page: number;
+    limit: number;
+    search?: string;
+    status?: "PENDING" | "ACCEPTED" | "REVOKED";
+  }) {
+    const where: Prisma.UserInviteWhereInput = {
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.search
+        ? { email: { contains: input.search, mode: "insensitive" } }
+        : {})
+    };
+    const [invites, total] = await Promise.all([
+      this.prisma.userInvite.findMany({
+        where,
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        orderBy: { createdAt: "desc" },
+        select: publicInviteSelect
+      }),
+      this.prisma.userInvite.count({ where })
+    ]);
+
+    return {
+      invites,
+      pagination: {
+        page: input.page,
+        limit: input.limit,
+        total,
+        pages: Math.max(1, Math.ceil(total / input.limit))
+      }
+    };
+  }
+
+  async resendInvite(inviteId: string, audit: InviteAuditInput) {
+    const existing = await this.prisma.userInvite.findUnique({
+      where: { id: inviteId },
+      select: publicInviteSelect
+    });
+    if (!existing) throw new AppError(404, "invite_not_found", "Invite not found.");
+    if (existing.status !== "PENDING" || existing.revokedAt || existing.acceptedAt) {
+      throw new AppError(409, "invite_not_pending", "Only pending invites can be resent.");
+    }
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: existing.email },
+      select: { id: true }
+    });
+    if (existingUser) {
+      throw new AppError(409, "email_taken", "A user with this email already exists.");
+    }
+
+    const roles = await this.prisma.role.findMany({
+      where: { name: { in: existing.roleNames } },
+      include: inviteRoleInclude
+    });
+    if (roles.length !== existing.roleNames.length) {
+      throw new AppError(422, "invalid_invite_roles", "One or more invite roles do not exist.");
+    }
+    assertRolesCanBeAssigned(audit.actorPermissions, roles);
+
+    const token = createOpaqueToken();
+    const invite = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.userInvite.updateMany({
+        where: {
+          id: inviteId,
+          status: "PENDING",
+          revokedAt: null,
+          acceptedAt: null
+        },
+        data: {
+          tokenHash: hashToken(token),
+          expiresAt: addSeconds(60 * 60 * 24 * 7),
+          invitedById: audit.actorUserId
+        }
+      });
+      if (updated.count !== 1) {
+        throw new AppError(409, "invite_not_pending", "Only pending invites can be resent.");
+      }
+
+      return tx.userInvite.findUniqueOrThrow({
+        where: { id: inviteId },
+        select: publicInviteSelect
+      });
+    }, { isolationLevel: "Serializable" });
+
+    await this.audit({
+      actorUserId: audit.actorUserId,
+      action: "invite.resend",
+      subject: "user_invite",
+      subjectId: invite.id,
+      meta: audit,
+      metadata: {
+        email: invite.email,
+        roleNames: invite.roleNames
+      }
+    });
+    await this.deliverRecoveryToken("invite", {
+      email: invite.email,
+      token,
+      roleNames: invite.roleNames
+    });
+
+    return {
+      invite,
+      ...this.inviteDelivery(token)
+    };
+  }
+
+  async revokeInvite(inviteId: string, audit: AuditInput) {
+    const existing = await this.prisma.userInvite.findUnique({
+      where: { id: inviteId },
+      select: publicInviteSelect
+    });
+    if (!existing) throw new AppError(404, "invite_not_found", "Invite not found.");
+    if (existing.status !== "PENDING" || existing.revokedAt || existing.acceptedAt) {
+      throw new AppError(409, "invite_not_pending", "Only pending invites can be revoked.");
+    }
+
+    const revoked = await this.prisma.userInvite.updateMany({
+      where: {
+        id: inviteId,
+        status: "PENDING",
+        revokedAt: null,
+        acceptedAt: null
+      },
+      data: {
+        status: "REVOKED",
+        revokedAt: new Date()
+      }
+    });
+    if (revoked.count !== 1) {
+      throw new AppError(409, "invite_not_pending", "Only pending invites can be revoked.");
+    }
+
+    const invite = await this.prisma.userInvite.findUniqueOrThrow({
+      where: { id: inviteId },
+      select: publicInviteSelect
+    });
+    await this.audit({
+      actorUserId: audit.actorUserId,
+      action: "invite.revoke",
+      subject: "user_invite",
+      subjectId: invite.id,
+      meta: audit,
+      metadata: {
+        email: invite.email,
+        roleNames: invite.roleNames
+      }
+    });
+
+    return invite;
   }
 
   async acceptInvite(input: { token: string; password: string; name?: string }, meta: RequestMeta) {
@@ -552,6 +770,25 @@ export class AuthService {
         throw new AppError(422, "invalid_invite_roles", "One or more invite roles do not exist.");
       }
 
+      const acceptedAt = new Date();
+      const claimedInvite = await tx.userInvite.updateMany({
+        where: {
+          id: invite.id,
+          tokenHash,
+          status: "PENDING",
+          revokedAt: null,
+          acceptedAt: null
+        },
+        data: {
+          status: "ACCEPTED",
+          acceptedAt
+        }
+      });
+
+      if (claimedInvite.count !== 1) {
+        throw new AppError(401, "invalid_invite_token", "Invite token is invalid or expired.");
+      }
+
       const createdUser = await tx.user.create({
         data: {
           email: invite.email,
@@ -567,23 +804,12 @@ export class AuthService {
         include: this.authUserInclude()
       });
 
-      const acceptedInvite = await tx.userInvite.updateMany({
-        where: {
-          id: invite.id,
-          status: "PENDING",
-          revokedAt: null,
-          acceptedAt: null
-        },
+      await tx.userInvite.update({
+        where: { id: invite.id },
         data: {
-          status: "ACCEPTED",
-          acceptedById: createdUser.id,
-          acceptedAt: new Date()
+          acceptedById: createdUser.id
         }
       });
-
-      if (acceptedInvite.count !== 1) {
-        throw new AppError(401, "invalid_invite_token", "Invite token is invalid or expired.");
-      }
 
       await writeAuditLog(tx, {
         actorUserId: createdUser.id,
@@ -722,6 +948,27 @@ export class AuthService {
   private exposeSensitiveToken(token: string | null) {
     if (!this.canReturnRecoveryTokens()) return undefined;
     return token;
+  }
+
+  private inviteDelivery(token: string) {
+    if (this.canEmailRecoveryTokens()) {
+      return {
+        delivery: "email" as const,
+        inviteUrl: undefined
+      };
+    }
+
+    return {
+      delivery: "manual" as const,
+      inviteUrl: this.inviteUrl(token)
+    };
+  }
+
+  private inviteUrl(token: string) {
+    const path = `/auth/invite?token=${encodeURIComponent(token)}`;
+    if (!this.config.app.publicUrl) return path;
+
+    return new URL(path, this.config.app.publicUrl).toString();
   }
 
   private async deliverRecoveryToken(

@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+import { pathToFileURL } from "node:url";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
@@ -16,8 +17,13 @@ import { createMaintenanceMiddleware } from "./http/maintenance.middleware.js";
 import { loadModules } from "./http/module-loader.js";
 import { notFoundHandler } from "./http/not-found.middleware.js";
 import { requestContext } from "./http/request-context.middleware.js";
+import { injectPublicShellContent, type PublicShellContent } from "./public-shell.js";
 import { prisma } from "../infrastructure/database/prisma.js";
 import { logger } from "../infrastructure/logging/logger.js";
+import {
+  serializeHttpRequest,
+  serializeHttpResponse
+} from "../infrastructure/logging/http-logging.js";
 import { createStorageAdapter } from "../infrastructure/storage/s3-storage.js";
 import type { StorageAdapter } from "../infrastructure/storage/storage.types.js";
 import { modules } from "../modules/index.js";
@@ -190,6 +196,14 @@ type SeoMeta = {
   imageUrl?: string;
   noindex?: boolean;
 };
+
+type PublicMarkupRenderer = {
+  renderFooter(page: unknown, canEdit?: boolean): string;
+  renderPageContent(page: unknown, options?: { canEdit?: boolean }): string;
+  renderPostContent(post: unknown): string;
+};
+
+let publicMarkupRenderer: Promise<PublicMarkupRenderer> | null = null;
 
 type PublicContentRoute =
   | { type: "page"; slug: string; locale: string }
@@ -497,6 +511,76 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
   }
 }
 
+function loadPublicMarkupRenderer(webRoot: string) {
+  if (!publicMarkupRenderer) {
+    const rendererUrl = pathToFileURL(join(webRoot, "web", "public-renderer.js")).href;
+    publicMarkupRenderer = import(rendererUrl) as Promise<PublicMarkupRenderer>;
+  }
+
+  return publicMarkupRenderer;
+}
+
+async function resolvePublicShellContent(req: Request, webRoot: string): Promise<PublicShellContent | null> {
+  if (isAdminShellPath(req.path)) return null;
+
+  try {
+    const [localization, site, renderer] = await Promise.all([
+      readLocalizationSettings(prisma),
+      readSiteSeoDefaults(),
+      loadPublicMarkupRenderer(webRoot)
+    ]);
+    const route = publicContentRouteFromRequest(req, localization);
+    const siteTitle = site.title || config.app.name;
+
+    if (route.type === "post") {
+      const post = await prisma.cmsPost.findFirst({
+        where: visiblePublishedWhere(route.slug, route.locale),
+        select: {
+          title: true,
+          slug: true,
+          locale: true,
+          excerpt: true,
+          content: true,
+          status: true,
+          publishedAt: true
+        }
+      });
+      if (!post) return null;
+
+      return {
+        brand: escapeHtml(siteTitle),
+        body: renderer.renderPostContent(post),
+        footer: renderer.renderFooter({ title: siteTitle }, false)
+      };
+    }
+
+    if (route.type !== "page") return null;
+    const page = await prisma.cmsPage.findFirst({
+      where: visiblePublishedWhere(route.slug, route.locale),
+      include: {
+        sections: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            blocks: {
+              orderBy: { sortOrder: "asc" }
+            }
+          }
+        }
+      }
+    });
+    if (!page) return null;
+
+    return {
+      brand: escapeHtml(siteTitle),
+      body: renderer.renderPageContent(page, { canEdit: false }),
+      footer: renderer.renderFooter({ title: siteTitle }, false)
+    };
+  } catch (error) {
+    logger.warn({ err: error, path: req.path }, "Unable to render public page content");
+    return null;
+  }
+}
+
 function injectSeoMeta(html: string, meta: SeoMeta) {
   const htmlLang = escapeHtml(meta.htmlLang || "en");
   const tags = [
@@ -527,12 +611,14 @@ function createAppShellRenderer(webRoot: string) {
 
   return async function renderAppShell(req: Request, res: Response, next: NextFunction) {
     try {
-      const [html, meta] = await Promise.all([
+      const [html, meta, content] = await Promise.all([
         readFile(indexPath, "utf8"),
-        resolveSeoMeta(req)
+        resolveSeoMeta(req),
+        resolvePublicShellContent(req, webRoot)
       ]);
+      const shell = injectSeoMeta(html, meta);
 
-      res.type("html").send(injectSeoMeta(html, meta));
+      res.type("html").send(content ? injectPublicShellContent(shell, content) : shell);
     } catch (error) {
       next(error);
     }
@@ -705,7 +791,14 @@ export async function createApp() {
   app.disable("x-powered-by");
   if (config.isProduction) app.set("trust proxy", 1);
   app.use(requestContext);
-  app.use(pinoHttp({ logger }));
+  app.use(pinoHttp({
+    logger,
+    serializers: {
+      req: serializeHttpRequest,
+      res: serializeHttpResponse
+    },
+    wrapSerializers: false
+  }));
   app.use(helmet(createHelmetOptions()));
   app.use(cors(createCorsOptions()));
   app.use(compression());
@@ -748,7 +841,14 @@ export async function createApp() {
   });
   app.use(createMaintenanceMiddleware({ config, prisma, logger }));
   if (copiedRuntimeEnabled) {
-    app.get(["/cy-admin", "/auth/reset-password", "/dashboard", "/dashboard/*"], renderAppShell);
+    app.get([
+      "/cy-admin",
+      "/auth/reset-password",
+      "/auth/invite",
+      "/auth/verify-email",
+      "/dashboard",
+      "/dashboard/*"
+    ], renderAppShell);
   }
 
   const loadedModules = await loadModules(app, modules, {

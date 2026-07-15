@@ -33,6 +33,15 @@ import {
   animationEffectOptions,
   sanitizeAnimationSettings
 } from "./custom-css.js";
+import {
+  copyBuilderSections,
+  duplicateBuilderBlockInSections,
+  duplicateBuilderSectionInSections,
+  moveBuilderBlockInSections,
+  moveBuilderSectionInSections
+} from "./builder-operations.js";
+
+const builderHistoryLimit = 30;
 
 const containerLayoutOptions = [
   { value: "one-column", label: "1 column", description: "Stacked content and long-form sections." },
@@ -766,26 +775,24 @@ export async function savePageBuilderSettings(form) {
 async function createBuilderContainer(input = {}) {
   if (!state.builderPage) return null;
 
-  const previousIds = new Set((state.builderPage.sections || []).map((section) => section.id));
-  const { page } = await api(withLocale(`/cms/pages/${encodeURIComponent(state.builderPage.slug)}/sections`, activePageLocale()), {
-    method: "POST",
-    body: JSON.stringify({
-      key: `container-${Date.now()}`,
-      label: input.label || "Container",
-      sortOrder: state.builderPage.sections?.length || 0,
-      settings: {
-        template: "content",
-        ...settingsFromSectionControls(input)
-      },
-      blocks: []
-    })
-  });
+  const key = `container-${Date.now()}`;
+  const section = {
+    key,
+    label: input.label || "Container",
+    sortOrder: state.builderPage.sections?.length || 0,
+    settings: {
+      template: "content",
+      ...settingsFromSectionControls(input)
+    },
+    blocks: []
+  };
+  await saveBuilderSections(
+    [...(state.builderPage.sections || []), section],
+    "Container added. Add elements from the left library.",
+    key
+  );
 
-  state.builderPage = page;
-  const section = page.sections?.find((item) => !previousIds.has(item.id)) || page.sections?.at(-1);
-  state.activeBuilderSectionId = section?.id || null;
-
-  return section || null;
+  return state.builderPage.sections?.find((item) => item.key === key) || null;
 }
 
 export async function addBuilderContainer() {
@@ -803,7 +810,6 @@ export async function addBuilderContainer() {
 
     setStatus("Adding container...");
     await createBuilderContainer(values);
-    renderPageBuilderPage(state.builderPage, "Container added. Add elements from the left library.");
   } catch (error) {
     setStatus(error.message || "Unable to add container.", true);
   }
@@ -815,15 +821,11 @@ export async function addSectionPatternToBuilder(patternId) {
   try {
     const section = buildSectionPattern(patternId, state.builderPage, state.builderPage.sections?.length || 0);
     setStatus(`Adding ${section.label || "section"}...`);
-    const { page } = await api(withLocale(`/cms/pages/${encodeURIComponent(state.builderPage.slug)}/sections`, activePageLocale()), {
-      method: "POST",
-      body: JSON.stringify(section)
-    });
-
-    state.builderPage = page;
-    const addedSection = page.sections?.find((item) => item.key === section.key) || page.sections?.at(-1);
-    state.activeBuilderSectionId = addedSection?.id || null;
-    renderPageBuilderPage(page, `${section.label || "Section"} added. Edit each block or adjust container settings.`);
+    await saveBuilderSections(
+      [...(state.builderPage.sections || []), section],
+      `${section.label || "Section"} added. Edit each block or adjust container settings.`,
+      section.key
+    );
   } catch (error) {
     setStatus(error.message || "Unable to add section pattern.", true);
   }
@@ -861,17 +863,148 @@ function normalizedSectionsForSave(sections = []) {
   );
 }
 
-async function saveBuilderSections(sections, message, activeSectionKey = "") {
+function ensureBuilderHistory() {
+  const slug = state.builderPage?.slug || "";
+  if (state.builderHistorySlug === slug) return;
+
+  state.builderHistorySlug = slug;
+  state.builderUndoStack = [];
+  state.builderRedoStack = [];
+}
+
+function pushBuilderHistory(stack, sections) {
+  stack.push(copyBuilderSections(sections));
+  if (stack.length > builderHistoryLimit) stack.splice(0, stack.length - builderHistoryLimit);
+}
+
+function recordBuilderHistory(sections) {
+  ensureBuilderHistory();
+  pushBuilderHistory(state.builderUndoStack, sections);
+  state.builderRedoStack = [];
+}
+
+function activeBuilderSectionKey() {
+  return state.builderPage?.sections?.find((section) => section.id === state.activeBuilderSectionId)?.key ||
+    state.builderPage?.sections?.[0]?.key ||
+    "";
+}
+
+function focusBuilderControl(kind, key, controlSelector) {
+  if (typeof document === "undefined") return;
+
+  requestAnimationFrame(() => {
+    const selector = kind === "section" ? "[data-builder-section-key]" : "[data-builder-block-key]";
+    const dataKey = kind === "section" ? "builderSectionKey" : "builderBlockKey";
+    const item = Array.from(document.querySelectorAll(selector)).find((element) => element.dataset?.[dataKey] === key);
+    item?.querySelector?.(controlSelector)?.focus?.();
+  });
+}
+
+async function saveBuilderSections(sections, message, activeSectionKey = "", options = {}) {
+  const previousSections = options.recordHistory === false
+    ? null
+    : copyBuilderSections(state.builderPage?.sections || []);
   const { page } = await api(withLocale(`/cms/pages/${encodeURIComponent(state.builderPage.slug)}`, activePageLocale()), {
     method: "PATCH",
     body: JSON.stringify({ sections: normalizedSectionsForSave(sections) })
   });
 
+  if (previousSections) recordBuilderHistory(previousSections);
   state.builderPage = page;
   if (activeSectionKey) {
     state.activeBuilderSectionId = page.sections?.find((section) => section.key === activeSectionKey)?.id || null;
   }
   renderPageBuilderPage(page, message);
+}
+
+export async function undoBuilderChange() {
+  if (!state.builderPage) return;
+  ensureBuilderHistory();
+  const previousSections = state.builderUndoStack.pop();
+  if (!previousSections) return;
+
+  const currentSections = copyBuilderSections(state.builderPage.sections || []);
+  const activeSectionKey = activeBuilderSectionKey();
+  pushBuilderHistory(state.builderRedoStack, currentSections);
+
+  try {
+    await saveBuilderSections(previousSections, "Last canvas change undone.", activeSectionKey, { recordHistory: false });
+  } catch (error) {
+    state.builderRedoStack.pop();
+    pushBuilderHistory(state.builderUndoStack, previousSections);
+    setStatus(error.message || "Unable to undo the last change.", true);
+  }
+}
+
+export async function redoBuilderChange() {
+  if (!state.builderPage) return;
+  ensureBuilderHistory();
+  const nextSections = state.builderRedoStack.pop();
+  if (!nextSections) return;
+
+  const currentSections = copyBuilderSections(state.builderPage.sections || []);
+  const activeSectionKey = activeBuilderSectionKey();
+  pushBuilderHistory(state.builderUndoStack, currentSections);
+
+  try {
+    await saveBuilderSections(nextSections, "Canvas change redone.", activeSectionKey, { recordHistory: false });
+  } catch (error) {
+    state.builderUndoStack.pop();
+    pushBuilderHistory(state.builderRedoStack, nextSections);
+    setStatus(error.message || "Unable to redo the last change.", true);
+  }
+}
+
+export async function duplicateBuilderSection(sectionId) {
+  if (!state.builderPage || !sectionId) return;
+  const result = duplicateBuilderSectionInSections(state.builderPage.sections || [], sectionId);
+  if (!result) return;
+
+  try {
+    await saveBuilderSections(result.sections, "Container duplicated.", result.activeSectionKey);
+    focusBuilderControl("section", result.activeSectionKey, "[data-edit-builder-section]");
+  } catch (error) {
+    setStatus(error.message || "Unable to duplicate container.", true);
+  }
+}
+
+export async function duplicateBuilderBlock(blockKey) {
+  if (!state.builderPage || !blockKey) return;
+  const result = duplicateBuilderBlockInSections(state.builderPage.sections || [], blockKey);
+  if (!result) return;
+
+  try {
+    await saveBuilderSections(result.sections, "Element duplicated.", result.activeSectionKey);
+    focusBuilderControl("block", result.blockKey, "[data-builder-edit-block], [data-duplicate-builder-block]");
+  } catch (error) {
+    setStatus(error.message || "Unable to duplicate element.", true);
+  }
+}
+
+export async function moveBuilderSection(sectionId, direction) {
+  if (!state.builderPage || !sectionId) return;
+  const result = moveBuilderSectionInSections(state.builderPage.sections || [], sectionId, direction);
+  if (!result) return;
+
+  try {
+    await saveBuilderSections(result.sections, "Container order saved.", result.activeSectionKey);
+    focusBuilderControl("section", result.activeSectionKey, `[data-move-builder-section="${direction}"]`);
+  } catch (error) {
+    setStatus(error.message || "Unable to reorder containers.", true);
+  }
+}
+
+export async function moveBuilderBlock(blockKey, direction) {
+  if (!state.builderPage || !blockKey) return;
+  const result = moveBuilderBlockInSections(state.builderPage.sections || [], blockKey, direction);
+  if (!result) return;
+
+  try {
+    await saveBuilderSections(result.sections, "Element order saved.", result.activeSectionKey);
+    focusBuilderControl("block", blockKey, `[data-move-builder-block="${direction}"]`);
+  } catch (error) {
+    setStatus(error.message || "Unable to reorder elements.", true);
+  }
 }
 
 export async function reorderBuilderSection(sectionId, beforeSectionId = "") {
@@ -937,7 +1070,15 @@ export async function deleteBuilderSection(sectionId) {
   const message = blockCount
     ? `Delete "${section.label || "this container"}" and its ${blockCount} element${blockCount === 1 ? "" : "s"}?`
     : `Delete "${section.label || "this container"}"?`;
-  if (typeof window !== "undefined" && !window.confirm(message)) return;
+  const confirmation = await getModalFormHandler()({
+    label: "Delete container",
+    title: "Remove this container?",
+    description: message,
+    fields: [],
+    submitLabel: "Delete container",
+    destructive: true
+  });
+  if (!confirmation) return;
 
   const nextSections = sections.filter((item) => item.id !== sectionId);
   const nextActiveSection = nextSections.find((item) => item.id === state.activeBuilderSectionId) || nextSections[0];
@@ -967,7 +1108,15 @@ export async function deleteBuilderBlock(blockKey) {
   });
   if (!deletedBlock) return;
 
-  if (typeof window !== "undefined" && !window.confirm(`Delete "${deletedBlock.label || "this element"}"?`)) return;
+  const confirmation = await getModalFormHandler()({
+    label: "Delete element",
+    title: "Remove this element?",
+    description: `Delete "${deletedBlock.label || "this element"}"?`,
+    fields: [],
+    submitLabel: "Delete element",
+    destructive: true
+  });
+  if (!confirmation) return;
 
   try {
     await saveBuilderSections(sections, "Element deleted.", activeSectionKey);
@@ -1002,13 +1151,7 @@ export async function editBuilderSection(sectionId) {
       });
     });
 
-    const { page } = await api(withLocale(`/cms/pages/${encodeURIComponent(state.builderPage.slug)}`, activePageLocale()), {
-      method: "PATCH",
-      body: JSON.stringify({ sections })
-    });
-    state.builderPage = page;
-    state.activeBuilderSectionId = sectionId;
-    renderPageBuilderPage(page, "Container settings saved.");
+    await saveBuilderSections(sections, "Container settings saved.", section.key);
   } catch (error) {
     setStatus(error.message || "Unable to save container settings.", true);
   }
@@ -1028,11 +1171,15 @@ async function activeBuilderSection(sectionId) {
   return section || null;
 }
 
-async function prepareTemplateBlock(templateBlock, section, index) {
+async function prepareTemplateBlock(templateBlock, section, index, elementId) {
   const key = `${section.key}-${templateBlock.type.toLowerCase()}-${Date.now()}-${index + 1}`;
+  const settings = {
+    ...(templateBlock.settings || {}),
+    elementId
+  };
 
   if (templateBlock.type !== "GALLERY") {
-    return { ...templateBlock, key, sortOrder: (section.blocks?.length || 0) + index, editable: true };
+    return { ...templateBlock, key, settings, sortOrder: (section.blocks?.length || 0) + index, editable: true };
   }
 
   const mediaAssets = await loadMediaImageAssets();
@@ -1053,7 +1200,7 @@ async function prepareTemplateBlock(templateBlock, section, index) {
       return null;
     }
 
-    return { ...templateBlock, key, value: galleryValue, sortOrder: (section.blocks?.length || 0) + index, editable: true };
+    return { ...templateBlock, key, value: galleryValue, settings, sortOrder: (section.blocks?.length || 0) + index, editable: true };
   }
 
   const values = await getModalFormHandler()({
@@ -1078,7 +1225,7 @@ async function prepareTemplateBlock(templateBlock, section, index) {
     return null;
   }
 
-  return { ...templateBlock, key, value: sliderValue, sortOrder: (section.blocks?.length || 0) + index, editable: true };
+  return { ...templateBlock, key, value: sliderValue, settings, sortOrder: (section.blocks?.length || 0) + index, editable: true };
 }
 
 export async function addTemplateToBuilder(templateId, sectionId = "") {
@@ -1090,20 +1237,24 @@ export async function addTemplateToBuilder(templateId, sectionId = "") {
     if (!section || !template) return;
 
     setStatus(`Adding ${template.label || templateId}...`);
-    let page = state.builderPage;
+    const blocks = [];
     for (const [index, templateBlock] of template.blocks.entries()) {
-      const block = await prepareTemplateBlock(templateBlock, section, index);
+      const block = await prepareTemplateBlock(templateBlock, section, index, template.id);
       if (!block) return;
-
-      const response = await api(withLocale(`/cms/pages/${encodeURIComponent(state.builderPage.slug)}/sections/${encodeURIComponent(section.id)}/blocks`, activePageLocale()), {
-        method: "POST",
-        body: JSON.stringify(block)
-      });
-      page = response.page;
-      state.builderPage = page;
+      blocks.push(block);
     }
 
-    renderPageBuilderPage(page, `${template.label || templateId} added to ${section.label || "container"}.`);
+    const sections = (state.builderPage.sections || []).map((item) =>
+      item.id === section.id
+        ? { ...item, blocks: [...(item.blocks || []), ...blocks] }
+        : item
+    );
+
+    await saveBuilderSections(
+      sections,
+      `${template.label || templateId} added to ${section.label || "container"}.`,
+      section.key
+    );
   } catch (error) {
     setStatus(error.message || "Unable to add element.", true);
   }
@@ -1143,8 +1294,12 @@ export async function editBuilderBlock(blockKey) {
   if (!state.builderPage) return;
 
   try {
+    const previousSections = copyBuilderSections(state.builderPage.sections || []);
     const page = await editContentBlock(state.builderPage, blockKey);
-    if (page) renderPageBuilderPage(page, "Block updated.");
+    if (page) {
+      recordBuilderHistory(previousSections);
+      renderPageBuilderPage(page, "Block updated.");
+    }
   } catch (error) {
     setStatus(error.message || "Unable to update block.", true);
   }
@@ -1219,6 +1374,9 @@ export async function restorePageRevision(revisionId, version = "") {
     state.builderPageRevisions = [];
     state.builderRevisionComparison = null;
     state.builderRevisionSlug = "";
+    state.builderHistorySlug = page.slug;
+    state.builderUndoStack = [];
+    state.builderRedoStack = [];
     if (page.slug !== currentSlug) window.history.pushState({}, "", adminHrefWithLocale("page-builder", page.slug, page.locale || locale));
     renderPageBuilderPage(page, "Revision restored. A new restore revision was saved.");
   } catch (error) {

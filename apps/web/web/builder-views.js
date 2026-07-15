@@ -315,14 +315,37 @@ export function renderCreatePagePage() {
   setStatus("Create page editor loaded.");
 }
 
-function renderBuilderBlock(block) {
+function renderMoveToContainerControl(block, section, sections) {
+  if (sections.length < 2) return "";
+
   return `
-    <article class="builder-block" data-builder-block-key="${escapeHtml(block.key)}" draggable="true">
+    <label class="builder-move-control">
+      <span class="visually-hidden">Move ${escapeHtml(block.label || block.key)} to container</span>
+      <select data-move-builder-block-section="${escapeHtml(block.key)}" aria-label="Move ${escapeHtml(block.label || block.key)} to container">
+        ${sections
+          .map((item) => `<option value="${escapeHtml(item.id)}"${item.id === section.id ? " selected" : ""}>${escapeHtml(item.label || item.key)}</option>`)
+          .join("")}
+      </select>
+    </label>
+  `;
+}
+
+function renderBuilderBlock(block, index, blocks, section, sections) {
+  return `
+    <article class="builder-block" data-builder-block-key="${escapeHtml(block.key)}">
       <header>
-        <div><strong>${escapeHtml(block.label || block.key)}</strong><span>${escapeHtml(block.type.replace("_", " "))}</span></div>
-        <span class="builder-drag-handle" aria-hidden="true">Drag</span>
-        ${block.editable ? '<button type="button" class="secondary-button" data-builder-edit-block>Edit</button>' : ""}
-        <button type="button" class="secondary-button danger" data-delete-builder-block aria-label="Delete ${escapeHtml(block.label || block.key)}">Delete</button>
+        <div class="builder-block-heading"><strong>${escapeHtml(block.label || block.key)}</strong><span>${escapeHtml(block.type.replace("_", " "))}</span></div>
+        <div class="builder-block-actions">
+          <span class="builder-drag-handle" draggable="true" aria-hidden="true">Drag</span>
+          <span class="builder-order-controls" role="group" aria-label="Reorder ${escapeHtml(block.label || block.key)}">
+            <button type="button" class="secondary-button builder-icon-button" data-move-builder-block="up" aria-label="Move ${escapeHtml(block.label || block.key)} up" title="Move up"${index === 0 ? " disabled" : ""}>&uarr;</button>
+            <button type="button" class="secondary-button builder-icon-button" data-move-builder-block="down" aria-label="Move ${escapeHtml(block.label || block.key)} down" title="Move down"${index === blocks.length - 1 ? " disabled" : ""}>&darr;</button>
+          </span>
+          ${renderMoveToContainerControl(block, section, sections)}
+          <button type="button" class="secondary-button" data-duplicate-builder-block>Duplicate</button>
+          ${block.editable ? '<button type="button" class="secondary-button" data-builder-edit-block>Edit</button>' : ""}
+          <button type="button" class="secondary-button danger" data-delete-builder-block aria-label="Delete ${escapeHtml(block.label || block.key)}">Delete</button>
+        </div>
       </header>
       <div class="builder-block-preview"${styleAttribute(block.settings?.customCss)}>${renderBlock(block)}</div>
     </article>
@@ -385,12 +408,16 @@ function renderBuilderSections(page) {
 
   return page.sections
     .map(
-      (section) => `
-        <article class="builder-section-card ${section.id === activeSectionId ? "active" : ""}" data-builder-section="${escapeHtml(section.id)}" draggable="true"${styleAttribute(section.settings?.customCss)}>
+      (section, sectionIndex) => `
+        <article class="builder-section-card ${section.id === activeSectionId ? "active" : ""}" data-builder-section="${escapeHtml(section.id)}" data-builder-section-key="${escapeHtml(section.key)}"${styleAttribute(section.settings?.customCss)}>
           <header>
             <div><p class="section-label">Container</p><h3>${escapeHtml(section.label || section.key)}</h3></div>
             <div class="builder-section-actions">
-              <span class="builder-drag-handle" aria-hidden="true">Drag</span>
+              <span class="builder-drag-handle" draggable="true" aria-hidden="true">Drag</span>
+              <span class="builder-order-controls" role="group" aria-label="Reorder ${escapeHtml(section.label || section.key)}">
+                <button type="button" class="secondary-button builder-icon-button" data-move-builder-section="up" aria-label="Move ${escapeHtml(section.label || section.key)} up" title="Move up"${sectionIndex === 0 ? " disabled" : ""}>&uarr;</button>
+                <button type="button" class="secondary-button builder-icon-button" data-move-builder-section="down" aria-label="Move ${escapeHtml(section.label || section.key)} down" title="Move down"${sectionIndex === page.sections.length - 1 ? " disabled" : ""}>&darr;</button>
+              </span>
               <button type="button" class="secondary-button builder-layout-pill" data-select-builder-section>
                 ${builderSectionLayoutPreview(section)}
                 <span>
@@ -399,12 +426,13 @@ function renderBuilderSections(page) {
                 </span>
               </button>
               <button type="button" class="secondary-button" data-add-element-to-section="${escapeHtml(section.id)}">Add element</button>
+              <button type="button" class="secondary-button" data-duplicate-builder-section>Duplicate</button>
               <button type="button" class="secondary-button" data-edit-builder-section>Settings</button>
               <button type="button" class="secondary-button danger" data-delete-builder-section aria-label="Delete ${escapeHtml(section.label || section.key)}">Delete</button>
             </div>
           </header>
           <div class="builder-block-list ${escapeHtml(builderSectionLayoutClasses(section))}" data-builder-dropzone data-section-id="${escapeHtml(section.id)}">
-            ${(section.blocks || []).length ? (section.blocks || []).map(renderBuilderBlock).join("") : '<div class="builder-empty small"><strong>Empty container</strong><span>Click an element from the left library or drop it here.</span></div>'}
+            ${(section.blocks || []).length ? (section.blocks || []).map((block, index, blocks) => renderBuilderBlock(block, index, blocks, section, page.sections)).join("") : '<div class="builder-empty small"><strong>Empty container</strong><span>Click an element from the left library or drop it here.</span></div>'}
           </div>
         </article>
       `
@@ -540,13 +568,26 @@ function renderBuilderStickyHeader(page, layout) {
 }
 
 function renderBuilderCanvasTools() {
+  const previewDevice = ["desktop", "tablet", "mobile"].includes(state.builderPreviewDevice)
+    ? state.builderPreviewDevice
+    : "desktop";
+
   return `
     <section class="builder-canvas-tools">
       <div>
         <p class="section-label">Canvas</p>
         <h2>Containers</h2>
       </div>
-      <div class="button-row">
+      <div class="builder-canvas-actions">
+        <span class="builder-order-controls" role="group" aria-label="Canvas history">
+          <button type="button" class="secondary-button builder-icon-button" data-builder-undo aria-label="Undo last canvas change" title="Undo"${state.builderUndoStack.length ? "" : " disabled"}>&#8630;</button>
+          <button type="button" class="secondary-button builder-icon-button" data-builder-redo aria-label="Redo canvas change" title="Redo"${state.builderRedoStack.length ? "" : " disabled"}>&#8631;</button>
+        </span>
+        <span class="builder-device-switch" role="group" aria-label="Preview device">
+          ${["desktop", "tablet", "mobile"]
+            .map((device) => `<button type="button" class="secondary-button${previewDevice === device ? " active" : ""}" data-builder-preview-device="${device}" aria-pressed="${previewDevice === device}">${device[0].toUpperCase()}${device.slice(1)}</button>`)
+            .join("")}
+        </span>
         <button type="button" data-add-container>Add container</button>
         <button type="button" class="secondary-button" data-load-page-revisions>Revisions</button>
       </div>
@@ -555,6 +596,17 @@ function renderBuilderCanvasTools() {
 }
 
 export function renderPageBuilderPage(page, message = "") {
+  const enteringBuilderPage = state.builderPage?.slug !== page.slug;
+  if (state.builderHistorySlug !== page.slug) {
+    state.builderHistorySlug = page.slug;
+    state.builderUndoStack = [];
+    state.builderRedoStack = [];
+    state.builderPreviewDevice = "desktop";
+  }
+  if (enteringBuilderPage && window.matchMedia?.("(max-width: 760px)").matches) {
+    state.builderRailCollapsed = true;
+  }
+
   if (state.builderRevisionSlug !== page.slug) {
     state.builderPageRevisions = [];
     state.builderRevisionComparison = null;
@@ -574,10 +626,10 @@ export function renderPageBuilderPage(page, message = "") {
         ${renderBuilderLibrary({ action: "builder" })}
         <main class="builder-main">
           ${renderBuilderStickyHeader(page, layout)}
-          ${message ? `<p class="form-message">${escapeHtml(message)}</p>` : ""}
+          ${message ? `<p class="form-message" role="status" aria-live="polite">${escapeHtml(message)}</p>` : ""}
           ${renderBuilderCanvasTools()}
           ${renderRevisionPanel(page)}
-          <section class="builder-canvas page-layout-${escapeHtml(layout)}" data-builder-canvas-dropzone>
+          <section class="builder-canvas page-layout-${escapeHtml(layout)}" data-builder-canvas-dropzone data-builder-preview-device="${escapeHtml(state.builderPreviewDevice)}">
             ${renderBuilderSections(page)}
           </section>
         </main>

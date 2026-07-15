@@ -401,20 +401,18 @@ export function structuredContentEditor(block) {
   if (imageKey) {
     const image = typeof value[imageKey] === "string" ? { url: value[imageKey] } : value[imageKey] || {};
     addField(fields, {
-      name: "structuredImageUrl",
-      label: "Image URL",
-      value: image.url || image.src || ""
+      name: "structuredImageFile",
+      label: "Image",
+      type: "file",
+      accept: "image/*",
+      imagePicker: true,
+      previewUrl: image.url || image.src || "",
+      previewAlt: image.alt || image.title || firstText(value, [titleKey]) || "Image"
     });
     addField(fields, {
       name: "structuredImageAlt",
       label: "Image description",
       value: image.alt || image.title || ""
-    });
-    addField(fields, {
-      name: "structuredImageFile",
-      label: "Upload replacement image",
-      type: "file",
-      accept: "image/*"
     });
   }
 
@@ -494,7 +492,7 @@ export function structuredContentEditor(block) {
 
       if (imageKey) {
         const existingImage = typeof value[imageKey] === "string" ? { url: value[imageKey] } : value[imageKey] || {};
-        const url = mediaAsset?.url || values.structuredImageUrl || existingImage.url || existingImage.src || "";
+        const url = mediaAsset?.url || existingImage.url || existingImage.src || "";
         const alt = values.structuredImageAlt || mediaAsset?.altText || existingImage.alt || "";
 
         next[imageKey] = {
