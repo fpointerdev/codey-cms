@@ -84,6 +84,22 @@ function sameIds(left: string[], right: string[]) {
   return left.every((id) => rightIds.has(id));
 }
 
+function assertUserAccessCanBeManaged(
+  actor: AuthenticatedUser,
+  user: Prisma.UserGetPayload<{ select: typeof accessUserSelect }>
+) {
+  try {
+    assertRolesCanBeAssigned(actor.permissions, user.roles.map(({ role }) => role));
+  } catch (error) {
+    if (!(error instanceof AppError) || error.code !== "role_assignment_forbidden") throw error;
+    throw new AppError(
+      403,
+      "user_access_forbidden",
+      "You cannot manage a user whose access exceeds your own."
+    );
+  }
+}
+
 export class UserService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -148,7 +164,7 @@ export class UserService {
       const currentRoleIds = existing.roles.map(({ role }) => role.id);
       const rolesChanged = input.roleIds !== undefined && !sameIds(input.roleIds, currentRoleIds);
       const accessChanged =
-        input.status !== undefined && input.status !== existing.status ||
+        (input.status !== undefined && input.status !== existing.status) ||
         rolesChanged;
 
       if (userId === audit.actor.id && accessChanged) {
@@ -158,6 +174,8 @@ export class UserService {
           "Use another administrator to change your status or roles."
         );
       }
+
+      if (accessChanged) assertUserAccessCanBeManaged(audit.actor, existing);
 
       const roles = rolesChanged
         ? await tx.role.findMany({
@@ -195,12 +213,13 @@ export class UserService {
         where: { id: userId },
         data: {
           ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(input.status !== undefined ? { status: input.status } : {})
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          ...(accessChanged ? { authVersion: { increment: 1 } } : {})
         },
         select: publicUserSelect
       });
 
-      if (input.status === "SUSPENDED" && existing.status !== "SUSPENDED") {
+      if (accessChanged) {
         await tx.refreshToken.updateMany({
           where: { userId, revokedAt: null },
           data: { revokedAt: new Date() }
@@ -235,6 +254,7 @@ export class UserService {
         select: accessUserSelect
       });
       if (!existing) throw new AppError(404, "user_not_found", "User not found.");
+      assertUserAccessCanBeManaged(audit.actor, existing);
       if (isActiveManager(existing)) await this.assertAnotherManagerExists(tx, userId);
 
       const user = await tx.user.delete({

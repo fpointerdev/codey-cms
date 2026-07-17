@@ -4,7 +4,7 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { Prisma } from "@prisma/client";
 import { readFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pathToFileURL } from "node:url";
@@ -33,7 +33,14 @@ import {
   optimizedImageStorageKey,
   requestedImageWidth
 } from "../modules/cms/media-optimizer.js";
+import { publicMediaResponsePolicy } from "../modules/cms/media-policy.js";
+import { sanitizeContentBlockValue, sanitizePostContent } from "../modules/cms/rich-text-sanitizer.js";
 import { localizedPath, normalizeLocale, readLocalizationSettings } from "../modules/localization/localization.service.js";
+import {
+  findProductAttributePage,
+  orderProductsByIds
+} from "../modules/products/product-attribute-filter.js";
+import { readShopSettings } from "../modules/products/shop-settings.js";
 
 function normalizeOrigin(origin: string | undefined) {
   if (!origin) return undefined;
@@ -171,6 +178,7 @@ function createHelmetOptions() {
     "script-src": ["'self'", ...(config.features.payments ? stripeScriptSources : [])],
     "connect-src": [
       "'self'",
+      "blob:",
       ...(config.features.payments ? ["https://api.stripe.com", "https://maps.googleapis.com"] : [])
     ],
     "frame-src": ["'self'", "blob:", ...(config.features.payments ? stripeFrameSources : [])],
@@ -201,6 +209,14 @@ type PublicMarkupRenderer = {
   renderFooter(page: unknown, canEdit?: boolean): string;
   renderPageContent(page: unknown, options?: { canEdit?: boolean }): string;
   renderPostContent(post: unknown): string;
+  renderProductDetailContent(product: unknown, options?: Record<string, unknown>): string;
+  renderShopListingContent(input: unknown, options?: Record<string, unknown>): string;
+};
+
+type PublicShellResolution = {
+  found: boolean;
+  content: PublicShellContent | null;
+  siteTitle?: string;
 };
 
 let publicMarkupRenderer: Promise<PublicMarkupRenderer> | null = null;
@@ -208,7 +224,15 @@ let publicMarkupRenderer: Promise<PublicMarkupRenderer> | null = null;
 type PublicContentRoute =
   | { type: "page"; slug: string; locale: string }
   | { type: "post"; slug: string; locale: string }
-  | { type: "product"; slug: string; locale: string };
+  | { type: "product"; slug: string; locale: string }
+  | {
+      type: "shop";
+      locale: string;
+      category?: string;
+      attributeName?: string;
+      attributeValue?: string;
+      page: number;
+    };
 
 function escapeHtml(value: string) {
   return value
@@ -228,6 +252,14 @@ function requestOrigin(req: Request) {
 function firstQueryValue(value: unknown) {
   if (Array.isArray(value)) return firstQueryValue(value[0]);
   return typeof value === "string" ? value : undefined;
+}
+
+function publicPageNumber(value: unknown) {
+  const rawValue = firstQueryValue(value);
+  if (!rawValue || !/^\d+$/.test(rawValue)) return 1;
+
+  const page = Number(rawValue);
+  return Number.isSafeInteger(page) && page > 0 ? Math.min(page, 10_000) : 1;
 }
 
 function encodeSlugPath(slug: string) {
@@ -260,18 +292,40 @@ function isConfiguredRouteLocale(value: string | undefined, localization?: Route
   return localization.locales.some((locale) => locale.enabled !== false && locale.code === normalizeLocale(value));
 }
 
+function decodePublicPathSegment(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function publicContentRouteFromRequest(req: Request, localization?: RouteLocalizationSettings): PublicContentRoute {
   const querySlug = firstQueryValue(req.query.slug);
   const parts = req.path
     .replace(/^\/+|\/+$/g, "")
     .split("/")
     .filter(Boolean)
-    .map((part) => decodeURIComponent(part));
+    .map(decodePublicPathSegment);
   let locale = normalizeLocale(localization?.defaultLocale || "en");
 
   if (isConfiguredRouteLocale(parts[0], localization)) locale = normalizeLocale(parts.shift());
   if (parts[0] === "posts" && parts[1]) return { type: "post", slug: parts.slice(1).join("/"), locale };
   if (parts[0] === "product" && parts[1]) return { type: "product", slug: parts.slice(1).join("/"), locale };
+  const page = publicPageNumber(req.query.page);
+  if (parts[0] === "shop" && parts.length === 1) return { type: "shop", locale, page };
+  if (parts[0] === "shop" && parts[1] === "category" && parts[2]) {
+    return { type: "shop", locale, category: parts[2], page };
+  }
+  if (parts[0] === "shop" && parts[1] === "attribute" && parts[2]) {
+    return {
+      type: "shop",
+      locale,
+      attributeName: parts[2],
+      attributeValue: parts[3] || "",
+      page
+    };
+  }
 
   return { type: "page", slug: querySlug || parts.join("/") || "home", locale };
 }
@@ -283,6 +337,93 @@ function localizedResourcePath(prefix: string, slug: string, locale: string, def
   const path = `/${prefix}/${encodeSlugPath(normalizedSlug)}`;
 
   return localeCode === defaultLocaleCode ? path : `/${localeCode}${path}`;
+}
+
+function localizedShopPath(route: Extract<PublicContentRoute, { type: "shop" }>, defaultLocale = "en") {
+  const suffix = route.category
+    ? `/category/${encodeURIComponent(route.category)}`
+    : route.attributeName
+      ? `/attribute/${encodeURIComponent(route.attributeName)}/${encodeURIComponent(route.attributeValue || "")}`
+      : "";
+  const path = `/shop${suffix}`;
+
+  const localizedPath = normalizeLocale(route.locale) === normalizeLocale(defaultLocale)
+    ? path
+    : `/${normalizeLocale(route.locale)}${path}`;
+  return route.page > 1 ? `${localizedPath}?page=${route.page}` : localizedPath;
+}
+
+async function readPublicShopProductPage(
+  route: Extract<PublicContentRoute, { type: "shop" }>,
+  limit: number
+) {
+  const where: Prisma.ProductWhereInput = {
+    locale: route.locale,
+    status: "ACTIVE",
+    ...(route.category ? { category: { slug: route.category, locale: route.locale } } : {})
+  };
+  const skip = (route.page - 1) * limit;
+  const include = {
+    category: true,
+    images: { orderBy: { sortOrder: "asc" as const } }
+  };
+
+  if (route.attributeName || route.attributeValue) {
+    const result = await findProductAttributePage(
+      (cursor, take) => prisma.product.findMany({
+        where,
+        take,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { id: true, metadata: true }
+      }),
+      route,
+      { skip, take: limit, countTotal: true }
+    );
+    const matchedProducts = result.ids.length
+      ? await prisma.product.findMany({
+          where: { id: { in: result.ids } },
+          include
+        })
+      : [];
+
+    return {
+      products: orderProductsByIds(matchedProducts, result.ids),
+      total: result.total
+    };
+  }
+
+  const [products, total] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      include
+    }),
+    prisma.product.count({ where })
+  ]);
+
+  return { products, total };
+}
+
+async function readPublicModuleStates() {
+  const installedModules = await prisma.installedModule.findMany({
+    where: { site: { slug: "default" } },
+    select: { moduleId: true, status: true }
+  });
+
+  return {
+    configured: installedModules.length > 0,
+    enabled: new Set(installedModules.filter((item) => item.status === "ENABLED").map((item) => item.moduleId))
+  };
+}
+
+function publicModuleEnabled(
+  states: Awaited<ReturnType<typeof readPublicModuleStates>>,
+  moduleId: "cms" | "products"
+) {
+  return config.features[moduleId] && (!states.configured || states.enabled.has(moduleId));
 }
 
 export function shouldRenderPublicShell(path: string, copiedRuntimeEnabled = true) {
@@ -467,6 +608,30 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
       if (productMeta) return productMeta;
     }
 
+    if (route.type === "shop") {
+      const [category, shopSettings] = await Promise.all([
+        route.category
+          ? prisma.productCategory.findFirst({
+              where: { slug: route.category, locale: route.locale },
+              select: { name: true }
+            })
+          : Promise.resolve(null),
+        readShopSettings(prisma)
+      ]);
+      const routeTitle = category?.name || (route.attributeValue
+        ? `${route.attributeName}: ${route.attributeValue}`.replaceAll("-", " ")
+        : shopSettings.catalogTitle);
+      const pageTitle = route.page > 1 ? `${routeTitle} - Page ${route.page}` : routeTitle;
+
+      return {
+        title: `${pageTitle} | ${site.title || config.app.name}`,
+        description: shopSettings.catalogDescription || site.description || "Browse products and product details.",
+        htmlLang: htmlLangFromLocale(route.locale),
+        canonicalUrl: `${origin}${localizedShopPath(route, localization.defaultLocale)}`,
+        noindex: site.noindex
+      };
+    }
+
     const page = route.type === "page"
       ? await prisma.cmsPage.findFirst({
           where: visiblePublishedWhere(route.slug, route.locale),
@@ -520,17 +685,25 @@ function loadPublicMarkupRenderer(webRoot: string) {
   return publicMarkupRenderer;
 }
 
-async function resolvePublicShellContent(req: Request, webRoot: string): Promise<PublicShellContent | null> {
-  if (isAdminShellPath(req.path)) return null;
+async function resolvePublicShellContent(req: Request, webRoot: string): Promise<PublicShellResolution> {
+  if (isAdminShellPath(req.path)) return { found: true, content: null };
 
   try {
-    const [localization, site, renderer] = await Promise.all([
+    const [localization, site, renderer, moduleStates] = await Promise.all([
       readLocalizationSettings(prisma),
       readSiteSeoDefaults(),
-      loadPublicMarkupRenderer(webRoot)
+      loadPublicMarkupRenderer(webRoot),
+      readPublicModuleStates()
     ]);
     const route = publicContentRouteFromRequest(req, localization);
     const siteTitle = site.title || config.app.name;
+    const requiredModule = route.type === "product" || route.type === "shop" ? "products" : "cms";
+    if (!publicModuleEnabled(moduleStates, requiredModule)) {
+      return { found: false, content: null, siteTitle };
+    }
+    const shopSettings = route.type === "product" || route.type === "shop"
+      ? await readShopSettings(prisma)
+      : null;
 
     if (route.type === "post") {
       const post = await prisma.cmsPost.findFirst({
@@ -545,16 +718,92 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
           publishedAt: true
         }
       });
-      if (!post) return null;
+      if (!post) return { found: false, content: null, siteTitle };
 
       return {
-        brand: escapeHtml(siteTitle),
-        body: renderer.renderPostContent(post),
-        footer: renderer.renderFooter({ title: siteTitle }, false)
+        found: true,
+        siteTitle,
+        content: {
+          brand: escapeHtml(siteTitle),
+          body: renderer.renderPostContent({
+            ...post,
+            content: sanitizePostContent(post.content)
+          }),
+          footer: renderer.renderFooter({ title: siteTitle }, false)
+        }
       };
     }
 
-    if (route.type !== "page") return null;
+    if (route.type === "product") {
+      const product = await prisma.product.findFirst({
+        where: {
+          slug: route.slug,
+          locale: route.locale,
+          status: "ACTIVE"
+        },
+        include: {
+          category: true,
+          images: {
+            orderBy: { sortOrder: "asc" }
+          }
+        }
+      });
+      if (!product) return { found: false, content: null, siteTitle };
+
+      return {
+        found: true,
+        siteTitle,
+        content: {
+          brand: escapeHtml(siteTitle),
+          body: renderer.renderProductDetailContent(product, {
+            locale: route.locale,
+            defaultLocale: localization.defaultLocale,
+            shopSettings
+          }),
+          footer: renderer.renderFooter({ title: siteTitle }, false)
+        }
+      };
+    }
+
+    if (route.type === "shop") {
+      const limit = shopSettings?.productsPerPage || 20;
+      const [productPage, categories, attributes] = await Promise.all([
+        readPublicShopProductPage(route, limit),
+        prisma.productCategory.findMany({
+          where: { locale: route.locale },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+        }),
+        prisma.productAttribute.findMany({
+          where: { locale: route.locale },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+        })
+      ]);
+
+      return {
+        found: true,
+        siteTitle,
+        content: {
+          brand: escapeHtml(siteTitle),
+          body: renderer.renderShopListingContent({
+            products: productPage.products,
+            categories,
+            attributes,
+            route,
+            pagination: {
+              page: route.page,
+              limit,
+              total: productPage.total
+            }
+          }, {
+            locale: route.locale,
+            defaultLocale: localization.defaultLocale,
+            shopSettings
+          }),
+          footer: renderer.renderFooter({ title: siteTitle }, false)
+        }
+      };
+    }
+
     const page = await prisma.cmsPage.findFirst({
       where: visiblePublishedWhere(route.slug, route.locale),
       include: {
@@ -568,16 +817,32 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         }
       }
     });
-    if (!page) return null;
+    if (!page) return { found: false, content: null, siteTitle };
 
     return {
-      brand: escapeHtml(siteTitle),
-      body: renderer.renderPageContent(page, { canEdit: false }),
-      footer: renderer.renderFooter({ title: siteTitle }, false)
+      found: true,
+      siteTitle,
+      content: {
+        brand: escapeHtml(siteTitle),
+        body: renderer.renderPageContent({
+          ...page,
+          sections: page.sections.map((section) => ({
+            ...section,
+            blocks: section.blocks.map((block) => ({
+              ...block,
+              value: sanitizeContentBlockValue(block.type, block.value)
+            }))
+          }))
+        }, { canEdit: false }),
+        footer: renderer.renderFooter({ title: siteTitle }, false)
+      }
     };
   } catch (error) {
-    logger.warn({ err: error, path: req.path }, "Unable to render public page content");
-    return null;
+    if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2021", "P2022"].includes(error.code)) {
+      return { found: false, content: null };
+    }
+
+    throw error;
   }
 }
 
@@ -606,18 +871,48 @@ function injectSeoMeta(html: string, meta: SeoMeta) {
     .replace(/<title>.*?<\/title>/is, tags);
 }
 
-function createAppShellRenderer(webRoot: string) {
+export function publicNotFoundContent(siteTitle: string, renderer?: PublicMarkupRenderer): PublicShellContent {
+  return {
+    brand: escapeHtml(siteTitle),
+    body: `
+      <section class="empty-state public-not-found">
+        <p class="section-label">404</p>
+        <h1 class="page-title">Page not found</h1>
+        <p class="page-excerpt">The page may have moved or is no longer available.</p>
+        <a class="action-link" href="/">Return home</a>
+      </section>
+    `,
+    footer: renderer?.renderFooter({ title: siteTitle }, false) ?? ""
+  };
+}
+
+function createAppShellRenderer(webRoot: string, options: { publicRoute?: boolean } = {}) {
   const indexPath = join(webRoot, "index.html");
 
   return async function renderAppShell(req: Request, res: Response, next: NextFunction) {
     try {
-      const [html, meta, content] = await Promise.all([
+      const [html, meta, resolution] = await Promise.all([
         readFile(indexPath, "utf8"),
         resolveSeoMeta(req),
-        resolvePublicShellContent(req, webRoot)
+        options.publicRoute
+          ? resolvePublicShellContent(req, webRoot)
+          : Promise.resolve({ found: true, content: null } satisfies PublicShellResolution)
       ]);
-      const shell = injectSeoMeta(html, meta);
+      const notFound = options.publicRoute && !resolution.found;
+      const renderer = notFound ? await loadPublicMarkupRenderer(webRoot) : undefined;
+      const content = notFound
+        ? publicNotFoundContent(resolution.siteTitle || meta.title || config.app.name, renderer)
+        : resolution.content;
+      const shell = injectSeoMeta(html, notFound
+        ? {
+            title: `Page not found | ${resolution.siteTitle || config.app.name}`,
+            description: "The requested page could not be found.",
+            htmlLang: meta.htmlLang,
+            noindex: true
+          }
+        : meta);
 
+      if (notFound) res.status(404).setHeader("cache-control", "no-store");
       res.type("html").send(content ? injectPublicShellContent(shell, content) : shell);
     } catch (error) {
       next(error);
@@ -658,7 +953,8 @@ function createS3UploadProxy() {
   return async function proxyS3Upload(req: Request, res: Response, next: NextFunction) {
     try {
       const key = normalizeUploadStorageKey(req.params[0] || "");
-      if (!key) {
+      const responsePolicy = publicMediaResponsePolicy(key);
+      if (!key || !responsePolicy) {
         res.status(404).end();
         return;
       }
@@ -673,7 +969,11 @@ function createS3UploadProxy() {
         return;
       }
 
-      await sendStorageResponse(res, storageResponse);
+      await sendStorageResponse(res, storageResponse, {
+        contentType: responsePolicy.mimeType,
+        disposition: responsePolicy.disposition,
+        filename: key
+      });
     } catch (error) {
       next(error);
     }
@@ -713,6 +1013,46 @@ function createLocalUploadVariantProxy(root: string) {
   };
 }
 
+function createLocalUploadProxy(root: string) {
+  return async function proxyLocalUpload(req: Request, res: Response, next: NextFunction) {
+    try {
+      const key = normalizeUploadStorageKey(req.params[0] || "");
+      const responsePolicy = publicMediaResponsePolicy(key);
+      if (!key || !responsePolicy) {
+        res.status(404).end();
+        return;
+      }
+
+      const objectPath = resolve(root, key);
+      const relativePath = relative(root, objectPath);
+      if (!relativePath || relativePath === ".." || relativePath.startsWith("../") || isAbsolute(relativePath)) {
+        res.status(404).end();
+        return;
+      }
+
+      try {
+        await sendBufferResponse(
+          res,
+          await readFile(objectPath),
+          responsePolicy.mimeType,
+          false,
+          responsePolicy.disposition,
+          key
+        );
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+          res.status(404).end();
+          return;
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
 function acceptsWebp(req: Request) {
   return /\bimage\/webp\b/i.test(req.header("accept") || "");
 }
@@ -723,30 +1063,57 @@ async function fetchStorageObject(storage: StorageAdapter, key: string) {
   return fetch(download.url);
 }
 
-function setPublicUploadCacheHeaders(res: Response, varyAccept = false) {
+function setPublicUploadHeaders(
+  res: Response,
+  varyAccept = false,
+  disposition: "attachment" | "inline" = "inline",
+  filename?: string
+) {
   if (varyAccept) res.setHeader("vary", "Accept");
   res.setHeader("cache-control", "public, max-age=31536000, immutable");
+  res.setHeader("content-security-policy", "default-src 'none'; sandbox");
+  res.setHeader("x-content-type-options", "nosniff");
+  if (filename) {
+    const safeFilename = basename(filename).replace(/[^a-z0-9._-]+/gi, "-");
+    res.setHeader("content-disposition", `${disposition}; filename="${safeFilename || "download"}"`);
+  }
 }
 
 async function sendBufferResponse(
   res: Response,
   body: Buffer,
   contentType: string | null | undefined,
-  varyAccept = false
+  varyAccept = false,
+  disposition: "attachment" | "inline" = "inline",
+  filename?: string
 ) {
   if (contentType) res.type(contentType);
   res.setHeader("content-length", String(body.byteLength));
-  setPublicUploadCacheHeaders(res, varyAccept);
+  setPublicUploadHeaders(res, varyAccept, disposition, filename);
   res.send(body);
 }
 
-async function sendStorageResponse(res: Response, storageResponse: globalThis.Response, varyAccept = false) {
-  const contentType = storageResponse.headers.get("content-type");
+async function sendStorageResponse(
+  res: Response,
+  storageResponse: globalThis.Response,
+  options: {
+    contentType?: string;
+    disposition?: "attachment" | "inline";
+    filename?: string;
+    varyAccept?: boolean;
+  } = {}
+) {
+  const contentType = options.contentType ?? storageResponse.headers.get("content-type");
   const contentLength = storageResponse.headers.get("content-length");
 
   if (contentType) res.type(contentType);
   if (contentLength) res.setHeader("content-length", contentLength);
-  setPublicUploadCacheHeaders(res, varyAccept);
+  setPublicUploadHeaders(
+    res,
+    options.varyAccept ?? false,
+    options.disposition ?? "inline",
+    options.filename
+  );
 
   if (!storageResponse.body) {
     res.end();
@@ -773,7 +1140,10 @@ async function serveOptimizedUpload(req: Request, res: Response, storage: Storag
   const variantResponse = await fetchStorageObject(storage, variantKey);
 
   if (variantResponse.ok) {
-    await sendStorageResponse(res, variantResponse, true);
+    await sendStorageResponse(res, variantResponse, {
+      contentType: "image/webp",
+      varyAccept: true
+    });
     return true;
   }
 
@@ -785,6 +1155,7 @@ export async function createApp() {
   const webRoot = resolve(process.cwd(), "apps/web");
   const localStorageRoot = resolve(process.cwd(), config.storage.localDir);
   const renderAppShell = createAppShellRenderer(webRoot);
+  const renderPublicShell = createAppShellRenderer(webRoot, { publicRoute: true });
   const copiedRuntimeEnabled = true;
   const cmsService = new CmsService(prisma);
 
@@ -805,7 +1176,7 @@ export async function createApp() {
   app.use(cookieParser());
   app.use(config.api.prefix, createApiLimiter());
   app.use(`${config.api.prefix}/auth`, createAuthLimiter());
-  app.use(`${config.api.prefix}/config/modules`, createAdminWriteLimiter());
+  app.use(`${config.api.prefix}/config`, createAdminWriteLimiter());
   app.use(express.json({
     limit: config.storage.requestBodyLimit,
     verify: (req, _res, buffer) => {
@@ -832,7 +1203,7 @@ export async function createApp() {
   }
   if (config.storage.driver === "local") {
     app.get("/uploads/*", createLocalUploadVariantProxy(localStorageRoot));
-    app.use("/uploads", express.static(localStorageRoot, { dotfiles: "deny", index: false }));
+    app.get("/uploads/*", createLocalUploadProxy(localStorageRoot));
   } else if (config.storage.driver === "s3") {
     app.get("/uploads/*", createS3UploadProxy());
   }
@@ -871,13 +1242,26 @@ export async function createApp() {
     });
   });
 
-  app.get("*", (req, res, next) => {
+  app.get("*", async (req, res, next) => {
     if (!shouldRenderPublicShell(req.path, copiedRuntimeEnabled)) {
       next();
       return;
     }
 
-    void renderAppShell(req, res, next);
+    try {
+      const redirect = await cmsService.resolveRedirect(req.originalUrl);
+      if (redirect) {
+        res.setHeader("cache-control", redirect.statusCode === 301 || redirect.statusCode === 308
+          ? "public, max-age=3600"
+          : "no-store");
+        res.redirect(redirect.statusCode, redirect.targetPath);
+        return;
+      }
+
+      await renderPublicShell(req, res, next);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use(notFoundHandler);

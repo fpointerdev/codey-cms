@@ -5,6 +5,21 @@ import { logger } from "../../infrastructure/logging/logger.js";
 import { AppError } from "../errors/app-error.js";
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+  if (err instanceof URIError) {
+    return res.status(400).json({
+      success: false,
+      data: null,
+      error: {
+        code: "invalid_request_path",
+        message: "Request path is malformed.",
+        details: null
+      },
+      meta: {
+        requestId: res.locals.requestId
+      }
+    });
+  }
+
   if (isHttpParserError(err)) {
     const isUnsupportedType = err.status === 415;
     const isTooLarge = err.status === 413;
@@ -68,6 +83,21 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   }
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    if (err.code === "P2034") {
+      return res.status(409).json({
+        success: false,
+        data: null,
+        error: {
+          code: "transaction_conflict",
+          message: "The resource changed during this request. Please try again.",
+          details: null
+        },
+        meta: {
+          requestId: res.locals.requestId
+        }
+      });
+    }
+
     if (err.code === "P2025") {
       return res.status(404).json({
         success: false,

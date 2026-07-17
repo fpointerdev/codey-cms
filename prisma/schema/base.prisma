@@ -103,6 +103,7 @@ model User {
   email           String         @unique
   name            String?
   passwordHash    String
+  authVersion     Int            @default(1)
   status          UserStatus     @default(ACTIVE)
   emailVerifiedAt DateTime?
   lastLoginAt     DateTime?
@@ -170,6 +171,7 @@ model RefreshToken {
   tokenHash           String    @unique
   userId              String
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  authVersion         Int       @default(1)
   userAgent           String?
   ipAddress           String?
   expiresAt           DateTime

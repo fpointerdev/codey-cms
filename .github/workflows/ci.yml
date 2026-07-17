@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  release-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: codey_cms_test
+          POSTGRES_USER: codey
+          POSTGRES_PASSWORD: codey
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U codey -d codey_cms_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      APP_ENV: development
+      APP_NAME: CodeY CMS Test
+      APP_MODE: cms
+      APP_PUBLIC_URL: http://127.0.0.1:4173
+      DATABASE_URL: postgresql://codey:codey@127.0.0.1:5432/codey_cms_test?schema=public
+      TEST_DATABASE_URL: postgresql://codey:codey@127.0.0.1:5432/codey_cms_test?schema=public
+      MIGRATION_SHADOW_DATABASE_URL: postgresql://codey:codey@127.0.0.1:5432/codey_cms_shadow?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-with-at-least-32-characters
+      CMS_CREDENTIAL_ENCRYPTION_KEY: ci-credential-key-with-at-least-32-characters
+      CORS_ORIGINS: http://127.0.0.1:4173
+      AUTH_RECOVERY_TOKEN_DELIVERY: response
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /tmp/codey-cms-ci-uploads
+      STORAGE_KEY_PREFIX: tests/codey-cms
+      BACKUP_DIR: /tmp/codey-cms-ci-backups
+      BACKUP_REQUIRED: "false"
+      LOG_LEVEL: silent
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - name: Create migration shadow database
+        env:
+          PGPASSWORD: codey
+        run: psql -h 127.0.0.1 -U codey -d postgres -c 'CREATE DATABASE codey_cms_shadow;'
+      - run: pnpm run validate
+      - run: pnpm run audit
+      - name: Integration tests
+        env:
+          INTEGRATION_RESET_DATABASE: "true"
+        run: pnpm run test:integration
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run test:e2e
+
+      - name: Upload browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-diagnostics
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore

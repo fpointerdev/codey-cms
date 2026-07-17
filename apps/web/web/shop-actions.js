@@ -131,13 +131,7 @@ function productMetadataPayload(formData, existingProduct = null) {
 
   return {
     ...existingMetadata,
-    attributes: attributeRows(formData),
-    presentation: {
-      shopLayout: String(formData.get("shopLayout") || "grid"),
-      cardStyle: String(formData.get("cardStyle") || "minimal"),
-      detailLayout: String(formData.get("detailLayout") || "classic"),
-      detailStyle: String(formData.get("detailStyle") || "standard")
-    }
+    attributes: attributeRows(formData)
   };
 }
 
@@ -229,6 +223,8 @@ export async function saveProductEditor(form) {
           currency: payload.currency,
           stockQuantity: payload.stockQuantity,
           status: payload.status,
+          metaTitle: payload.metaTitle,
+          metaDescription: payload.metaDescription,
           metadata: payload.metadata
         }
       : payload;
@@ -248,6 +244,62 @@ export async function saveProductEditor(form) {
   } catch (error) {
     setFormMessage(form, error.message || "Unable to save product.", true);
     setStatus(error.message || "Unable to save product.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+function shopSettingsPayload(form) {
+  const formData = new FormData(form);
+
+  return {
+    catalogTitle: String(formData.get("catalogTitle") || "Shop").trim(),
+    catalogDescription: String(formData.get("catalogDescription") || "").trim(),
+    catalogLayout: String(formData.get("catalogLayout") || "grid"),
+    cardStyle: String(formData.get("cardStyle") || "minimal"),
+    detailLayout: String(formData.get("detailLayout") || "classic"),
+    detailStyle: String(formData.get("detailStyle") || "standard"),
+    productsPerPage: Math.min(48, Math.max(8, Number.parseInt(String(formData.get("productsPerPage") || "20"), 10) || 20)),
+    showCategories: formData.has("showCategories"),
+    showAttributes: formData.has("showAttributes"),
+    showSku: formData.has("showSku"),
+    showStock: formData.has("showStock")
+  };
+}
+
+export function updateShopSettingsPreview(form) {
+  const preview = form?.querySelector?.("[data-shop-preview]");
+  if (!preview) return;
+
+  const settings = shopSettingsPayload(form);
+  preview.dataset.catalogLayout = settings.catalogLayout;
+  preview.dataset.cardStyle = settings.cardStyle;
+  preview.querySelector("[data-shop-preview-title]").textContent = settings.catalogTitle;
+  preview.querySelector("[data-shop-preview-description]").textContent = settings.catalogDescription;
+  preview.querySelectorAll("[data-shop-preview-sku]").forEach((element) => {
+    element.hidden = !settings.showSku;
+  });
+  preview.querySelectorAll("[data-shop-preview-stock]").forEach((element) => {
+    element.hidden = !settings.showStock;
+  });
+  const filters = preview.querySelector("[data-shop-preview-filters]");
+  if (filters) filters.hidden = !settings.showCategories && !settings.showAttributes;
+}
+
+export async function saveShopSettings(form) {
+  setFormDisabled(form, true);
+  setFormMessage(form, "Saving storefront...");
+
+  try {
+    await api("/products/settings", {
+      method: "PATCH",
+      body: JSON.stringify(shopSettingsPayload(form))
+    });
+    setFormMessage(form, "Storefront saved.");
+    setStatus("Storefront customization saved.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to save storefront.", true);
+    setStatus(error.message || "Unable to save storefront.", true);
+  } finally {
     setFormDisabled(form, false);
   }
 }

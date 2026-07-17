@@ -15,17 +15,24 @@ const optionalStringFromEnv = z.preprocess((value) => {
   return value;
 }, z.string().trim().min(1).optional());
 
-const optionalUrlFromEnv = z.preprocess((value) => {
+const optionalHttpUrlFromEnv = z.preprocess((value) => {
   if (value === undefined || value === "") return undefined;
   return value;
-}, z.string().trim().url().optional());
+}, z.string().trim().url().refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+  message: "URL must use HTTP or HTTPS."
+}).optional());
+
+const optionalSecretFromEnv = z.preprocess((value) => {
+  if (value === undefined || value === "") return undefined;
+  return value;
+}, z.string().trim().min(32).optional());
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
   APP_NAME: z.string().default("CodeY CMS"),
   APP_MODE: z.enum(["presentation", "shop", "cms", "saas", "landing"]).default("cms"),
-  APP_PUBLIC_URL: optionalUrlFromEnv,
+  APP_PUBLIC_URL: optionalHttpUrlFromEnv,
   API_PREFIX: z.string().default("/api/v1"),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1),
@@ -40,21 +47,21 @@ const envSchema = z.object({
   AUTH_ALLOW_REGISTRATION: booleanFromEnv.default(false),
   AUTH_REQUIRE_EMAIL_VERIFICATION: booleanFromEnv.default(false),
   AUTH_RECOVERY_TOKEN_DELIVERY: z.enum(["response", "email", "disabled"]).optional(),
-  CMS_CREDENTIAL_ENCRYPTION_KEY: z.string().trim().min(32).optional(),
+  CMS_CREDENTIAL_ENCRYPTION_KEY: optionalSecretFromEnv,
   EMAIL_DRIVER: z.enum(["disabled", "http"]).default("disabled"),
   EMAIL_FROM: optionalStringFromEnv,
-  EMAIL_HTTP_ENDPOINT: optionalUrlFromEnv,
+  EMAIL_HTTP_ENDPOINT: optionalHttpUrlFromEnv,
   EMAIL_HTTP_BEARER_TOKEN: optionalStringFromEnv,
   EMAIL_TIMEOUT_MS: z.coerce.number().int().positive().max(60_000).default(10_000),
   STORAGE_DRIVER: z.enum(["disabled", "local", "s3"]).default("local"),
   STORAGE_LOCAL_DIR: z.string().trim().min(1).default("storage/uploads"),
-  STORAGE_S3_ENDPOINT: optionalUrlFromEnv,
+  STORAGE_S3_ENDPOINT: optionalHttpUrlFromEnv,
   STORAGE_S3_REGION: z.string().trim().min(1).default("auto"),
   STORAGE_S3_BUCKET: optionalStringFromEnv,
   STORAGE_S3_ACCESS_KEY_ID: optionalStringFromEnv,
   STORAGE_S3_SECRET_ACCESS_KEY: optionalStringFromEnv,
   STORAGE_S3_FORCE_PATH_STYLE: booleanFromEnv.default(true),
-  STORAGE_PUBLIC_BASE_URL: optionalUrlFromEnv,
+  STORAGE_PUBLIC_BASE_URL: optionalHttpUrlFromEnv,
   STORAGE_KEY_PREFIX: z.string().trim().default(""),
   STORAGE_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
   STORAGE_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
@@ -65,7 +72,17 @@ const envSchema = z.object({
   STORAGE_QUOTA_CMS_MB: z.coerce.number().positive().default(2048),
   STORAGE_QUOTA_SHOP_MB: z.coerce.number().positive().default(5120),
   STORAGE_QUOTA_SAAS_MB: z.coerce.number().positive().default(2048),
-  BACKUP_DIR: z.string().trim().min(1).default("backups")
+  BACKUP_DIR: z.string().trim().min(1).default("backups"),
+  BACKUP_MIRROR_DIR: optionalStringFromEnv,
+  BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).default(30),
+  BACKUP_INTERVAL_HOURS: z.coerce.number().positive().max(168).default(24),
+  BACKUP_MAX_AGE_HOURS: z.coerce.number().positive().max(720).default(30),
+  BACKUP_REQUIRED: booleanFromEnv.default(false),
+  BACKUP_ENCRYPTION_KEY: optionalSecretFromEnv,
+  BACKUP_REQUIRE_ENCRYPTION: booleanFromEnv.default(false),
+  BACKUP_S3_MEDIA_PROTECTED: booleanFromEnv.default(false),
+  BACKUP_ALERT_WEBHOOK_URL: optionalHttpUrlFromEnv,
+  BACKUP_ALERT_WEBHOOK_TOKEN: optionalStringFromEnv
 }).superRefine((value, context) => {
   if (value.STORAGE_DRIVER === "s3") {
     for (const field of ["STORAGE_S3_ENDPOINT", "STORAGE_S3_BUCKET", "STORAGE_S3_ACCESS_KEY_ID", "STORAGE_S3_SECRET_ACCESS_KEY"] as const) {
@@ -91,6 +108,14 @@ const envSchema = z.object({
     }
   }
 
+  if (value.BACKUP_REQUIRE_ENCRYPTION && !value.BACKUP_ENCRYPTION_KEY) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["BACKUP_ENCRYPTION_KEY"],
+      message: "BACKUP_ENCRYPTION_KEY is required when backup encryption is mandatory."
+    });
+  }
+
   if (value.NODE_ENV !== "production") return;
 
   const corsOrigins = value.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -106,6 +131,8 @@ const envSchema = z.object({
 
   if (!value.APP_PUBLIC_URL) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_PUBLIC_URL"], message: "APP_PUBLIC_URL must be set in production." });
+  } else if (new URL(value.APP_PUBLIC_URL).protocol !== "https:") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_PUBLIC_URL"], message: "APP_PUBLIC_URL must use HTTPS in production." });
   }
 
   const recoveryTokenDelivery = value.AUTH_RECOVERY_TOKEN_DELIVERY ?? "disabled";
@@ -118,20 +145,16 @@ const envSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["AUTH_RECOVERY_TOKEN_DELIVERY"], message: "AUTH_REQUIRE_EMAIL_VERIFICATION requires auth recovery token delivery in production." });
   }
 
-  if (recoveryTokenDelivery === "email" && value.EMAIL_DRIVER !== "http") {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["EMAIL_DRIVER"], message: "AUTH_RECOVERY_TOKEN_DELIVERY=email requires EMAIL_DRIVER=http." });
+  if (value.EMAIL_DRIVER === "http" && value.EMAIL_HTTP_ENDPOINT && new URL(value.EMAIL_HTTP_ENDPOINT).protocol !== "https:") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["EMAIL_HTTP_ENDPOINT"], message: "EMAIL_HTTP_ENDPOINT must use HTTPS in production." });
   }
 
-  if (value.APP_MODE === "shop" && !value.CMS_CREDENTIAL_ENCRYPTION_KEY) {
+  if (!value.CMS_CREDENTIAL_ENCRYPTION_KEY) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["CMS_CREDENTIAL_ENCRYPTION_KEY"],
-      message: "CMS_CREDENTIAL_ENCRYPTION_KEY is required to encrypt end-user payment credentials in production."
+      message: "CMS_CREDENTIAL_ENCRYPTION_KEY is required to encrypt dashboard-managed credentials in production."
     });
-  }
-
-  if (value.APP_MODE === "shop" && value.EMAIL_DRIVER === "disabled") {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["EMAIL_DRIVER"], message: "EMAIL_DRIVER=http is required for production shop order emails." });
   }
 
   if (value.STORAGE_DRIVER !== "s3") {

@@ -15,6 +15,8 @@ import {
   auditLogQuerySchema,
   createSiteDomainSchema,
   domainIdParams,
+  emailSettingsSchema,
+  emailTestSchema,
   maintenanceSettingsSchema,
   moduleIdParams,
   moduleLifecycleParams,
@@ -22,6 +24,7 @@ import {
   siteSettingsSchema,
   updateSiteDomainSchema
 } from "./config.schemas.js";
+import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { ModuleAdminService } from "./module-admin.service.js";
 import { SiteDomainService } from "./site-domain.service.js";
 import {
@@ -150,6 +153,7 @@ export const configModule: AppModule = {
   register: (router, context) => {
     const moduleAdminService = new ModuleAdminService(context);
     const siteDomainService = new SiteDomainService(context);
+    const emailSettingsService = new EmailSettingsService(context.prisma, context.config);
 
     router.get("/", asyncHandler(async (_req, res) => {
       let installedModules: unknown[] = [];
@@ -212,6 +216,97 @@ export const configModule: AppModule = {
           baseVersion: "0.1.0",
           matrix: compatibilityMatrix()
         });
+      })
+    );
+
+    router.get(
+      "/email",
+      requirePermission(context, "read", "modules"),
+      asyncHandler(async (_req, res) => {
+        return sendSuccess(res, { email: await emailSettingsService.getAdminStatus() });
+      })
+    );
+
+    router.patch(
+      "/email",
+      requirePermission(context, "manage", "modules"),
+      validateRequest({ body: emailSettingsSchema }),
+      asyncHandler(async (req, res) => {
+        const email = await emailSettingsService.update(req.body);
+        await context.prisma.auditLog.create({
+          data: {
+            actorUserId: req.user?.id,
+            action: "email.settings.update",
+            subject: "site",
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            metadata: {
+              enabled: email.enabled,
+              from: email.from,
+              httpEndpoint: email.httpEndpoint,
+              bearerTokenConfigured: email.bearerTokenConfigured
+            }
+          }
+        });
+
+        return sendSuccess(res, { email });
+      })
+    );
+
+    router.post(
+      "/email/test",
+      requirePermission(context, "manage", "modules"),
+      validateRequest({ body: emailTestSchema }),
+      asyncHandler(async (req, res) => {
+        const recipient = req.body.recipient ?? req.user?.email;
+        if (!recipient) {
+          return res.status(422).json({
+            success: false,
+            data: null,
+            error: {
+              code: "email_test_recipient_required",
+              message: "A test recipient is required.",
+              details: null
+            },
+            meta: {
+              requestId: res.locals.requestId
+            }
+          });
+        }
+
+        try {
+          const result = await emailSettingsService.test(recipient);
+          await context.prisma.auditLog.create({
+            data: {
+              actorUserId: req.user?.id,
+              action: "email.settings.test",
+              subject: "site",
+              ipAddress: req.ip,
+              userAgent: req.header("user-agent"),
+              metadata: {
+                recipient,
+                succeeded: true
+              }
+            }
+          });
+
+          return sendSuccess(res, { result, email: await emailSettingsService.getAdminStatus() });
+        } catch (error) {
+          await context.prisma.auditLog.create({
+            data: {
+              actorUserId: req.user?.id,
+              action: "email.settings.test",
+              subject: "site",
+              ipAddress: req.ip,
+              userAgent: req.header("user-agent"),
+              metadata: {
+                recipient,
+                succeeded: false
+              }
+            }
+          });
+          throw error;
+        }
       })
     );
 

@@ -208,9 +208,11 @@ export const createRedirectSchema = z.object({
 export const updateRedirectSchema = createRedirectSchema.partial();
 
 export const createMediaAssetSchema = z.object({
-  kind: z.enum(["IMAGE", "VIDEO", "DOCUMENT", "OTHER"]).default("IMAGE"),
+  kind: z.enum(["IMAGE", "VIDEO", "DOCUMENT"]).default("IMAGE"),
   storageKey: z.string().trim().min(1).max(500).optional(),
-  url: z.string().trim().url().max(1000),
+  url: z.string().trim().url().max(1000).refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+    message: "Media URL must use HTTP or HTTPS."
+  }),
   mimeType: z.string().trim().max(160).optional(),
   sizeBytes: z.number().int().nonnegative().optional(),
   width: z.number().int().positive().optional(),
@@ -222,7 +224,7 @@ export const createSignedUploadSchema = z.object({
   filename: z.string().trim().min(1).max(180),
   mimeType: z.string().trim().min(1).max(160),
   sizeBytes: z.number().int().positive(),
-  kind: z.enum(["IMAGE", "VIDEO", "DOCUMENT", "OTHER"]).optional(),
+  kind: z.enum(["IMAGE", "VIDEO", "DOCUMENT"]).optional(),
   altText: z.string().trim().max(240).optional()
 });
 
@@ -236,7 +238,7 @@ export const directMediaUploadSchema = z.object({
   filename: z.string().trim().min(1).max(180),
   mimeType: z.string().trim().min(1).max(160),
   dataBase64: z.string().trim().min(1),
-  kind: z.enum(["IMAGE", "VIDEO", "DOCUMENT", "OTHER"]).optional(),
+  kind: z.enum(["IMAGE", "VIDEO", "DOCUMENT"]).optional(),
   altText: z.string().trim().max(240).optional()
 });
 

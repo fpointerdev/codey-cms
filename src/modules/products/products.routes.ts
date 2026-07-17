@@ -18,11 +18,17 @@ import {
   productAttributeParams,
   productCategoryParams,
   productSlugParams,
+  shopSettingsSchema,
   updateProductAttributeSchema,
   updateProductCategorySchema,
   updateProductSchema
 } from "./products.schemas.js";
 import { normalizeLocale, readLocalizationSettings, resolveLocale } from "../localization/localization.service.js";
+import { readShopSettings } from "./shop-settings.js";
+import {
+  findProductAttributePage,
+  orderProductsByIds
+} from "./product-attribute-filter.js";
 
 function productInclude(canReadInactiveVariants = false) {
   return {
@@ -40,41 +46,70 @@ function productInclude(canReadInactiveVariants = false) {
   };
 }
 
-function productAttributeMatches(
-  product: { metadata?: unknown },
-  attributeName?: string,
-  attributeValue?: string
-) {
-  if (!attributeName && !attributeValue) return true;
-
-  const metadata = product.metadata && typeof product.metadata === "object" ? product.metadata as Record<string, unknown> : {};
-  const attributes = Array.isArray(metadata.attributes) ? metadata.attributes : [];
-  const normalize = (value = "") =>
-    String(value)
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-  const normalizedName = attributeName ? normalize(attributeName) : "";
-  const normalizedValue = attributeValue ? normalize(attributeValue) : "";
-
-  return attributes.some((item) => {
-    if (!item || typeof item !== "object") return false;
-
-    const attribute = item as Record<string, unknown>;
-    const name = normalize(String(attribute.name || ""));
-    const value = normalize(String(attribute.value || ""));
-
-    return (!normalizedName || name === normalizedName) && (!normalizedValue || value === normalizedValue);
-  });
-}
-
 async function requestLocale(context: ModuleContext, requestedLocale: unknown) {
   const settings = await readLocalizationSettings(context.prisma);
   return resolveLocale(settings, requestedLocale);
 }
 
 export function registerProductRoutes(router: Router, context: ModuleContext) {
+  router.get(
+    "/settings",
+    asyncHandler(async (_req, res) => {
+      return sendSuccess(res, { settings: await readShopSettings(context.prisma) });
+    })
+  );
+
+  router.patch(
+    "/settings",
+    requirePermission(context, "update", "products"),
+    validateRequest({ body: shopSettingsSchema }),
+    asyncHandler(async (req, res) => {
+      const site = await context.prisma.site.upsert({
+        where: { slug: "default" },
+        update: {},
+        create: {
+          slug: "default",
+          name: context.config.app.name,
+          deploymentProfile: context.config.app.mode === "landing" ? "presentation" : context.config.app.mode
+        }
+      });
+
+      await context.prisma.$transaction([
+        context.prisma.moduleSetting.upsert({
+          where: {
+            siteId_moduleId_key: {
+              siteId: site.id,
+              moduleId: "products",
+              key: "storefront"
+            }
+          },
+          update: {
+            value: req.body as Prisma.InputJsonValue
+          },
+          create: {
+            siteId: site.id,
+            moduleId: "products",
+            key: "storefront",
+            value: req.body as Prisma.InputJsonValue
+          }
+        }),
+        context.prisma.auditLog.create({
+          data: {
+            actorUserId: req.user?.id,
+            action: "shop.settings.update",
+            subject: "site",
+            subjectId: site.id,
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            metadata: req.body as Prisma.InputJsonValue
+          }
+        })
+      ]);
+
+      return sendSuccess(res, { settings: await readShopSettings(context.prisma) });
+    })
+  );
+
   router.get(
     "/categories",
     validateRequest({ query: localeQuerySchema }),
@@ -267,13 +302,31 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
       const needsAttributeFilter = Boolean(attributeName || attributeValue);
 
       if (needsAttributeFilter) {
-        const products = (await context.prisma.product.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          include: productInclude(canReadDrafts)
-        })).filter((product) => productAttributeMatches(product, attributeName, attributeValue));
+        const result = await findProductAttributePage(
+          (cursor, take) => context.prisma.product.findMany({
+            where,
+            take,
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: { id: true, metadata: true }
+          }),
+          { attributeName, attributeValue },
+          { skip, take: limit, countTotal: true }
+        );
+        const matchedProducts = result.ids.length
+          ? await context.prisma.product.findMany({
+              where: { id: { in: result.ids } },
+              include: productInclude(canReadDrafts)
+            })
+          : [];
+        const products = orderProductsByIds(matchedProducts, result.ids);
 
-        return sendSuccess(res, { products: products.slice(skip, skip + limit) }, { page, limit, total: products.length });
+        return sendSuccess(res, { products }, {
+          page,
+          limit,
+          total: result.total,
+          pages: Math.max(1, Math.ceil(result.total / limit))
+        });
       }
 
       const [products, total] = await Promise.all([
@@ -281,13 +334,18 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
           where,
           skip,
           take: limit,
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           include: productInclude(canReadDrafts)
         }),
         context.prisma.product.count({ where })
       ]);
 
-      return sendSuccess(res, { products }, { page, limit, total });
+      return sendSuccess(res, { products }, {
+        page,
+        limit,
+        total,
+        pages: Math.max(1, Math.ceil(total / limit))
+      });
     })
   );
 

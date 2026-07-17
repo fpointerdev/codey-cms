@@ -5,6 +5,7 @@ import { writeAuditLog } from "../../core/audit/audit-log.js";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { hashPassword, verifyPassword } from "../../core/security/password.js";
+import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { createEmailClient, isEmailDeliveryConfigured } from "../../infrastructure/email/http-email.js";
 import { assertRolesCanBeAssigned } from "../roles/role-assignment.js";
 import type { AuthenticatedUser, TokenPair } from "./auth.types.js";
@@ -134,10 +135,14 @@ function toAuthenticatedUser(user: {
 }
 
 export class AuthService {
+  private readonly emailSettings: EmailSettingsService;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly config: AppConfig
-  ) {}
+  ) {
+    this.emailSettings = new EmailSettingsService(prisma, config);
+  }
 
   async register(input: { email: string; password: string; name?: string }, meta: RequestMeta) {
     if (!this.config.auth.allowRegistration) {
@@ -145,7 +150,7 @@ export class AuthService {
     }
 
     if (this.config.auth.requireEmailVerification) {
-      this.assertRecoveryTokenDeliveryConfigured("Email verification");
+      await this.assertRecoveryTokenDeliveryConfigured("Email verification");
     }
 
     const existing = await this.prisma.user.findUnique({
@@ -196,7 +201,9 @@ export class AuthService {
 
     return {
       user: toAuthenticatedUser(user),
-      tokens: this.config.auth.requireEmailVerification ? null : await this.issueTokens(user.id, meta),
+      tokens: this.config.auth.requireEmailVerification
+        ? null
+        : await this.issueTokens(user.id, user.authVersion, meta),
       emailVerification: {
         required: this.config.auth.requireEmailVerification,
         token: this.exposeSensitiveToken(verificationToken)
@@ -237,7 +244,7 @@ export class AuthService {
 
     return {
       user: toAuthenticatedUser(user),
-      tokens: await this.issueTokens(user.id, meta)
+      tokens: await this.issueTokens(user.id, user.authVersion, meta)
     };
   }
 
@@ -258,12 +265,18 @@ export class AuthService {
         !storedToken ||
         storedToken.revokedAt ||
         storedToken.expiresAt.getTime() <= Date.now() ||
-        storedToken.user.status !== "ACTIVE"
+        storedToken.user.status !== "ACTIVE" ||
+        storedToken.authVersion !== storedToken.user.authVersion
       ) {
         throw new AppError(401, "invalid_refresh_token", "Refresh token is invalid or expired.");
       }
 
-      const tokens = await this.issueTokens(storedToken.userId, meta, tx);
+      const tokens = await this.issueTokens(
+        storedToken.userId,
+        storedToken.user.authVersion,
+        meta,
+        tx
+      );
       const updatedToken = await tx.refreshToken.updateMany({
         where: {
           id: storedToken.id,
@@ -292,7 +305,7 @@ export class AuthService {
         user: toAuthenticatedUser(storedToken.user),
         tokens
       };
-    });
+    }, { isolationLevel: "Serializable" });
   }
 
   async logout(refreshToken: string, meta: RequestMeta = {}) {
@@ -329,8 +342,99 @@ export class AuthService {
     return updatedTokens.count;
   }
 
+  async changePassword(
+    userId: string,
+    input: { currentPassword: string; newPassword: string },
+    meta: RequestMeta
+  ) {
+    const existing = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: this.authUserInclude()
+    });
+    if (!existing || existing.status !== "ACTIVE") {
+      throw new AppError(401, "unauthorized", "Authentication required.");
+    }
+    if (!await verifyPassword(input.currentPassword, existing.passwordHash)) {
+      throw new AppError(400, "invalid_current_password", "Current password is incorrect.");
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.user.updateMany({
+        where: {
+          id: userId,
+          status: "ACTIVE",
+          authVersion: existing.authVersion
+        },
+        data: {
+          passwordHash,
+          authVersion: { increment: 1 }
+        }
+      });
+      if (changed.count !== 1) {
+        throw new AppError(
+          409,
+          "password_change_conflict",
+          "Your account changed while the password was being updated. Please try again."
+        );
+      }
+
+      const user = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        include: this.authUserInclude()
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+      const tokens = await this.issueTokens(user.id, user.authVersion, meta, tx);
+      await writeAuditLog(tx, {
+        actorUserId: userId,
+        action: "password.change",
+        subject: "user",
+        subjectId: userId,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent
+      });
+
+      return {
+        user: toAuthenticatedUser(user),
+        tokens
+      };
+    }, { isolationLevel: "Serializable" });
+  }
+
+  async revokeAllSessions(userId: string, meta: RequestMeta) {
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id: userId, status: "ACTIVE" },
+        data: { authVersion: { increment: 1 } }
+      });
+      if (updated.count !== 1) {
+        throw new AppError(401, "unauthorized", "Authentication required.");
+      }
+
+      const revoked = await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+      await writeAuditLog(tx, {
+        actorUserId: userId,
+        action: "sessions.revoke_all",
+        subject: "user",
+        subjectId: userId,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+        metadata: { refreshTokensRevoked: revoked.count }
+      });
+
+      return { revoked: true, refreshTokensRevoked: revoked.count };
+    }, { isolationLevel: "Serializable" });
+  }
+
   async requestPasswordReset(input: { email: string }, meta: RequestMeta) {
-    this.assertRecoveryTokenDeliveryConfigured("Password reset");
+    await this.assertRecoveryTokenDeliveryConfigured("Password reset");
 
     const user = await this.prisma.user.findUnique({
       where: { email: input.email.toLowerCase() }
@@ -391,10 +495,19 @@ export class AuthService {
         throw new AppError(401, "invalid_password_reset_token", "Password reset token is invalid or expired.");
       }
 
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: storedToken.userId,
+          consumedAt: null
+        },
+        data: { consumedAt: new Date() }
+      });
+
       await tx.user.update({
         where: { id: storedToken.userId },
         data: {
-          passwordHash: await hashPassword(input.password)
+          passwordHash: await hashPassword(input.password),
+          authVersion: { increment: 1 }
         }
       });
       await tx.refreshToken.updateMany({
@@ -420,7 +533,7 @@ export class AuthService {
   }
 
   async requestEmailVerification(input: { email: string }, meta: RequestMeta) {
-    this.assertRecoveryTokenDeliveryConfigured("Email verification");
+    await this.assertRecoveryTokenDeliveryConfigured("Email verification");
 
     const user = await this.prisma.user.findUnique({
       where: { email: input.email.toLowerCase() }
@@ -569,7 +682,7 @@ export class AuthService {
         roleNames
       }
     });
-    await this.deliverRecoveryToken("invite", {
+    const delivery = await this.deliverRecoveryToken("invite", {
       email: invite.email,
       token,
       roleNames
@@ -577,7 +690,7 @@ export class AuthService {
 
     return {
       invite,
-      ...this.inviteDelivery(token)
+      ...this.inviteDelivery(token, delivery === "email")
     };
   }
 
@@ -678,7 +791,7 @@ export class AuthService {
         roleNames: invite.roleNames
       }
     });
-    await this.deliverRecoveryToken("invite", {
+    const delivery = await this.deliverRecoveryToken("invite", {
       email: invite.email,
       token,
       roleNames: invite.roleNames
@@ -686,11 +799,11 @@ export class AuthService {
 
     return {
       invite,
-      ...this.inviteDelivery(token)
+      ...this.inviteDelivery(token, delivery === "email")
     };
   }
 
-  async revokeInvite(inviteId: string, audit: AuditInput) {
+  async revokeInvite(inviteId: string, audit: InviteAuditInput) {
     const existing = await this.prisma.userInvite.findUnique({
       where: { id: inviteId },
       select: publicInviteSelect
@@ -699,6 +812,12 @@ export class AuthService {
     if (existing.status !== "PENDING" || existing.revokedAt || existing.acceptedAt) {
       throw new AppError(409, "invite_not_pending", "Only pending invites can be revoked.");
     }
+
+    const roles = await this.prisma.role.findMany({
+      where: { name: { in: existing.roleNames } },
+      include: inviteRoleInclude
+    });
+    assertRolesCanBeAssigned(audit.actorPermissions, roles);
 
     const revoked = await this.prisma.userInvite.updateMany({
       where: {
@@ -738,7 +857,7 @@ export class AuthService {
   async acceptInvite(input: { token: string; password: string; name?: string }, meta: RequestMeta) {
     const tokenHash = hashToken(input.token);
 
-    const user = await this.prisma.$transaction(async (tx) => {
+    const accepted = await this.prisma.$transaction(async (tx) => {
       const invite = await tx.userInvite.findUnique({
         where: { tokenHash }
       });
@@ -824,22 +943,28 @@ export class AuthService {
         }
       });
 
-      return createdUser;
-    });
+      const tokens = await this.issueTokens(createdUser.id, createdUser.authVersion, meta, tx);
+
+      return { user: createdUser, tokens };
+    }, { isolationLevel: "Serializable" });
 
     return {
-      user: toAuthenticatedUser(user),
-      tokens: await this.issueTokens(user.id, meta)
+      user: toAuthenticatedUser(accepted.user),
+      tokens: accepted.tokens
     };
   }
 
-  async resolveUser(userId: string) {
+  async resolveUser(userId: string, sessionVersion?: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: this.authUserInclude()
     });
 
-    if (!user || user.status !== "ACTIVE") {
+    if (
+      !user ||
+      user.status !== "ACTIVE" ||
+      sessionVersion !== undefined && user.authVersion !== sessionVersion
+    ) {
       throw new AppError(401, "unauthorized", "Authentication required.");
     }
 
@@ -856,11 +981,17 @@ export class AuthService {
       throw new AppError(401, "invalid_access_token", "Access token is invalid.");
     }
 
-    return this.resolveUser(payload.sub);
+    const sessionVersion = payload.sessionVersion;
+    if (!Number.isInteger(sessionVersion)) {
+      throw new AppError(401, "invalid_access_token", "Access token is invalid.");
+    }
+
+    return this.resolveUser(payload.sub, sessionVersion as number);
   }
 
   private async issueTokens(
     userId: string,
+    sessionVersion: number,
     meta: RequestMeta,
     database: RefreshTokenWriter = this.prisma
   ): Promise<TokenPair> {
@@ -868,7 +999,7 @@ export class AuthService {
     const refreshExpiresIn = parseDurationToSeconds(this.config.auth.refreshTokenTtl);
     const secret = encoder.encode(this.config.auth.accessTokenSecret);
 
-    const accessToken = await new SignJWT({})
+    const accessToken = await new SignJWT({ sessionVersion })
       .setProtectedHeader({ alg: "HS256" })
       .setSubject(userId)
       .setIssuedAt()
@@ -881,6 +1012,7 @@ export class AuthService {
       data: {
         tokenHash: hashToken(refreshToken),
         userId,
+        authVersion: sessionVersion,
         userAgent: meta.userAgent,
         ipAddress: meta.ipAddress,
         expiresAt: addSeconds(refreshExpiresIn)
@@ -912,13 +1044,22 @@ export class AuthService {
   private async createPasswordResetToken(userId: string) {
     const token = createOpaqueToken();
 
-    await this.prisma.passwordResetToken.create({
-      data: {
-        tokenHash: hashToken(token),
-        userId,
-        expiresAt: addSeconds(60 * 30)
-      }
-    });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId,
+          consumedAt: null
+        },
+        data: { consumedAt: new Date() }
+      });
+      await tx.passwordResetToken.create({
+        data: {
+          tokenHash: hashToken(token),
+          userId,
+          expiresAt: addSeconds(60 * 30)
+        }
+      });
+    }, { isolationLevel: "Serializable" });
 
     return token;
   }
@@ -927,16 +1068,14 @@ export class AuthService {
     return this.config.auth.recoveryTokenDelivery === "response" && !this.config.isProduction;
   }
 
-  private canEmailRecoveryTokens() {
-    return (
-      this.config.auth.recoveryTokenDelivery === "email" &&
-      Boolean(this.config.app.publicUrl) &&
-      isEmailDeliveryConfigured(this.config)
-    );
+  private async canEmailRecoveryTokens() {
+    if (this.config.auth.recoveryTokenDelivery !== "email" || !this.config.app.publicUrl) return false;
+
+    return isEmailDeliveryConfigured(await this.emailSettings.resolve());
   }
 
-  private assertRecoveryTokenDeliveryConfigured(flowName: string) {
-    if (this.canReturnRecoveryTokens() || this.canEmailRecoveryTokens()) return;
+  private async assertRecoveryTokenDeliveryConfigured(flowName: string) {
+    if (this.canReturnRecoveryTokens() || await this.canEmailRecoveryTokens()) return;
 
     throw new AppError(
       503,
@@ -950,8 +1089,8 @@ export class AuthService {
     return token;
   }
 
-  private inviteDelivery(token: string) {
-    if (this.canEmailRecoveryTokens()) {
+  private inviteDelivery(token: string, deliveredByEmail: boolean) {
+    if (deliveredByEmail) {
       return {
         delivery: "email" as const,
         inviteUrl: undefined
@@ -975,17 +1114,20 @@ export class AuthService {
     flow: RecoveryFlow,
     input: { email: string; token: string; name?: string; roleNames?: string[] }
   ) {
-    if (this.canReturnRecoveryTokens()) return;
-    if (!this.canEmailRecoveryTokens()) return;
+    if (this.canReturnRecoveryTokens()) return "response" as const;
+    if (!await this.canEmailRecoveryTokens()) return "manual" as const;
 
-    const emailClient = createEmailClient(this.config);
-    const message = this.createRecoveryEmail(flow, input);
+    const emailSettings = await this.emailSettings.resolve();
+    const emailClient = createEmailClient(emailSettings);
+    const message = this.createRecoveryEmail(flow, input, emailSettings.from!);
     await emailClient.send(message);
+    return "email" as const;
   }
 
   private createRecoveryEmail(
     flow: RecoveryFlow,
-    input: { email: string; token: string; name?: string; roleNames?: string[] }
+    input: { email: string; token: string; name?: string; roleNames?: string[] },
+    from: string
   ) {
     const url = this.recoveryUrl(flow, input.token);
     const label =
@@ -1007,7 +1149,7 @@ export class AuthService {
 
     return {
       to: input.email,
-      from: this.config.email.from!,
+      from,
       subject,
       text: `${intro}\n\n${label}: ${url}\n\nIf you did not request this, you can ignore this email.`,
       html: `<p>${escapeHtml(intro)}</p><p><a href="${escapeHtml(url)}">${escapeHtml(label)}</a></p><p>If you did not request this, you can ignore this email.</p>`,

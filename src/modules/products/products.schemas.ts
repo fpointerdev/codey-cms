@@ -16,6 +16,20 @@ export const localeQuerySchema = z.object({
   locale: z.string().trim().toLowerCase().min(2).max(16).optional()
 });
 
+export const shopSettingsSchema = z.object({
+  catalogTitle: z.string().trim().min(1).max(120).default("Shop"),
+  catalogDescription: z.string().trim().max(500).default("Browse our products."),
+  catalogLayout: z.enum(["grid", "editorial", "compact"]).default("grid"),
+  cardStyle: z.enum(["minimal", "image-led", "technical"]).default("minimal"),
+  detailLayout: z.enum(["classic", "immersive", "spec-sheet"]).default("classic"),
+  detailStyle: z.enum(["standard", "premium", "industrial"]).default("standard"),
+  productsPerPage: z.number().int().min(8).max(48).default(20),
+  showCategories: z.boolean().default(true),
+  showAttributes: z.boolean().default(true),
+  showSku: z.boolean().default(true),
+  showStock: z.boolean().default(true)
+});
+
 const productImageUrlSchema = z.string().trim().max(1000).refine((value) => {
   if (/^(https?:\/\/|s3:\/\/)/i.test(value)) {
     try {

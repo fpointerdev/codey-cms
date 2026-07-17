@@ -238,7 +238,7 @@ function withCustomCssField(block, fields, options = {}) {
       value: animation.durationMs,
       min: 120,
       max: 3000,
-      step: 50,
+      step: 10,
       required: false,
       group: animationGroup
     },
@@ -749,6 +749,62 @@ export async function saveSiteSettings(form) {
     setStatus("Settings saved.");
   } catch (error) {
     setFormMessage(form, error.message || "Unable to save settings.", true);
+  } finally {
+    setFormDisabled(form, false);
+  }
+}
+
+export async function saveEmailSettings(form) {
+  const formData = new FormData(form);
+  const bearerToken = String(formData.get("bearerToken") || "").trim();
+
+  setFormDisabled(form, true);
+  setFormMessage(form, "Saving email settings...");
+
+  try {
+    const response = await api("/config/email", {
+      method: "PATCH",
+      body: JSON.stringify({
+        enabled: formData.get("enabled") === "on",
+        from: String(formData.get("from") || "").trim(),
+        httpEndpoint: String(formData.get("httpEndpoint") || "").trim(),
+        ...(bearerToken ? { bearerToken } : {}),
+        clearBearerToken: formData.get("clearBearerToken") === "on"
+      })
+    });
+    if (state.config && response.email) state.config.email = response.email;
+    const secretInput = form.querySelector('[name="bearerToken"]');
+    if (secretInput) secretInput.value = "";
+    setFormMessage(form, "Email settings saved. Test delivery before enabling recovery flows.");
+    setStatus("Email settings saved.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to save email settings.", true);
+  } finally {
+    setFormDisabled(form, false);
+    const testButton = form.querySelector("[data-test-email-settings]");
+    if (testButton) testButton.disabled = state.config?.email?.configured !== true;
+  }
+}
+
+export async function testEmailSettings(button) {
+  const form = button.closest("[data-email-settings-form]");
+  if (!form) return;
+
+  const recipient = String(new FormData(form).get("testRecipient") || "").trim();
+  setFormDisabled(form, true);
+  setFormMessage(form, "Sending test email...");
+
+  try {
+    const response = await api("/config/email/test", {
+      method: "POST",
+      body: JSON.stringify(recipient ? { recipient } : {})
+    });
+    if (state.config && response.email) state.config.email = response.email;
+    setFormMessage(form, response.result?.message || "Test email sent.");
+    setStatus("Email delivery test passed.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Email delivery test failed.", true);
+    setStatus(error.message || "Email delivery test failed.", true);
   } finally {
     setFormDisabled(form, false);
   }

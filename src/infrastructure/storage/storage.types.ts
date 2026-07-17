@@ -12,6 +12,7 @@ export type SignedStorageUrl = {
 
 export type StorageAdapter = {
   enabled: boolean;
+  checkConnection: () => Promise<void>;
   publicUrl: (key: string) => string;
   createUploadUrl: (key: string, contentType: string) => Promise<SignedStorageUrl>;
   createDownloadUrl: (key: string) => Promise<SignedStorageUrl>;

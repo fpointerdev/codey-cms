@@ -1,11 +1,13 @@
-import type { Router } from "express";
+import type { Response, Router } from "express";
 import type { ModuleContext } from "../../core/types/module.js";
+import { AppError } from "../../core/errors/app-error.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
 import { AuthService } from "./auth.service.js";
 import {
   acceptInviteSchema,
+  changePasswordSchema,
   confirmEmailVerificationSchema,
   confirmPasswordResetSchema,
   createInviteSchema,
@@ -19,11 +21,30 @@ import {
   requestPasswordResetSchema
 } from "./auth.schemas.js";
 import { requireAuth, requirePermission } from "./auth.middleware.js";
+import {
+  clearRefreshTokenCookie,
+  exposeAccessToken,
+  refreshTokenFromRequest
+} from "./auth-session-cookie.js";
+import type { TokenPair } from "./auth.types.js";
 
 function requestMeta(req: { header: (name: string) => string | undefined; ip?: string }) {
   return {
     userAgent: req.header("user-agent"),
     ipAddress: req.ip
+  };
+}
+
+function secureSessionResult<T extends { tokens: TokenPair | null }>(
+  res: Response,
+  result: T,
+  context: ModuleContext
+) {
+  if (!result.tokens) return result;
+
+  return {
+    ...result,
+    tokens: exposeAccessToken(res, result.tokens, context.config)
   };
 }
 
@@ -35,7 +56,7 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     validateRequest({ body: registerSchema }),
     asyncHandler(async (req, res) => {
       const result = await authService.register(req.body, requestMeta(req));
-      return sendSuccess(res, result, undefined, 201);
+      return sendSuccess(res, secureSessionResult(res, result, context), undefined, 201);
     })
   );
 
@@ -44,7 +65,7 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     validateRequest({ body: loginSchema }),
     asyncHandler(async (req, res) => {
       const result = await authService.login(req.body, requestMeta(req));
-      return sendSuccess(res, result);
+      return sendSuccess(res, secureSessionResult(res, result, context));
     })
   );
 
@@ -52,8 +73,13 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     "/refresh",
     validateRequest({ body: refreshSchema }),
     asyncHandler(async (req, res) => {
-      const result = await authService.refresh(req.body.refreshToken, requestMeta(req));
-      return sendSuccess(res, result);
+      const refreshToken = refreshTokenFromRequest(req);
+      if (!refreshToken) {
+        throw new AppError(401, "invalid_refresh_token", "Refresh token is invalid or expired.");
+      }
+
+      const result = await authService.refresh(refreshToken, requestMeta(req));
+      return sendSuccess(res, secureSessionResult(res, result, context));
     })
   );
 
@@ -61,7 +87,9 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     "/logout",
     validateRequest({ body: logoutSchema }),
     asyncHandler(async (req, res) => {
-      await authService.logout(req.body.refreshToken, requestMeta(req));
+      const refreshToken = refreshTokenFromRequest(req);
+      if (refreshToken) await authService.logout(refreshToken, requestMeta(req));
+      clearRefreshTokenCookie(res, context.config);
       return sendSuccess(res, { loggedOut: true });
     })
   );
@@ -80,6 +108,7 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     validateRequest({ body: confirmPasswordResetSchema }),
     asyncHandler(async (req, res) => {
       const result = await authService.confirmPasswordReset(req.body, requestMeta(req));
+      clearRefreshTokenCookie(res, context.config);
       return sendSuccess(res, result);
     })
   );
@@ -152,6 +181,7 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     asyncHandler(async (req, res) => {
       const invite = await authService.revokeInvite(req.params.id, {
         actorUserId: req.user!.id,
+        actorPermissions: req.user!.permissions,
         ...requestMeta(req)
       });
       return sendSuccess(res, { revoked: true, invite });
@@ -163,7 +193,27 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     validateRequest({ body: acceptInviteSchema }),
     asyncHandler(async (req, res) => {
       const result = await authService.acceptInvite(req.body, requestMeta(req));
-      return sendSuccess(res, result, undefined, 201);
+      return sendSuccess(res, secureSessionResult(res, result, context), undefined, 201);
+    })
+  );
+
+  router.patch(
+    "/password",
+    requireAuth(context),
+    validateRequest({ body: changePasswordSchema }),
+    asyncHandler(async (req, res) => {
+      const result = await authService.changePassword(req.user!.id, req.body, requestMeta(req));
+      return sendSuccess(res, secureSessionResult(res, result, context));
+    })
+  );
+
+  router.delete(
+    "/sessions",
+    requireAuth(context),
+    asyncHandler(async (req, res) => {
+      const result = await authService.revokeAllSessions(req.user!.id, requestMeta(req));
+      clearRefreshTokenCookie(res, context.config);
+      return sendSuccess(res, result);
     })
   );
 

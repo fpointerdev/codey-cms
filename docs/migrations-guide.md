@@ -187,6 +187,28 @@ Rollback notes:
 - Disable online providers before rolling back.
 - Reconcile pending payments with Stripe or PayPal and retain the encryption key with the database backup.
 
+### `20260715000000_auth_session_hardening`
+
+Purpose:
+
+- Adds a session version to users and refresh tokens.
+- Lets password changes, resets, role changes, suspension, and explicit revocation invalidate active sessions.
+
+Risk:
+
+- Low to medium. Existing refresh rows receive session version `1`, matching existing users.
+- Access tokens issued before this release do not contain a session version and require users to sign in again.
+
+Forward deploy notes:
+
+- Deploy the migration before the updated API runtime.
+- Expect one new sign-in for users with an access token issued by an older runtime.
+
+Rollback notes:
+
+- Rolling back the application leaves the added columns unused and does not require an immediate schema rollback.
+- Restore the pre-migration backup if the columns must be removed.
+
 ## Clean Clone Migration Smoke
 
 For a copied runtime smoke test:
@@ -201,4 +223,4 @@ For a copied runtime smoke test:
 8. Start the app.
 9. Check `/api/v1/health/ready`.
 
-Integration tests use `TEST_DATABASE_URL` and refuse to run against `DATABASE_URL` unless `ALLOW_DATABASE_URL_INTEGRATION=true` is set.
+Integration and browser tests require `TEST_DATABASE_URL`. They refuse PostgreSQL databases whose names do not contain `test`, `ci`, or `e2e`. Set `INTEGRATION_RESET_DATABASE=true` only for a disposable database when a clean reset is required.

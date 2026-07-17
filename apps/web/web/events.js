@@ -1,4 +1,4 @@
-import { availableComponentTemplates, elements, slugFromTitle, state } from "./core.js";
+import { availableComponentTemplates, elements, escapeHtml, slugFromTitle, state } from "./core.js";
 import { bootstrap } from "./controller.js";
 import {
   addArticle,
@@ -12,8 +12,10 @@ import {
   editPageSettings,
   publishPage,
   removeLocaleRow,
+  saveEmailSettings,
   saveLocalizationSettings,
   syncLocaleLanguageFields,
+  testEmailSettings,
   toggleLocalizationModule,
   saveSiteSettings
 } from "./content-actions.js";
@@ -53,11 +55,13 @@ import {
 import { insertIntoTextarea, refreshRichPreview } from "./builder-views.js";
 import {
   acceptUserInvite,
+  changeOwnPassword,
   confirmEmailVerification,
   confirmPasswordReset,
   loginAdmin,
   logoutAdmin,
   requestPasswordResetFromLogin,
+  revokeAllSessions,
   submitContactForm
 } from "./session-actions.js";
 import {
@@ -76,7 +80,9 @@ import {
   removeRepeaterRow,
   savePaymentProvider,
   saveProductEditor,
+  saveShopSettings,
   testPaymentProvider,
+  updateShopSettingsPreview,
   updateManualPayment
 } from "./shop-actions.js";
 import {
@@ -88,6 +94,11 @@ import {
   saveProductCategory
 } from "./taxonomy-actions.js";
 import { getModalFormHandler } from "./modal.js";
+import {
+  enhanceStructuredTabs,
+  handleStructuredTabClick,
+  handleStructuredTabKeydown
+} from "./structured-tabs.js";
 
 const builderDragType = "application/x-codey-builder";
 
@@ -174,6 +185,13 @@ function bindSubmitEvents() {
       return;
     }
 
+    const changePasswordForm = event.target.closest("[data-change-password-form]");
+    if (changePasswordForm) {
+      event.preventDefault();
+      void changeOwnPassword(changePasswordForm);
+      return;
+    }
+
     const pageCreateForm = event.target.closest("[data-page-create-form]");
     if (pageCreateForm) {
       event.preventDefault();
@@ -202,6 +220,13 @@ function bindSubmitEvents() {
       return;
     }
 
+    const emailSettingsForm = event.target.closest("[data-email-settings-form]");
+    if (emailSettingsForm) {
+      event.preventDefault();
+      void saveEmailSettings(emailSettingsForm);
+      return;
+    }
+
     const localizationSettingsForm = event.target.closest("[data-localization-settings-form]");
     if (localizationSettingsForm) {
       event.preventDefault();
@@ -213,6 +238,13 @@ function bindSubmitEvents() {
     if (productEditorForm) {
       event.preventDefault();
       void saveProductEditor(productEditorForm);
+      return;
+    }
+
+    const shopSettingsForm = event.target.closest("[data-shop-settings-form]");
+    if (shopSettingsForm) {
+      event.preventDefault();
+      void saveShopSettings(shopSettingsForm);
       return;
     }
 
@@ -558,6 +590,12 @@ function bindBuilderClick(event) {
 }
 
 function bindAdminClick(event) {
+  const emailTestButton = event.target.closest("[data-test-email-settings]");
+  if (emailTestButton) {
+    void testEmailSettings(emailTestButton);
+    return true;
+  }
+
   const paymentTestButton = event.target.closest("[data-test-payment-provider]");
   if (paymentTestButton) {
     void testPaymentProvider(paymentTestButton);
@@ -578,6 +616,11 @@ function bindAdminClick(event) {
 
   if (event.target.closest("[data-admin-logout]")) {
     void logoutAdmin();
+    return true;
+  }
+
+  if (event.target.closest("[data-revoke-all-sessions]")) {
+    void revokeAllSessions();
     return true;
   }
 
@@ -894,8 +937,8 @@ function filePreviewHtml(files = []) {
 
       return `
         <span class="file-preview-item">
-          ${objectUrl ? `<img src="${objectUrl}" alt="" />` : ""}
-          <span>${file.name || `File ${index + 1}`}</span>
+          ${objectUrl ? `<img src="${escapeHtml(objectUrl)}" alt="" />` : ""}
+          <span>${escapeHtml(file.name || `File ${index + 1}`)}</span>
         </span>
       `;
     })
@@ -918,6 +961,30 @@ function bindBuilderControlEvents() {
     if (!containerSelect?.value || !containerSelect.dataset.moveBuilderBlockSection) return;
 
     void reorderBuilderBlock(containerSelect.dataset.moveBuilderBlockSection, containerSelect.value);
+  });
+}
+
+function bindStructuredTabEvents() {
+  enhanceStructuredTabs(elements.page);
+  elements.page.addEventListener("click", handleStructuredTabClick);
+  elements.page.addEventListener("keydown", handleStructuredTabKeydown);
+}
+
+function bindShopControlEvents() {
+  elements.page.addEventListener("input", (event) => {
+    const form = event.target.closest("[data-shop-settings-form]");
+    if (form) updateShopSettingsPreview(form);
+  });
+
+  elements.page.addEventListener("change", (event) => {
+    const categorySelect = event.target.closest("[data-product-category-select]");
+    if (categorySelect) {
+      const fields = categorySelect.closest("form")?.querySelector("[data-new-category-fields]");
+      if (fields) fields.hidden = categorySelect.value !== "__new";
+    }
+
+    const form = event.target.closest("[data-shop-settings-form]");
+    if (form) updateShopSettingsPreview(form);
   });
 }
 
@@ -1113,7 +1180,9 @@ export function bindEvents() {
   bindRichTextEvents();
   bindSlugEvents();
   bindFilePreviewEvents();
+  bindStructuredTabEvents();
   bindBuilderControlEvents();
+  bindShopControlEvents();
   bindBuilderKeyboardEvents();
   bindDragEvents();
   bindMenuAndFooterEvents();

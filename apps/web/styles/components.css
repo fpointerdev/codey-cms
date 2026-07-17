@@ -373,6 +373,7 @@
 
 #settings-tab-general:checked ~ .settings-tabs label[for="settings-tab-general"],
 #settings-tab-style:checked ~ .settings-tabs label[for="settings-tab-style"],
+#settings-tab-email:checked ~ .settings-tabs label[for="settings-tab-email"],
 #settings-tab-multilingual:checked ~ .settings-tabs label[for="settings-tab-multilingual"] {
   border-color: var(--accent);
   color: var(--admin-ink);
@@ -380,6 +381,7 @@
 
 #settings-tab-general:checked ~ .settings-tab-panel-general,
 #settings-tab-style:checked ~ .settings-tab-panel-style,
+#settings-tab-email:checked ~ .settings-tab-panel-email,
 #settings-tab-multilingual:checked ~ .settings-tab-panel-multilingual {
   display: grid;
   gap: 18px;

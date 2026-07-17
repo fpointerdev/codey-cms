@@ -2,7 +2,6 @@ import {
   escapeHtml,
   formatMoney,
   setStatus,
-  slugFromTitle,
   state
 } from "./core.js";
 import { adminHref } from "./routes.js";
@@ -11,30 +10,6 @@ import { renderFormMessage } from "./ui.js";
 
 const productStatuses = ["DRAFT", "ACTIVE", "ARCHIVED"];
 const currencies = ["EUR", "USD", "GBP", "CHF"];
-
-const shopLayoutOptions = [
-  { value: "grid", label: "Clean grid", body: "Balanced catalog cards for most shops." },
-  { value: "editorial", label: "Editorial", body: "Larger imagery and richer product storytelling." },
-  { value: "compact", label: "Compact", body: "Dense product rows for bigger catalogs." }
-];
-
-const cardStyleOptions = [
-  { value: "minimal", label: "Minimal", body: "Quiet B2B catalog presentation." },
-  { value: "image-led", label: "Image led", body: "Strong visual cards for premium products." },
-  { value: "technical", label: "Technical", body: "SKU, stock, and specs are easier to scan." }
-];
-
-const detailLayoutOptions = [
-  { value: "classic", label: "Classic detail", body: "Gallery left, product details right." },
-  { value: "immersive", label: "Immersive", body: "Large media area with content sections below." },
-  { value: "spec-sheet", label: "Spec sheet", body: "Optimized for attributes and technical buyers." }
-];
-
-const detailStyleOptions = [
-  { value: "standard", label: "Standard", body: "Clean product page with flexible sections." },
-  { value: "premium", label: "Premium", body: "More whitespace and stronger image hierarchy." },
-  { value: "industrial", label: "Industrial", body: "Structured, technical, and direct." }
-];
 
 function optionHtml(options, selectedValue = "") {
   return options
@@ -50,62 +25,21 @@ function productMetadata(product = {}) {
   return product.metadata && typeof product.metadata === "object" ? product.metadata : {};
 }
 
-function productPresentation(product = {}) {
-  const metadata = productMetadata(product);
-  const presentation = metadata.presentation && typeof metadata.presentation === "object" ? metadata.presentation : {};
-
-  return {
-    shopLayout: presentation.shopLayout || "grid",
-    cardStyle: presentation.cardStyle || "minimal",
-    detailLayout: presentation.detailLayout || "classic",
-    detailStyle: presentation.detailStyle || "standard"
-  };
-}
-
 function productAttributes(product = {}) {
   const metadata = productMetadata(product);
   return Array.isArray(metadata.attributes) && metadata.attributes.length
     ? metadata.attributes
-    : [
-        { name: "Material", value: "" },
-        { name: "Finish", value: "" },
-        { name: "Dimensions", value: "" }
-      ];
+    : [{ name: "", value: "" }];
 }
 
 function editableProductOptionRows(product = {}) {
-  return product.id
-    ? [{ name: "", values: [] }]
-    : [
-        { name: "Size", values: [] },
-        { name: "Color", values: [] }
-      ];
+  return [{ name: "", values: [] }];
 }
 
 function existingProductOptions(product = {}) {
   return product.options?.length
     ? product.options
     : [];
-}
-
-function renderChoiceCards(name, options, selectedValue) {
-  return `
-    <div class="choice-card-grid">
-      ${options
-        .map(
-          (option) => `
-            <label class="choice-card">
-              <input type="radio" name="${escapeHtml(name)}" value="${escapeHtml(option.value)}"${option.value === selectedValue ? " checked" : ""} />
-              <span>
-                <strong>${escapeHtml(option.label)}</strong>
-                <small>${escapeHtml(option.body)}</small>
-              </span>
-            </label>
-          `
-        )
-        .join("")}
-    </div>
-  `;
 }
 
 function renderImageList(product = {}) {
@@ -182,9 +116,8 @@ export function renderProductEditorPage({ product = null, categories = [], messa
   const isNew = !product;
   state.shopProduct = product;
   state.shopCategories = categories;
-  const presentation = productPresentation(product || {});
   const title = isNew ? "Create Product" : product.name;
-  const slug = product?.slug || slugFromTitle(product?.name || "new-product");
+  const slug = product?.slug || "";
 
   renderShopShell(
     isNew ? "product-create" : "product-editor",
@@ -194,7 +127,7 @@ export function renderProductEditorPage({ product = null, categories = [], messa
           <div>
             <p class="section-label">${isNew ? "New product" : "Product editor"}</p>
             <h1 class="dashboard-title">${escapeHtml(title)}</h1>
-            <p class="dashboard-copy">Create a product with media, category, attributes, and storefront presentation settings in one focused editor.</p>
+            <p class="dashboard-copy">Add the product essentials first. Inventory, search, attributes, and options stay available when you need them.</p>
           </div>
           <div class="button-row">
             <a class="secondary-button" href="${escapeHtml(adminHref("shop-products"))}" data-dashboard-link>Products</a>
@@ -206,34 +139,20 @@ export function renderProductEditorPage({ product = null, categories = [], messa
           <main class="product-editor-main">
             <section class="builder-card">
               <div class="builder-card-heading">
-                <div><p class="section-label">Product</p><h2>Identity and pricing</h2></div>
+                <div><p class="section-label">Essentials</p><h2>Product details</h2></div>
                 <span class="status-pill">${escapeHtml(product?.status || "DRAFT")}</span>
               </div>
+              <label class="product-name-field"><span>Name</span><input name="name" value="${escapeHtml(product?.name || "")}" placeholder="Product name" data-title-source required /></label>
+              <label><span>Description</span><textarea name="description" rows="5" placeholder="What should customers know about this product?">${escapeHtml(product?.description || "")}</textarea></label>
               <div class="builder-form-grid">
-                <label><span>Name</span><input name="name" value="${escapeHtml(product?.name || "New product")}" required /></label>
-                <label><span>Slug</span><input name="slug" value="${escapeHtml(slug)}" required /></label>
-                <label><span>SKU</span><input name="sku" value="${escapeHtml(product?.sku || "")}" placeholder="SKU-001" /></label>
-                <label><span>Category</span><select name="categoryId">${categoryOptions(categories, product?.categoryId || "")}</select></label>
+                <label><span>Price</span><input name="price" type="number" min="0" step="0.01" value="${escapeHtml(product ? (product.priceCents / 100).toFixed(2) : "0.00")}" required /></label>
+                <label><span>Stock</span><input name="stockQuantity" type="number" min="0" step="1" value="${escapeHtml(product?.stockQuantity ?? 0)}" required /></label>
+                <label><span>Category</span><select name="categoryId" data-product-category-select>${categoryOptions(categories, product?.categoryId || "")}</select></label>
               </div>
-              <div class="builder-form-grid">
+              <div class="builder-form-grid product-new-category-fields" data-new-category-fields hidden>
                 <label><span>New category name</span><input name="newCategoryName" placeholder="Railings" /></label>
                 <label><span>New category slug</span><input name="newCategorySlug" placeholder="railings" /></label>
               </div>
-              <label><span>Description</span><textarea name="description" rows="5">${escapeHtml(product?.description || "")}</textarea></label>
-              <div class="builder-form-grid">
-                <label><span>Price</span><input name="price" type="number" min="0" step="0.01" value="${escapeHtml(product ? (product.priceCents / 100).toFixed(2) : "10.00")}" required /></label>
-                <label><span>Currency</span><select name="currency">${optionHtml(currencies, product?.currency || "EUR")}</select></label>
-                <label><span>Stock</span><input name="stockQuantity" type="number" min="0" step="1" value="${escapeHtml(product?.stockQuantity ?? 10)}" required /></label>
-                <label><span>Status</span><select name="status">${optionHtml(productStatuses, product?.status || "DRAFT")}</select></label>
-              </div>
-            </section>
-
-            <section class="builder-card">
-              <div class="builder-card-heading">
-                <div><p class="section-label">SEO</p><h2>Search preview</h2></div>
-              </div>
-              <label><span>Meta title</span><input name="metaTitle" value="${escapeHtml(product?.metaTitle || product?.name || "")}" maxlength="180" /></label>
-              <label><span>Meta description</span><textarea name="metaDescription" rows="3" maxlength="300">${escapeHtml(product?.metaDescription || product?.description || "")}</textarea></label>
             </section>
 
             <section class="builder-card">
@@ -250,53 +169,64 @@ export function renderProductEditorPage({ product = null, categories = [], messa
               <label><span>Default image description</span><input name="imageAlt" value="${escapeHtml(product?.images?.[0]?.alt || product?.name || "")}" placeholder="Describe what appears in the product images" /></label>
             </section>
 
-            <section class="builder-card">
-              <div class="builder-card-heading">
-                <div><p class="section-label">Attributes</p><h2>Technical details</h2></div>
-                <button type="button" class="secondary-button" data-add-repeater-row="attribute">Add attribute</button>
+            <details class="product-editor-disclosure">
+              <summary><span><strong>Inventory and identifiers</strong><small>Currency, SKU, and product URL</small></span><span aria-hidden="true">+</span></summary>
+              <div class="product-editor-disclosure-body builder-form-grid">
+                <label><span>Currency</span><select name="currency">${optionHtml(currencies, product?.currency || "EUR")}</select></label>
+                <label><span>SKU</span><input name="sku" value="${escapeHtml(product?.sku || "")}" placeholder="SKU-001" /></label>
+                <label><span>Slug</span><input name="slug" value="${escapeHtml(slug)}" placeholder="Generated from product name" data-slug-target /></label>
               </div>
-              ${renderRepeaterRows(productAttributes(product || {}), "attribute", {
-                nameLabel: "Attribute",
-                valueLabel: "Value",
-                name: "Material",
-                value: "Stainless steel"
-              })}
-            </section>
+            </details>
 
-            <section class="builder-card">
-              <div class="builder-card-heading">
-                <div><p class="section-label">Options</p><h2>Variation options</h2></div>
-                <button type="button" class="secondary-button" data-add-repeater-row="option">Add option</button>
+            <details class="product-editor-disclosure">
+              <summary><span><strong>Search and sharing</strong><small>Optional title and description for search engines</small></span><span aria-hidden="true">+</span></summary>
+              <div class="product-editor-disclosure-body">
+                <label><span>Meta title</span><input name="metaTitle" value="${escapeHtml(product?.metaTitle || "")}" maxlength="180" placeholder="Uses the product name when empty" /></label>
+                <label><span>Meta description</span><textarea name="metaDescription" rows="3" maxlength="300" placeholder="Uses the product description when empty">${escapeHtml(product?.metaDescription || "")}</textarea></label>
               </div>
-              ${renderExistingOptionList(product || {})}
-              ${renderRepeaterRows(editableProductOptionRows(product || {}), "option", {
-                nameLabel: "Option",
-                valueLabel: "Values",
-                name: "Size",
-                value: "Small, Medium, Large"
-              })}
-            </section>
+            </details>
+
+            <details class="product-editor-disclosure">
+              <summary><span><strong>Technical attributes</strong><small>Material, dimensions, finish, and other specifications</small></span><span aria-hidden="true">+</span></summary>
+              <div class="product-editor-disclosure-body">
+                <div class="builder-card-heading compact-heading"><span></span><button type="button" class="secondary-button" data-add-repeater-row="attribute">Add attribute</button></div>
+                ${renderRepeaterRows(productAttributes(product || {}), "attribute", {
+                  nameLabel: "Attribute",
+                  valueLabel: "Value",
+                  name: "Material",
+                  value: "Stainless steel"
+                })}
+              </div>
+            </details>
+
+            <details class="product-editor-disclosure">
+              <summary><span><strong>Product options</strong><small>Sizes, colors, and other customer choices</small></span><span aria-hidden="true">+</span></summary>
+              <div class="product-editor-disclosure-body">
+                <div class="builder-card-heading compact-heading"><span></span><button type="button" class="secondary-button" data-add-repeater-row="option">Add option</button></div>
+                ${renderExistingOptionList(product || {})}
+                ${renderRepeaterRows(editableProductOptionRows(product || {}), "option", {
+                  nameLabel: "Option",
+                  valueLabel: "Values",
+                  name: "Size",
+                  value: "Small, Medium, Large"
+                })}
+              </div>
+            </details>
           </main>
 
           <aside class="product-editor-side">
-            <section class="builder-card">
+            <section class="builder-card product-publish-card">
               <div class="builder-card-heading">
-                <div><p class="section-label">Catalog page</p><h2>Listing style</h2></div>
+                <div><p class="section-label">Visibility</p><h2>Publish</h2></div>
               </div>
-              <label><span>Shop page layout</span>${renderChoiceCards("shopLayout", shopLayoutOptions, presentation.shopLayout)}</label>
-              <label><span>Product card style</span>${renderChoiceCards("cardStyle", cardStyleOptions, presentation.cardStyle)}</label>
-            </section>
-            <section class="builder-card">
-              <div class="builder-card-heading">
-                <div><p class="section-label">Product page</p><h2>Detail style</h2></div>
+              <label><span>Status</span><select name="status">${optionHtml(productStatuses, product?.status || "DRAFT")}</select></label>
+              <p class="dashboard-copy compact">Draft products stay private. Active products appear in the public shop.</p>
+              <div class="product-editor-summary">
+                <p class="section-label">Current value</p>
+                <strong>${escapeHtml(formatMoney(product?.priceCents ?? 0, product?.currency || "EUR"))}</strong>
+                <span>${escapeHtml(product?.stockQuantity ?? 0)} units in stock</span>
               </div>
-              <label><span>Detail layout</span>${renderChoiceCards("detailLayout", detailLayoutOptions, presentation.detailLayout)}</label>
-              <label><span>Detail style</span>${renderChoiceCards("detailStyle", detailStyleOptions, presentation.detailStyle)}</label>
-            </section>
-            <section class="builder-card product-editor-summary">
-              <p class="section-label">Current value</p>
-              <strong>${escapeHtml(formatMoney(product?.priceCents ?? 1000, product?.currency || "EUR"))}</strong>
-              <span>${escapeHtml(product?.stockQuantity ?? 10)} units in stock</span>
+              <button type="submit">${isNew ? "Create product" : "Save product"}</button>
             </section>
           </aside>
         </div>

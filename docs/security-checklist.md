@@ -8,11 +8,13 @@ Use this checklist before a generated site is published.
 - `APP_PUBLIC_URL` points to the final public URL.
 - `CORS_ORIGINS` contains only trusted origins.
 - `JWT_ACCESS_SECRET` is unique per copied site and at least 32 characters.
-- `AUTH_RECOVERY_TOKEN_DELIVERY=email` when auth recovery, email verification, or invites are enabled.
-- `EMAIL_DRIVER=http` is configured for auth recovery and shop notifications.
+- `AUTH_RECOVERY_TOKEN_DELIVERY=email` when password recovery or email verification is enabled, and when invitations should be delivered automatically.
+- Transactional email is configured with an HTTPS endpoint and provider-tested under **Settings > Email** for auth recovery and shop notifications.
 - `STORAGE_DRIVER=s3` is enabled for production media.
 - `STORAGE_KEY_PREFIX` is unique per customer site.
 - `CMS_CREDENTIAL_ENCRYPTION_KEY` is unique, backed up, and stored in the platform secret manager.
+- `BACKUP_REQUIRED=true`, `BACKUP_REQUIRE_ENCRYPTION=true`, and a unique `BACKUP_ENCRYPTION_KEY` are set.
+- S3 versioning or replication has been tested before `BACKUP_S3_MEDIA_PROTECTED=true` is set.
 
 ## Content And Access
 
@@ -20,7 +22,8 @@ Use this checklist before a generated site is published.
 - Client roles only have the permissions required for their modules.
 - Admin users use strong passwords and verified emails.
 - Public form endpoints keep anti-spam checks enabled.
-- Uploaded media has size limits and signed download URLs where needed.
+- Uploaded media is limited to the supported image, video, and PDF allowlist; extension, MIME, kind, and file signatures must agree.
+- Rich text is sanitized on write and again before public server rendering.
 
 ## Payments
 
@@ -41,5 +44,5 @@ Use this checklist before a generated site is published.
 - `/api/v1/health/metrics` returns process telemetry.
 - The primary custom domain is active in `SiteDomain`.
 - Reverse proxy TLS is issued and redirects HTTP to HTTPS.
-- Backup job has completed at least once.
+- Backup and restore have both been tested against an isolated database.
 - Maintenance mode is disabled.

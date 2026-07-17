@@ -7,14 +7,24 @@ import { setFormDisabled, setFormMessage } from "./ui.js";
 
 function storeSession(user, tokens) {
   state.token = tokens.accessToken;
-  state.refreshToken = tokens.refreshToken;
+  state.hasSession = true;
   state.user = user;
-  localStorage.setItem("cms_access_token", state.token);
-  localStorage.setItem("cms_refresh_token", state.refreshToken);
+  localStorage.setItem("cms_session_hint", "1");
+  localStorage.removeItem("cms_access_token");
+  localStorage.removeItem("cms_refresh_token");
+}
+
+function clearBrowserSession() {
+  state.token = "";
+  state.hasSession = false;
+  state.user = null;
+  localStorage.removeItem("cms_session_hint");
+  localStorage.removeItem("cms_access_token");
+  localStorage.removeItem("cms_refresh_token");
 }
 
 export async function loadUser() {
-  if (!state.token) return null;
+  if (!state.token && !state.hasSession) return null;
 
   try {
     const { user } = await api("/auth/me");
@@ -84,26 +94,73 @@ export async function loginAdmin(form) {
 }
 
 export async function logoutAdmin() {
-  const refreshToken = state.refreshToken;
-
-  if (refreshToken) {
+  if (state.hasSession || state.token) {
     try {
       await api("/auth/logout", {
         method: "POST",
-        body: JSON.stringify({ refreshToken })
+        body: JSON.stringify({})
       });
     } catch {
       // Local sign-out must still work if the token is already expired.
     }
   }
 
-  state.token = "";
-  state.refreshToken = "";
-  state.user = null;
-  localStorage.removeItem("cms_access_token");
-  localStorage.removeItem("cms_refresh_token");
+  clearBrowserSession();
   window.history.pushState({}, "", "/cy-admin");
   renderAdminLogin("You have signed out.");
+}
+
+export async function changeOwnPassword(form) {
+  const formData = new FormData(form);
+  const currentPassword = String(formData.get("currentPassword") || "");
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (newPassword !== confirmPassword) {
+    setFormMessage(form, "New passwords do not match.", true);
+    return;
+  }
+
+  setFormDisabled(form, true);
+  setFormMessage(form, "Updating password...");
+
+  try {
+    const { user, tokens } = await api("/auth/password", {
+      method: "PATCH",
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    storeSession(user, tokens);
+    form.reset();
+    setFormMessage(form, "Password updated. Other sessions have been signed out.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to update password.", true);
+  } finally {
+    setFormDisabled(form, false);
+  }
+}
+
+export async function revokeAllSessions() {
+  const confirmed = await getModalFormHandler()({
+    label: "Account security",
+    title: "Sign out all sessions",
+    description: "Sign out this browser and every other active session for your account?",
+    fields: [],
+    submitLabel: "Sign out all sessions",
+    destructive: true
+  });
+  if (!confirmed) return;
+
+  try {
+    await api("/auth/sessions", { method: "DELETE" });
+  } catch (error) {
+    const sessionActions = document.querySelector?.("[data-session-actions]") || document;
+    setFormMessage(sessionActions, error.message || "Unable to revoke active sessions.", true);
+    return;
+  }
+
+  clearBrowserSession();
+  window.history.pushState({}, "", "/cy-admin");
+  renderAdminLogin("All sessions have been signed out.");
 }
 
 export async function requestPasswordResetFromLogin(form) {
@@ -155,6 +212,7 @@ export async function confirmPasswordReset(form) {
       method: "POST",
       body: JSON.stringify({ token, password })
     });
+    clearBrowserSession();
     window.history.pushState({}, "", "/cy-admin");
     renderAdminLogin("Password reset. Sign in with your new password.");
   } catch (error) {

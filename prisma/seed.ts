@@ -83,41 +83,65 @@ async function syncRolePermissions(roleName: string, permissionKeys: Array<[stri
   return role;
 }
 
-async function seedAdminUser(adminRoleId: string) {
-  const email = process.env.CODEY_ADMIN_EMAIL ?? process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
-  const password = process.env.CODEY_ADMIN_PASSWORD ?? process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
-  const name = process.env.CODEY_ADMIN_NAME ?? "Owner";
+function readAdminBootstrapInput() {
+  const email = (process.env.CODEY_ADMIN_EMAIL ?? process.env.SEED_ADMIN_EMAIL ?? "").trim().toLowerCase();
+  const password = process.env.CODEY_ADMIN_PASSWORD ?? process.env.SEED_ADMIN_PASSWORD ?? "";
+  const name = (process.env.CODEY_ADMIN_NAME ?? "Owner").trim() || "Owner";
 
-  const user = await prisma.user.upsert({
-    where: { email },
-    update: {
-      name,
-      emailVerifiedAt: new Date()
-    },
-    create: {
-      email,
-      name,
-      passwordHash: await hashPassword(password),
+  if (!email && !password) return null;
+  if (!email || !password) {
+    throw new Error("CODEY_ADMIN_EMAIL and CODEY_ADMIN_PASSWORD must both be set to bootstrap an owner.");
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("CODEY_ADMIN_EMAIL must be a valid email address.");
+  }
+  if (password.length < 12 || password.length > 128) {
+    throw new Error("CODEY_ADMIN_PASSWORD must be between 12 and 128 characters.");
+  }
+  if (process.env.NODE_ENV === "production" && (
+    email === "admin@example.com" || password === "ChangeMe123!"
+  )) {
+    throw new Error("Default administrator credentials are not allowed in production.");
+  }
+
+  return { email, password, name };
+}
+
+async function seedAdminUser(adminRoleId: string) {
+  const admin = readAdminBootstrapInput();
+  if (!admin) {
+    console.log("Owner bootstrap skipped. Run `pnpm setup:admin` once after deployment.");
+    return;
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { email: admin.email },
+    select: {
+      roles: {
+        where: { roleId: adminRoleId },
+        select: { roleId: true }
+      }
+    }
+  });
+
+  if (existingUser) {
+    if (existingUser.roles.length > 0) return;
+    throw new Error(
+      "CODEY_ADMIN_EMAIL belongs to an existing non-owner account. Run `pnpm setup:admin` to promote it securely."
+    );
+  }
+
+  await prisma.user.create({
+    data: {
+      email: admin.email,
+      name: admin.name,
+      passwordHash: await hashPassword(admin.password),
       emailVerifiedAt: new Date(),
       roles: {
         create: {
           roleId: adminRoleId
         }
       }
-    }
-  });
-
-  await prisma.userRole.upsert({
-    where: {
-      userId_roleId: {
-        userId: user.id,
-        roleId: adminRoleId
-      }
-    },
-    update: {},
-    create: {
-      userId: user.id,
-      roleId: adminRoleId
     }
   });
 }

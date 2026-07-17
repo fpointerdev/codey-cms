@@ -1,4 +1,4 @@
-import { api, defaultPage, elements, hasAnyPermission, hasPermission, moduleEnabled, modulesEnabled, setRuntimeConfig, setStatus, state } from "./core.js";
+import { api, apiWithMeta, defaultPage, elements, hasAnyPermission, hasPermission, moduleEnabled, modulesEnabled, setRuntimeConfig, setStatus, state } from "./core.js";
 import { currentAdminRoute, currentLocale, pageSlug, publicPostRoute, publicShopRoute } from "./routes.js";
 import { loadMenu } from "./content-actions.js";
 import { renderPage, renderPost } from "./public-renderer.js";
@@ -208,20 +208,24 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "shop-configuration") {
     const { renderShopConfigurationPage } = await adminViews();
-    const config = await api("/config");
+    const [config, shopResponse] = await Promise.all([
+      api("/config"),
+      api("/products/settings")
+    ]);
+    const shopSettings = shopResponse.settings || {};
     if (!moduleEnabled("payments")) {
-      renderShopConfigurationPage(config, {}, "Payments module is disabled for this project.");
+      renderShopConfigurationPage(config, shopSettings, {}, "Payments module is disabled for this project.");
       return;
     }
     if (!hasPermission("read", "payments")) {
-      renderShopConfigurationPage(config);
+      renderShopConfigurationPage(config, shopSettings);
       return;
     }
 
     try {
-      renderShopConfigurationPage(config, await api("/payments/providers"));
+      renderShopConfigurationPage(config, shopSettings, await api("/payments/providers"));
     } catch (error) {
-      renderShopConfigurationPage(config, {}, error.message || "Unable to load payment settings.");
+      renderShopConfigurationPage(config, shopSettings, {}, error.message || "Unable to load payment settings.");
     }
     return;
   }
@@ -377,7 +381,14 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "settings") {
     const { renderSettingsPage } = await adminViews();
-    renderSettingsPage(await api("/config"));
+    const config = await api("/config");
+    try {
+      const { email } = await api("/config/email");
+      config.email = email;
+    } catch (error) {
+      config.email = { error: error.message || "Unable to load email settings." };
+    }
+    renderSettingsPage(config);
     return;
   }
 
@@ -406,7 +417,7 @@ function routeModulesEnabled(route) {
     "shop-categories": ["products"],
     "shop-attributes": ["products"],
     "shop-orders": ["orders"],
-    "shop-configuration": ["products", "orders"],
+    "shop-configuration": ["products"],
     pages: ["cms"],
     "page-create": ["cms"],
     "page-builder": ["cms"],
@@ -433,7 +444,7 @@ export function adminRoutePermissions(route) {
     "shop-categories": [["read", "products"]],
     "shop-attributes": [["read", "products"]],
     "shop-orders": [["read", "orders"]],
-    "shop-configuration": [["read", "payments"], ["read", "modules"]],
+    "shop-configuration": [["read", "products"], ["read", "payments"], ["read", "modules"]],
     pages: [["read", "cms"]],
     "page-create": [["create", "cms"]],
     "page-builder": [["update", "cms"]],
@@ -456,8 +467,11 @@ async function loadPage() {
     const { renderShopListing, renderProductDetail } = await publicShopViews();
 
     if (shopRoute.view === "product") {
-      const { product } = await api(publicLocaleUrl(`/products/${encodeURIComponent(shopRoute.slug)}`));
-      renderProductDetail(product);
+      const [{ product }, { settings }] = await Promise.all([
+        api(publicLocaleUrl(`/products/${encodeURIComponent(shopRoute.slug)}`)),
+        api("/products/settings")
+      ]);
+      renderProductDetail(product, settings);
       return;
     }
 
@@ -465,13 +479,23 @@ async function loadPage() {
     if (shopRoute.category) params.set("category", shopRoute.category);
     if (shopRoute.attributeName) params.set("attributeName", shopRoute.attributeName);
     if (shopRoute.attributeValue) params.set("attributeValue", shopRoute.attributeValue);
+    params.set("page", String(shopRoute.page || 1));
 
-    const [{ products }, { categories }, { attributes }] = await Promise.all([
-      api(publicLocaleUrl("/products", Object.fromEntries(params.entries()))),
+    const [{ settings }, { categories }, { attributes }] = await Promise.all([
+      api("/products/settings"),
       api(publicLocaleUrl("/products/categories")),
       api(publicLocaleUrl("/products/attributes"))
     ]);
-    renderShopListing({ products, categories, attributes, route: shopRoute });
+    params.set("limit", String(settings.productsPerPage || 20));
+    const productsResponse = await apiWithMeta(publicLocaleUrl("/products", Object.fromEntries(params.entries())));
+    renderShopListing({
+      products: productsResponse.data.products,
+      categories,
+      attributes,
+      route: shopRoute,
+      settings,
+      pagination: productsResponse.meta
+    });
     return;
   }
 

@@ -89,6 +89,7 @@ function createAuthHarness() {
           email: data.email,
           name: data.name || null,
           passwordHash: data.passwordHash,
+          authVersion: 1,
           status: "ACTIVE",
           roles: assignedRoles
         };
@@ -223,6 +224,26 @@ test("resending and revoking invitations invalidate previous links", async () =>
   assert.deepEqual(harness.audits, ["invite.create", "invite.resend", "invite.revoke"]);
 });
 
+test("inviters cannot revoke invitations with access above their own", async () => {
+  const harness = createAuthHarness();
+  const invitation = await harness.service.createInvite({
+    email: "protected@example.com",
+    roleNames: ["client_editor"]
+  }, {
+    actorUserId: "owner-1",
+    actorPermissions: [{ action: "manage", subject: "all" }]
+  });
+
+  await assert.rejects(
+    () => harness.service.revokeInvite(invitation.invite.id, {
+      actorUserId: "limited-user",
+      actorPermissions: [{ action: "invite", subject: "users" }]
+    }),
+    (error) => error instanceof AppError && error.code === "role_assignment_forbidden"
+  );
+  assert.equal(harness.invites[0]?.status, "PENDING");
+});
+
 test("invite schemas apply list defaults and enforce account password rules", () => {
   assert.deepEqual(listInvitesQuery.parse({}), { page: 1, limit: 20 });
   assert.equal(acceptInviteSchema.safeParse({ token: "a".repeat(48), password: "short" }).success, false);
@@ -284,7 +305,7 @@ test("user administration views expose list, onboarding, edit, and delete contro
     permissions: [{ action: "manage", subject: "all" }]
   };
   state.config = null;
-  const { renderUserEditPage, renderUsersPage } = await import("../apps/web/web/admin-views.js");
+  const { renderProfilePage, renderUserEditPage, renderUsersPage } = await import("../apps/web/web/admin-views.js");
   const managedUser = {
     id: "user-2",
     email: "editor@example.com",
@@ -322,6 +343,16 @@ test("user administration views expose list, onboarding, edit, and delete contro
   assert.match(page.innerHTML, /data-user-edit-form/);
   assert.match(page.innerHTML, /name="roleIds"/);
   assert.match(page.innerHTML, /data-delete-user="user-2"/);
+
+  renderProfilePage({
+    id: "owner-1",
+    email: "owner@example.com",
+    name: "Owner",
+    status: "ACTIVE",
+    roles: ["owner"]
+  });
+  assert.match(page.innerHTML, /data-change-password-form/);
+  assert.match(page.innerHTML, /data-revoke-all-sessions/);
 });
 
 test("admin navigation hides user and settings pages from content editors", async () => {
@@ -402,7 +433,7 @@ test("read-only dashboard views hide mutation controls", async () => {
     { action: "read", subject: "modules" },
     { action: "read", subject: "payments" }
   ];
-  renderShopConfigurationPage({ modules: {} }, {
+  renderShopConfigurationPage({ modules: {} }, {}, {
     providers: [
       { provider: "STRIPE", mode: "SANDBOX", publishableKey: "pk_test", secretKeyConfigured: true },
       { provider: "PAYPAL", mode: "SANDBOX", clientId: "client-id", clientSecretConfigured: true },
@@ -423,6 +454,11 @@ test("admin routes declare permissions for direct navigation", async () => {
     ["read", "orders"]
   ]);
   assert.deepEqual(adminRoutePermissions({ view: "product-editor" }), [["update", "products"]]);
+  assert.deepEqual(adminRoutePermissions({ view: "shop-configuration" }), [
+    ["read", "products"],
+    ["read", "payments"],
+    ["read", "modules"]
+  ]);
   assert.deepEqual(adminRoutePermissions({ view: "page-builder" }), [["update", "cms"]]);
   assert.deepEqual(adminRoutePermissions({ view: "users" }), [["read", "users"]]);
   assert.deepEqual(adminRoutePermissions({ view: "settings" }), [["manage", "modules"]]);

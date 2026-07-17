@@ -6,10 +6,19 @@ function storedValue(key) {
   return localStorage.getItem(key) || "";
 }
 
+function removeLegacyTokens() {
+  if (typeof localStorage === "undefined") return;
+
+  localStorage.removeItem("cms_access_token");
+  localStorage.removeItem("cms_refresh_token");
+}
+
+removeLegacyTokens();
+
 export const state = {
   apiUrl: defaultApiUrl,
-  token: storedValue("cms_access_token"),
-  refreshToken: storedValue("cms_refresh_token"),
+  token: "",
+  hasSession: storedValue("cms_session_hint") === "1",
   user: null,
   config: null,
   menu: null,
@@ -753,8 +762,8 @@ export const defaultPage = {
 
 export function resetState() {
   state.apiUrl = defaultApiUrl;
-  state.token = storedValue("cms_access_token");
-  state.refreshToken = storedValue("cms_refresh_token");
+  state.token = "";
+  state.hasSession = storedValue("cms_session_hint") === "1";
   state.user = null;
   state.config = null;
   state.menu = null;
@@ -799,10 +808,13 @@ function headers() {
 
 function clearStoredSession() {
   state.token = "";
-  state.refreshToken = "";
+  state.hasSession = false;
   state.user = null;
-  localStorage.removeItem("cms_access_token");
-  localStorage.removeItem("cms_refresh_token");
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem("cms_session_hint");
+    localStorage.removeItem("cms_access_token");
+    localStorage.removeItem("cms_refresh_token");
+  }
 }
 
 async function readApiBody(response) {
@@ -816,14 +828,15 @@ async function readApiBody(response) {
 let refreshSessionPromise = null;
 
 async function refreshSession() {
-  if (!state.refreshToken) return false;
+  if (!state.hasSession) return false;
   if (refreshSessionPromise) return refreshSessionPromise;
 
   const pendingRefresh = (async () => {
     const response = await fetch(`${state.apiUrl}/auth/refresh`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ refreshToken: state.refreshToken })
+      credentials: "same-origin",
+      body: JSON.stringify({})
     });
     const body = await readApiBody(response);
 
@@ -833,10 +846,9 @@ async function refreshSession() {
     }
 
     state.token = body.data.tokens.accessToken;
-    state.refreshToken = body.data.tokens.refreshToken;
+    state.hasSession = true;
     state.user = body.data.user || state.user;
-    localStorage.setItem("cms_access_token", state.token);
-    localStorage.setItem("cms_refresh_token", state.refreshToken);
+    if (typeof localStorage !== "undefined") localStorage.setItem("cms_session_hint", "1");
     return true;
   })();
 
@@ -854,16 +866,16 @@ async function refreshSession() {
 
 function canRefreshRequest(path) {
   return Boolean(
-    state.token &&
-    state.refreshToken &&
+    state.hasSession &&
     !["/auth/login", "/auth/refresh", "/auth/logout"].includes(path.split("?")[0])
   );
 }
 
-async function apiRequest(path, options, allowRefresh) {
+async function apiRequest(path, options, allowRefresh, includeMeta = false) {
   const requestAccessToken = state.token;
   const response = await fetch(`${state.apiUrl}${path}`, {
     ...options,
+    credentials: "same-origin",
     headers: {
       ...headers(),
       ...options.headers
@@ -873,10 +885,10 @@ async function apiRequest(path, options, allowRefresh) {
 
   if (response.status === 401 && allowRefresh && canRefreshRequest(path)) {
     if (requestAccessToken && requestAccessToken !== state.token) {
-      return apiRequest(path, options, false);
+      return apiRequest(path, options, false, includeMeta);
     }
-    if (await refreshSession()) return apiRequest(path, options, false);
-  } else if (response.status === 401 && state.token && !state.refreshToken) {
+    if (await refreshSession()) return apiRequest(path, options, false, includeMeta);
+  } else if (response.status === 401 && state.hasSession) {
     clearStoredSession();
   }
 
@@ -887,11 +899,15 @@ async function apiRequest(path, options, allowRefresh) {
     throw error;
   }
 
-  return body.data;
+  return includeMeta ? { data: body.data, meta: body.meta || {} } : body.data;
 }
 
 export async function api(path, options = {}) {
   return apiRequest(path, options, true);
+}
+
+export async function apiWithMeta(path, options = {}) {
+  return apiRequest(path, options, true, true);
 }
 
 export function setStatus(message, isError = false) {

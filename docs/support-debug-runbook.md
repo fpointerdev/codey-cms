@@ -13,12 +13,13 @@ Use this procedure when a copied customer site has a production incident.
 
 ## Common Incidents
 
-- Auth recovery email not delivered: verify `AUTH_RECOVERY_TOKEN_DELIVERY=email`, `APP_PUBLIC_URL`, and email provider response logs.
+- Auth recovery email not delivered: verify `AUTH_RECOVERY_TOKEN_DELIVERY=email`, `APP_PUBLIC_URL`, **Settings > Email**, the last provider-test result, and provider response logs.
 - CMS content missing publicly: check page/post status and role permissions; drafts should stay private.
 - Checkout total mismatch: inspect order items, coupons, shipping rates, and tax rules stored on the order.
 - Payment not updating: verify provider signature headers, webhook secret, `providerEventId`, and `providerReference`.
 - Domain unavailable: inspect `SiteDomain.status`, reverse proxy config, DNS A/CNAME records, and TLS issuance logs.
 - Storage failure: check S3 endpoint credentials, bucket policy, key prefix, and quota.
+- Backup failure: inspect `operations.backup` in health metrics, `BACKUP_DIR/latest.json`, scheduler logs, mirror storage, and the alert webhook response.
 
 ## Safe Operator Actions
 

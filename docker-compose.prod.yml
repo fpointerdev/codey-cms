@@ -16,6 +16,7 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      CMS_CREDENTIAL_ENCRYPTION_KEY: ${CMS_CREDENTIAL_ENCRYPTION_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
@@ -38,12 +39,51 @@ services:
       STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL:-}
       STORAGE_KEY_PREFIX: ${STORAGE_KEY_PREFIX}
       BACKUP_DIR: ${BACKUP_DIR:-backups}
+      BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-30}
+      BACKUP_REQUIRED: ${BACKUP_REQUIRED:-true}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_REQUIRE_ENCRYPTION: ${BACKUP_REQUIRE_ENCRYPTION:-true}
+      BACKUP_S3_MEDIA_PROTECTED: ${BACKUP_S3_MEDIA_PROTECTED:-false}
       PORT: 4000
     volumes:
       - codey_backups:/app/backups
       - codey_uploads:/app/storage/uploads
     ports:
       - "${API_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backup:
+    build:
+      context: .
+      target: production
+    command: ["node", "scripts/backup-scheduler.mjs"]
+    healthcheck:
+      disable: true
+    environment:
+      APP_NAME: ${APP_NAME}
+      APP_MODE: ${APP_MODE}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      STORAGE_LOCAL_DIR: ${STORAGE_LOCAL_DIR:-storage/uploads}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+      STORAGE_KEY_PREFIX: ${STORAGE_KEY_PREFIX}
+      BACKUP_DIR: ${BACKUP_DIR:-backups}
+      BACKUP_MIRROR_DIR: ${BACKUP_MIRROR_DIR:-/app/backups-mirror}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_REQUIRED: ${BACKUP_REQUIRED:-true}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_REQUIRE_ENCRYPTION: ${BACKUP_REQUIRE_ENCRYPTION:-true}
+      BACKUP_S3_MEDIA_PROTECTED: ${BACKUP_S3_MEDIA_PROTECTED:-false}
+      BACKUP_ALERT_WEBHOOK_URL: ${BACKUP_ALERT_WEBHOOK_URL:-}
+      BACKUP_ALERT_WEBHOOK_TOKEN: ${BACKUP_ALERT_WEBHOOK_TOKEN:-}
+    volumes:
+      - codey_backups:/app/backups
+      - codey_backup_mirror:/app/backups-mirror
+      - codey_uploads:/app/storage/uploads:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,4 +107,5 @@ services:
 volumes:
   postgres_data:
   codey_backups:
+  codey_backup_mirror:
   codey_uploads:

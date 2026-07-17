@@ -1,6 +1,11 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
 import { localizedPath, normalizeLocale, readLocalizationSettings } from "../localization/localization.service.js";
+import {
+  sanitizeContentBlockValue,
+  sanitizePostContent,
+  sanitizeRichObject
+} from "./rich-text-sanitizer.js";
 
 type CmsDatabase = PrismaClient | Prisma.TransactionClient;
 
@@ -141,6 +146,30 @@ const postInclude = {
 
 function toJson(value: unknown) {
   return value as Prisma.InputJsonValue;
+}
+
+function sanitizePageRecord<T extends {
+  content: unknown;
+  sections: Array<{ blocks: Array<{ type: string; value: unknown }> }>;
+}>(page: T): T {
+  return {
+    ...page,
+    content: sanitizeRichObject(page.content),
+    sections: page.sections.map((section) => ({
+      ...section,
+      blocks: section.blocks.map((block) => ({
+        ...block,
+        value: sanitizeContentBlockValue(block.type, block.value)
+      }))
+    }))
+  } as T;
+}
+
+function sanitizePostRecord<T extends { content: unknown }>(post: T): T {
+  return {
+    ...post,
+    content: sanitizePostContent(post.content)
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -351,7 +380,7 @@ function cleanPostData(input: Partial<CreatePostInput>) {
     locale: input.locale ? normalizeLocale(input.locale) : undefined,
     translationGroupId: input.translationGroupId,
     excerpt: input.excerpt,
-    content: input.content ? toJson(input.content) : undefined,
+    content: input.content ? toJson(sanitizePostContent(input.content)) : undefined,
     metaTitle: input.metaTitle,
     metaDescription: input.metaDescription,
     seo: input.seo ? toJson(input.seo) : undefined,
@@ -369,7 +398,7 @@ function createPostData(input: CreatePostInput) {
     locale: normalizeLocale(input.locale),
     translationGroupId: input.translationGroupId,
     excerpt: input.excerpt,
-    content: toJson(input.content),
+    content: toJson(sanitizePostContent(input.content)),
     metaTitle: input.metaTitle,
     metaDescription: input.metaDescription,
     seo: input.seo ? toJson(input.seo) : undefined,
@@ -381,17 +410,43 @@ function createPostData(input: CreatePostInput) {
 }
 
 function normalizeSourcePath(path: string) {
-  const parsed = new URL(path, "https://example.local");
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith("//") || path.includes("\\")) {
+    throw new AppError(422, "invalid_redirect_source", "Redirect source must be a local path.");
+  }
+
+  const parsed = new URL(path.startsWith("/") ? path : `/${path}`, "https://example.local");
   const sourcePath = parsed.pathname.replace(/\/{2,}/g, "/");
 
   return sourcePath === "/" ? "/" : sourcePath.replace(/\/$/g, "");
 }
 
 function normalizeTargetPath(path: string) {
-  if (/^https?:\/\//i.test(path)) return path;
-  if (path.startsWith("/")) return path;
+  if (path.startsWith("//") || path.includes("\\")) {
+    throw new AppError(422, "invalid_redirect_target", "Redirect target must be a local path or an HTTP URL.");
+  }
+  if (/^https?:\/\//i.test(path)) return new URL(path).toString();
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) {
+    throw new AppError(422, "invalid_redirect_target", "Redirect target must be a local path or an HTTP URL.");
+  }
 
-  return `/${path}`;
+  const parsed = new URL(path.startsWith("/") ? path : `/${path}`, "https://example.local");
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
+function appendRedirectQuery(targetPath: string, search: string) {
+  const external = /^https?:\/\//i.test(targetPath);
+  const target = new URL(targetPath, "https://example.local");
+  const incoming = new URLSearchParams(search);
+  for (const [key, value] of incoming) target.searchParams.append(key, value);
+
+  return external ? target.toString() : `${target.pathname}${target.search}${target.hash}`;
+}
+
+function assertRedirectDoesNotLoop(sourcePath: string, targetPath: string) {
+  if (/^https?:\/\//i.test(targetPath)) return;
+  if (normalizeSourcePath(sourcePath) === normalizeSourcePath(targetPath)) {
+    throw new AppError(422, "redirect_loop", "Redirect source and target must be different.");
+  }
 }
 
 function xmlEscape(value: string) {
@@ -455,7 +510,7 @@ function cleanPageData(input: UpdatePageInput) {
     locale: input.locale ? normalizeLocale(input.locale) : undefined,
     translationGroupId: input.translationGroupId,
     excerpt: input.excerpt,
-    content: input.content ? toJson(input.content) : undefined,
+    content: input.content ? toJson(sanitizeRichObject(input.content)) : undefined,
     metaTitle: input.metaTitle,
     metaDescription: input.metaDescription,
     seo: input.seo ? toJson(input.seo) : undefined,
@@ -634,7 +689,7 @@ export class CmsService {
     });
 
     return {
-      ...page,
+      ...sanitizePageRecord(page),
       translations
     };
   }
@@ -650,7 +705,7 @@ export class CmsService {
           locale: normalizeLocale(input.locale),
           translationGroupId: input.translationGroupId,
           excerpt: input.excerpt,
-          content: toJson(input.content),
+          content: toJson(sanitizeRichObject(input.content)),
           metaTitle: input.metaTitle,
           metaDescription: input.metaDescription,
           seo: input.seo ? toJson(input.seo) : undefined,
@@ -721,7 +776,7 @@ export class CmsService {
           locale: targetLocale,
           translationGroupId,
           excerpt: input.excerpt ?? sourcePage.excerpt,
-          content: toJson(sourcePage.content),
+          content: toJson(sanitizeRichObject(sourcePage.content)),
           metaTitle: input.metaTitle ?? sourcePage.metaTitle,
           metaDescription: input.metaDescription ?? sourcePage.metaDescription,
           seo: sourcePage.seo === null ? undefined : toJson(sourcePage.seo),
@@ -866,7 +921,7 @@ export class CmsService {
         throw new AppError(409, "content_block_locked", "This content block is not editable.");
       }
 
-      const value = input.value ?? block.value;
+      const value = sanitizeContentBlockValue(block.type, input.value ?? block.value);
       assertValidBlockValue({
         key: block.key,
         type: block.type,
@@ -880,7 +935,7 @@ export class CmsService {
         },
         data: {
           label: input.label,
-          value: input.value === undefined ? undefined : toJson(input.value),
+          value: input.value === undefined ? undefined : toJson(value),
           settings: input.settings === undefined ? undefined : toJson(input.settings),
           editable: input.editable,
           mediaAssetId: input.mediaAssetId
@@ -987,7 +1042,7 @@ export class CmsService {
           locale: normalizeLocale(snapshot.page.locale),
           translationGroupId: snapshot.page.translationGroupId,
           excerpt: snapshot.page.excerpt,
-          content: toJson(snapshot.page.content),
+          content: toJson(sanitizeRichObject(snapshot.page.content)),
           metaTitle: snapshot.page.metaTitle,
           metaDescription: snapshot.page.metaDescription,
           seo: snapshot.page.seo === null ? Prisma.DbNull : toJson(snapshot.page.seo),
@@ -1131,7 +1186,7 @@ export class CmsService {
       where.AND = filters;
     }
 
-    return this.prisma.cmsPost.findMany({
+    const posts = await this.prisma.cmsPost.findMany({
       where,
       include: postInclude,
       orderBy: [
@@ -1143,16 +1198,20 @@ export class CmsService {
         }
       ]
     });
+
+    return posts.map(sanitizePostRecord);
   }
 
   async getPost(slug: string, locale = "en") {
-    return this.prisma.cmsPost.findFirstOrThrow({
+    const post = await this.prisma.cmsPost.findFirstOrThrow({
       where: {
         slug,
         locale: normalizeLocale(locale)
       },
       include: postInclude
     });
+
+    return sanitizePostRecord(post);
   }
 
   async createPost(input: CreatePostInput, user?: RequestUser) {
@@ -1387,11 +1446,16 @@ export class CmsService {
     preserveQuery: boolean;
     active: boolean;
   }) {
+    const sourcePath = normalizeSourcePath(input.sourcePath);
+    const targetPath = normalizeTargetPath(input.targetPath);
+    assertRedirectDoesNotLoop(sourcePath, targetPath);
+    if (input.active) await this.assertRedirectChainDoesNotLoop(sourcePath, targetPath);
+
     return this.prisma.cmsRedirect.create({
       data: {
         ...input,
-        sourcePath: normalizeSourcePath(input.sourcePath),
-        targetPath: normalizeTargetPath(input.targetPath)
+        sourcePath,
+        targetPath
       }
     });
   }
@@ -1406,14 +1470,24 @@ export class CmsService {
       active: boolean;
     }>
   ) {
+    const current = await this.prisma.cmsRedirect.findUniqueOrThrow({
+      where: { id: redirectId }
+    });
+    const sourcePath = input.sourcePath ? normalizeSourcePath(input.sourcePath) : current.sourcePath;
+    const targetPath = input.targetPath ? normalizeTargetPath(input.targetPath) : current.targetPath;
+    assertRedirectDoesNotLoop(sourcePath, targetPath);
+    if (input.active ?? current.active) {
+      await this.assertRedirectChainDoesNotLoop(sourcePath, targetPath, redirectId);
+    }
+
     return this.prisma.cmsRedirect.update({
       where: {
         id: redirectId
       },
       data: {
         ...input,
-        sourcePath: input.sourcePath ? normalizeSourcePath(input.sourcePath) : undefined,
-        targetPath: input.targetPath ? normalizeTargetPath(input.targetPath) : undefined
+        sourcePath,
+        targetPath
       }
     });
   }
@@ -1428,23 +1502,57 @@ export class CmsService {
 
   async resolveRedirect(path: string) {
     const parsed = new URL(path, "https://example.local");
-    const redirect = await this.prisma.cmsRedirect.findFirst({
-      where: {
-        sourcePath: normalizeSourcePath(path),
-        active: true
-      }
-    });
+    let redirect;
+
+    try {
+      redirect = await this.prisma.cmsRedirect.findFirst({
+        where: {
+          sourcePath: normalizeSourcePath(path),
+          active: true
+        }
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") return null;
+      throw error;
+    }
 
     if (!redirect) return null;
 
     const targetPath = redirect.preserveQuery && parsed.search
-      ? `${redirect.targetPath}${redirect.targetPath.includes("?") ? "&" : "?"}${parsed.search.slice(1)}`
+      ? appendRedirectQuery(redirect.targetPath, parsed.search)
       : redirect.targetPath;
 
     return {
       ...redirect,
       targetPath
     };
+  }
+
+  private async assertRedirectChainDoesNotLoop(sourcePath: string, targetPath: string, excludedId?: string) {
+    if (/^https?:\/\//i.test(targetPath)) return;
+
+    const visited = new Set([sourcePath]);
+    let currentPath = normalizeSourcePath(targetPath);
+
+    for (let depth = 0; depth < 50; depth += 1) {
+      if (visited.has(currentPath)) {
+        throw new AppError(422, "redirect_loop", "Redirect would create a loop.");
+      }
+      visited.add(currentPath);
+
+      const redirect = await this.prisma.cmsRedirect.findFirst({
+        where: {
+          sourcePath: currentPath,
+          active: true,
+          ...(excludedId ? { id: { not: excludedId } } : {})
+        },
+        select: { targetPath: true }
+      });
+      if (!redirect || /^https?:\/\//i.test(redirect.targetPath)) return;
+      currentPath = normalizeSourcePath(redirect.targetPath);
+    }
+
+    throw new AppError(422, "redirect_chain_too_deep", "Redirect chain is too long.");
   }
 
   private async readSeoSettings(baseUrl: string): Promise<SeoSettings> {
@@ -1784,19 +1892,23 @@ export class CmsService {
   }
 
   private async findPageById(database: CmsDatabase, pageId: string) {
-    return database.cmsPage.findUniqueOrThrow({
+    const page = await database.cmsPage.findUniqueOrThrow({
       where: { id: pageId },
       include: pageInclude
     });
+
+    return sanitizePageRecord(page);
   }
 
   private async findPostById(database: CmsDatabase, postId: string) {
-    return database.cmsPost.findUniqueOrThrow({
+    const post = await database.cmsPost.findUniqueOrThrow({
       where: {
         id: postId
       },
       include: postInclude
     });
+
+    return sanitizePostRecord(post);
   }
 
   private async findRevision(pageId: string, revisionId: string, database: CmsDatabase = this.prisma) {
@@ -1861,7 +1973,7 @@ export class CmsService {
           key: block.key,
           type: block.type,
           label: block.label,
-          value: toJson(block.value),
+          value: toJson(sanitizeContentBlockValue(block.type, block.value)),
           settings: block.settings ? toJson(block.settings) : undefined,
           sortOrder: block.sortOrder,
           editable: block.editable

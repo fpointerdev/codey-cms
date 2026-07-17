@@ -1,5 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
-import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
@@ -54,6 +55,10 @@ function required(value: string | undefined, name: string) {
 class DisabledStorageAdapter implements StorageAdapter {
   enabled = false;
 
+  async checkConnection() {
+    throw new AppError(503, "storage_not_configured", "Storage is not configured.");
+  }
+
   publicUrl(key: string) {
     return `storage://${key}`;
   }
@@ -89,6 +94,11 @@ class LocalStorageAdapter implements StorageAdapter {
 
   constructor(private readonly config: S3StorageConfig) {
     this.rootDir = resolve(config.localDir ?? "storage/uploads");
+  }
+
+  async checkConnection() {
+    await mkdir(this.rootDir, { recursive: true });
+    await access(this.rootDir, constants.R_OK | constants.W_OK);
   }
 
   publicUrl(key: string) {
@@ -203,6 +213,20 @@ export class S3StorageAdapter implements StorageAdapter {
     this.region = config.region;
     this.accessKeyId = required(config.accessKeyId, "STORAGE_S3_ACCESS_KEY_ID");
     this.secretAccessKey = required(config.secretAccessKey, "STORAGE_S3_SECRET_ACCESS_KEY");
+  }
+
+  async checkConnection() {
+    const signedUrl = this.presign("HEAD", "");
+    const response = await fetch(signedUrl.url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(3_000)
+    });
+
+    if (!response.ok) {
+      throw new AppError(502, "storage_unavailable", "Storage bucket is unavailable.", {
+        status: response.status
+      });
+    }
   }
 
   publicUrl(key: string) {

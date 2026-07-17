@@ -44,7 +44,16 @@ export const config = {
     platformBaseDomain: undefined as string | undefined
   },
   backup: {
-    dir: env.BACKUP_DIR
+    dir: env.BACKUP_DIR,
+    mirrorDir: env.BACKUP_MIRROR_DIR,
+    retentionDays: env.BACKUP_RETENTION_DAYS,
+    intervalHours: env.BACKUP_INTERVAL_HOURS,
+    maxAgeHours: env.BACKUP_MAX_AGE_HOURS,
+    required: env.BACKUP_REQUIRED,
+    encrypted: Boolean(env.BACKUP_ENCRYPTION_KEY),
+    requireEncryption: env.BACKUP_REQUIRE_ENCRYPTION,
+    s3MediaProtected: env.BACKUP_S3_MEDIA_PROTECTED,
+    storageDriver: env.STORAGE_DRIVER
   },
   logging: {
     level: env.LOG_LEVEL

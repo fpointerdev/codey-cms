@@ -5,6 +5,14 @@ import type { ModuleId } from "../../core/types/module.js";
 const moduleIds = Object.keys(moduleCatalog);
 const hostnamePattern =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+const httpEndpointSchema = z
+  .string()
+  .trim()
+  .max(2_000)
+  .url()
+  .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+    message: "Email endpoint must use HTTP or HTTPS."
+  });
 const lifecycleHooks: ModuleLifecycleHook[] = [
   "install",
   "enable",
@@ -82,6 +90,26 @@ export const maintenanceSettingsSchema = z.object({
   message: z.string().trim().min(1).max(300).default("This site is temporarily unavailable for maintenance."),
   allowedPaths: z.array(z.string().trim().min(1).max(120)).max(20).default(["/health", "/auth", "/config"])
 });
+
+export const emailSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  from: z.string().trim().email().max(320).or(z.literal("")).optional(),
+  httpEndpoint: httpEndpointSchema.or(z.literal("")).optional(),
+  bearerToken: z.string().trim().max(2_000).optional(),
+  clearBearerToken: z.boolean().optional()
+}).strict().superRefine((value, context) => {
+  if (value.bearerToken && value.clearBearerToken) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["clearBearerToken"],
+      message: "Cannot set and remove the bearer token together."
+    });
+  }
+});
+
+export const emailTestSchema = z.object({
+  recipient: z.string().trim().email().max(320).optional()
+}).strict();
 
 export const siteSettingsSchema = z.object({
   title: z.string().trim().min(1).max(160),

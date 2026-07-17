@@ -12,6 +12,13 @@ import {
 import { adminHref, publicPageHref, publicPostHref, publicProductHref } from "./routes.js";
 import { renderComponentPalette } from "./public-renderer.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
+import {
+  cardStyleOptions,
+  detailLayoutOptions,
+  detailStyleOptions,
+  normalizeShopSettings,
+  shopLayoutOptions
+} from "./shop-config.js";
 
 function moduleAvailableInRuntime(config, moduleId) {
   if (moduleId === "localization") return config.features?.cms !== false;
@@ -315,6 +322,29 @@ export function renderProfilePage(profile) {
           <div><span>Roles</span><strong>${escapeHtml(formatRoles(profile))}</strong></div>
           <div><span>User ID</span><strong>${escapeHtml(profile.id)}</strong></div>
         </div>
+        <div class="section-heading-row profile-security-heading">
+          <div><p class="section-label">Security</p><h2>Password</h2></div>
+        </div>
+        <form class="admin-card settings-form" data-change-password-form>
+          <label>
+            <span>Current password</span>
+            <input name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required />
+          </label>
+          <label>
+            <span>New password</span>
+            <input name="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required />
+          </label>
+          <label>
+            <span>Confirm new password</span>
+            <input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required />
+          </label>
+          ${renderFormMessage()}
+          <div class="form-actions"><button type="submit">Update password</button></div>
+        </form>
+        <div class="user-danger-zone" data-session-actions>
+          <div><strong>Active sessions</strong><span>Revoke access for this browser and every other signed-in device.</span>${renderFormMessage()}</div>
+          <button type="button" class="secondary-button danger" data-revoke-all-sessions>Sign out all sessions</button>
+        </div>
       </section>
     `
   );
@@ -529,7 +559,7 @@ export function renderShopShell(activeView, content) {
     { view: "shop-categories", href: "/dashboard/shop/categories", label: "Categories", modules: ["products"], permissions: [["read", "products"]] },
     { view: "shop-attributes", href: "/dashboard/shop/attributes", label: "Attributes", modules: ["products"], permissions: [["read", "products"]] },
     { view: "shop-orders", href: "/dashboard/shop/orders", label: "Orders", modules: ["orders"], permissions: [["read", "orders"]] },
-    { view: "shop-configuration", href: "/dashboard/shop/configuration", label: "Shop Configuration", modules: ["products", "orders"], permissions: [["read", "payments"], ["read", "modules"]] }
+    { view: "shop-configuration", href: "/dashboard/shop/configuration", label: "Customize", modules: ["products"], permissions: [["read", "products"], ["read", "payments"], ["read", "modules"]] }
   ].filter((tab) => modulesEnabled(tab.modules) && hasAnyPermission(tab.permissions));
 
   renderAdminShell(
@@ -591,10 +621,10 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
     },
     {
       href: "/dashboard/shop/configuration",
-      title: "Configuration",
-      body: "Review shop module state and operational requirements.",
-      modules: ["products", "orders"],
-      permissions: [["read", "payments"], ["read", "modules"]]
+      title: "Customize storefront",
+      body: "Choose catalog layouts, product card styles, and visible details.",
+      modules: ["products"],
+      permissions: [["read", "products"], ["read", "payments"], ["read", "modules"]]
     }
   ].filter((action) => modulesEnabled(action.modules) && hasAnyPermission(action.permissions));
 
@@ -990,39 +1020,157 @@ function renderManualProvider(config, canUpdate) {
   `;
 }
 
-export function renderShopConfigurationPage(config, paymentConfig = {}, errorMessage = "") {
+function renderShopSettingsChoices(label, name, options, selectedValue, disabled = false) {
+  return `
+    <fieldset class="shop-settings-fieldset">
+      <legend>${escapeHtml(label)}</legend>
+      <div class="shop-settings-choice-grid">
+        ${options.map((option) => `
+          <label class="shop-settings-choice">
+            <input type="radio" name="${escapeHtml(name)}" value="${escapeHtml(option.value)}"${option.value === selectedValue ? " checked" : ""}${disabled ? " disabled" : ""} />
+            <span>
+              <i class="shop-choice-visual shop-choice-${escapeHtml(option.value)}" aria-hidden="true"><i></i><i></i><i></i></i>
+              <strong>${escapeHtml(option.label)}</strong>
+              <small>${escapeHtml(option.body)}</small>
+            </span>
+          </label>
+        `).join("")}
+      </div>
+    </fieldset>
+  `;
+}
+
+function renderShopSettingsPreview(settings) {
+  const products = ["Studio Chair", "Task Lamp", "Storage Unit"];
+
+  return `
+    <aside class="shop-preview-column">
+      <div class="shop-preview-heading">
+        <div><p class="section-label">Live preview</p><h3>Catalog</h3></div>
+        <a href="/shop" target="_blank" rel="noopener">Open shop</a>
+      </div>
+      <div class="shop-settings-preview" data-shop-preview data-catalog-layout="${escapeHtml(settings.catalogLayout)}" data-card-style="${escapeHtml(settings.cardStyle)}">
+        <header>
+          <span>Catalog</span>
+          <strong data-shop-preview-title>${escapeHtml(settings.catalogTitle)}</strong>
+          <p data-shop-preview-description>${escapeHtml(settings.catalogDescription)}</p>
+        </header>
+        <div class="shop-preview-filters" data-shop-preview-filters${!settings.showCategories && !settings.showAttributes ? " hidden" : ""}>
+          <span>All</span><span>Featured</span><span>New</span>
+        </div>
+        <div class="shop-preview-products">
+          ${products.map((name, index) => `
+            <article>
+              <div class="shop-preview-image"><span>${index + 1}</span></div>
+              <small>Collection</small>
+              <strong>${escapeHtml(name)}</strong>
+              <p data-shop-preview-sku${settings.showSku ? "" : " hidden"}>SKU-00${index + 1}</p>
+              <footer><b>${escapeHtml(formatMoney((index + 1) * 2500, "EUR"))}</b><span data-shop-preview-stock${settings.showStock ? "" : " hidden"}>In stock</span></footer>
+            </article>
+          `).join("")}
+        </div>
+      </div>
+    </aside>
+  `;
+}
+
+function renderStorefrontSettings(settings, canUpdate) {
+  return `
+    <form class="settings-form shop-customization-form" data-shop-settings-form>
+      <div class="shop-customization-grid">
+        <div class="shop-customization-controls">
+          <section class="shop-customization-section">
+            <div><p class="section-label">Header</p><h3>Shop introduction</h3></div>
+            <label><span>Shop title</span><input name="catalogTitle" value="${escapeHtml(settings.catalogTitle)}" maxlength="120" required ${canUpdate ? "" : "disabled"} /></label>
+            <label><span>Description</span><textarea name="catalogDescription" rows="3" maxlength="500" ${canUpdate ? "" : "disabled"}>${escapeHtml(settings.catalogDescription)}</textarea></label>
+          </section>
+
+          <section class="shop-customization-section">
+            <div><p class="section-label">Catalog</p><h3>Product listing</h3></div>
+            ${renderShopSettingsChoices("Layout", "catalogLayout", shopLayoutOptions, settings.catalogLayout, !canUpdate)}
+            ${renderShopSettingsChoices("Card style", "cardStyle", cardStyleOptions, settings.cardStyle, !canUpdate)}
+            <label class="shop-products-per-page"><span>Products per page</span><input name="productsPerPage" type="number" min="8" max="48" step="1" value="${escapeHtml(settings.productsPerPage)}" ${canUpdate ? "" : "disabled"} /></label>
+          </section>
+
+          <section class="shop-customization-section">
+            <div><p class="section-label">Product page</p><h3>Product details</h3></div>
+            ${renderShopSettingsChoices("Layout", "detailLayout", detailLayoutOptions, settings.detailLayout, !canUpdate)}
+            ${renderShopSettingsChoices("Visual style", "detailStyle", detailStyleOptions, settings.detailStyle, !canUpdate)}
+          </section>
+
+          <section class="shop-customization-section">
+            <div><p class="section-label">Visibility</p><h3>Customer information</h3></div>
+            <div class="shop-visibility-grid">
+              <label class="checkbox-field"><input type="checkbox" name="showCategories" ${settings.showCategories ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Category filters</span></label>
+              <label class="checkbox-field"><input type="checkbox" name="showAttributes" ${settings.showAttributes ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Attribute filters</span></label>
+              <label class="checkbox-field"><input type="checkbox" name="showSku" ${settings.showSku ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Product SKU</span></label>
+              <label class="checkbox-field"><input type="checkbox" name="showStock" ${settings.showStock ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Stock status</span></label>
+            </div>
+          </section>
+
+          ${canUpdate ? '<div class="shop-customization-actions"><button type="submit">Save storefront</button></div>' : '<p class="form-message error">You do not have permission to update product settings.</p>'}
+          ${renderFormMessage()}
+        </div>
+        ${renderShopSettingsPreview(settings)}
+      </div>
+    </form>
+  `;
+}
+
+export function renderShopConfigurationPage(config, shopSettings = {}, paymentConfig = {}, errorMessage = "") {
   const providers = paymentConfig.providers || [];
   const urls = paymentConfig.webhookUrls || {};
   const stripe = paymentProviderConfig(providers, "STRIPE");
   const paypal = paymentProviderConfig(providers, "PAYPAL");
   const manual = paymentProviderConfig(providers, "MANUAL");
-  const canRead = hasPermission("read", "payments");
-  const canUpdate = hasPermission("update", "payments");
+  const settings = normalizeShopSettings(shopSettings);
+  const canUpdateShop = hasPermission("update", "products");
+  const canReadPayments = hasPermission("read", "payments");
+  const canUpdatePayments = hasPermission("update", "payments");
 
   renderShopShell(
     "shop-configuration",
     `
-      <section class="admin-section">
-        <div class="section-heading-row"><div><p class="section-label">Configuration</p><h2>Shop module state</h2></div></div>
-        ${renderInstalledModuleSummary({
-          ...config,
-          modules: Object.fromEntries(
-            Object.entries(config.modules || {}).filter(([moduleId]) =>
-              ["products", "orders", "payments", "notifications"].includes(moduleId)
-            )
-          )
-        })}
-      </section>
-      <section class="admin-section payment-configuration-section">
-        <div class="section-heading-row"><div><p class="section-label">Checkout</p><h2>Payment providers</h2><p class="dashboard-copy">Credentials are encrypted and stored for this site. Saved secrets are never displayed again.</p></div></div>
-        ${errorMessage ? `<p class="form-message error">Payment settings are not available: ${escapeHtml(errorMessage)}</p>` : ""}
-        ${canRead && !errorMessage
-          ? `<div class="payment-provider-grid">
-              ${renderStripeProvider(stripe, urls.stripe, canUpdate)}
-              ${renderPayPalProvider(paypal, urls.paypal, canUpdate)}
-              ${renderManualProvider(manual, canUpdate)}
-            </div>`
-          : !errorMessage ? '<p class="form-message error">You do not have permission to view payment settings.</p>' : ""}
+      <section class="admin-section shop-settings-workspace">
+        <div class="section-heading-row"><div><p class="section-label">Customize</p><h2>Shop experience</h2><p class="dashboard-copy">Set the storefront once. Individual products only contain product-specific information.</p></div></div>
+        <div class="shop-settings-tab-shell">
+          <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-storefront" checked />
+          <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-payments" />
+          <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-system" />
+          <nav class="admin-tabs shop-settings-tabs" aria-label="Shop settings sections">
+            <label for="shop-tab-storefront">Storefront</label>
+            <label for="shop-tab-payments">Payments</label>
+            <label for="shop-tab-system">System</label>
+          </nav>
+
+          <section class="shop-settings-tab-panel shop-settings-tab-panel-storefront">
+            ${renderStorefrontSettings(settings, canUpdateShop)}
+          </section>
+
+          <section class="shop-settings-tab-panel shop-settings-tab-panel-payments payment-configuration-section">
+            <div class="section-heading-row"><div><p class="section-label">Checkout</p><h2>Payment providers</h2><p class="dashboard-copy">Credentials are encrypted and stored for this site. Saved secrets are never displayed again.</p></div></div>
+            ${errorMessage ? `<p class="form-message error">Payment settings are not available: ${escapeHtml(errorMessage)}</p>` : ""}
+            ${canReadPayments && !errorMessage
+              ? `<div class="payment-provider-grid">
+                  ${renderStripeProvider(stripe, urls.stripe, canUpdatePayments)}
+                  ${renderPayPalProvider(paypal, urls.paypal, canUpdatePayments)}
+                  ${renderManualProvider(manual, canUpdatePayments)}
+                </div>`
+              : !errorMessage ? '<p class="form-message error">You do not have permission to view payment settings.</p>' : ""}
+          </section>
+
+          <section class="shop-settings-tab-panel shop-settings-tab-panel-system">
+            <div class="section-heading-row"><div><p class="section-label">System</p><h2>Shop module state</h2></div></div>
+            ${renderInstalledModuleSummary({
+              ...config,
+              modules: Object.fromEntries(
+                Object.entries(config.modules || {}).filter(([moduleId]) =>
+                  ["products", "orders", "payments", "notifications"].includes(moduleId)
+                )
+              )
+            })}
+          </section>
+        </div>
       </section>
     `
   );
@@ -1300,6 +1448,7 @@ function renderLocaleLanguageOptions() {
 
 export function renderSettingsPage(config) {
   const settings = config.siteSettings || {};
+  const email = config.email || {};
   const storage = config.theme?.cms?.media || {};
   const storageDriver = config.storage?.driver || storage.productionDriver || "s3";
   const storageBucket = config.storage?.bucket || "Configured by deployment";
@@ -1331,10 +1480,12 @@ export function renderSettingsPage(config) {
         <div class="settings-tab-shell">
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-general" checked />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-style" />
+          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-email" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-multilingual" />
           <nav class="admin-tabs settings-tabs" aria-label="Settings sections">
             <label for="settings-tab-general">General settings</label>
             <label for="settings-tab-style">Style</label>
+            <label for="settings-tab-email">Email</label>
             <label for="settings-tab-multilingual">Multilingual</label>
           </nav>
           <section class="settings-tab-panel settings-tab-panel-general" data-settings-panel="general">
@@ -1419,6 +1570,50 @@ export function renderSettingsPage(config) {
                 <span>The platform may reuse the same S3 endpoint, bucket, and connection for many websites. It must generate a different <code>STORAGE_KEY_PREFIX</code> for every copied runtime, such as <code>sites/client-site</code>.</span>
               </div>
             </div>
+          </section>
+          <section class="settings-tab-panel settings-tab-panel-email" data-settings-panel="email">
+            <form class="admin-card settings-form" data-email-settings-form>
+              <div class="module-status-row">
+                <div>
+                  <strong>${email.configured ? "Transactional email configured" : "Transactional email not configured"}</strong>
+                  <span>${email.source === "environment" ? "Loaded from the deployment environment" : "Managed by this site"}</span>
+                </div>
+                <span class="status-pill ${email.lastTestSucceeded === true ? "success" : ""}">${email.lastTestSucceeded === true ? "Tested" : email.lastTestSucceeded === false ? "Test failed" : "Not tested"}</span>
+              </div>
+              ${email.error ? `<p class="form-message error">${escapeHtml(email.error)}</p>` : ""}
+              <label class="inline-check">
+                <input type="checkbox" name="enabled" ${email.enabled ? "checked" : ""} />
+                <span>Enable transactional email</span>
+              </label>
+              <label>
+                <span>Sender address</span>
+                <input name="from" type="email" value="${escapeHtml(email.from || "")}" placeholder="notifications@example.com" autocomplete="email" />
+              </label>
+              <label>
+                <span>HTTP email endpoint</span>
+                <input name="httpEndpoint" type="url" value="${escapeHtml(email.httpEndpoint || "")}" placeholder="https://email-provider.example/send" />
+              </label>
+              <label>
+                <span>Bearer token</span>
+                <input name="bearerToken" type="password" value="" placeholder="${email.bearerTokenConfigured ? "Saved credential" : "Optional provider credential"}" autocomplete="new-password" />
+              </label>
+              ${email.bearerTokenConfigured ? `
+                <label class="inline-check">
+                  <input type="checkbox" name="clearBearerToken" />
+                  <span>Remove saved bearer token</span>
+                </label>
+              ` : ""}
+              <label>
+                <span>Test recipient</span>
+                <input name="testRecipient" type="email" value="${escapeHtml(state.user?.email || "")}" placeholder="owner@example.com" />
+              </label>
+              ${email.lastTestMessage ? `<p class="field-help">Last test: ${escapeHtml(email.lastTestMessage)}${email.lastTestedAt ? ` · ${escapeHtml(formatDate(email.lastTestedAt))}` : ""}</p>` : ""}
+              ${renderFormMessage()}
+              <div class="form-actions">
+                <button type="button" class="secondary-button" data-test-email-settings ${email.configured ? "" : "disabled"}>Send test</button>
+                <button type="submit">Save email settings</button>
+              </div>
+            </form>
           </section>
           <section class="settings-tab-panel settings-tab-panel-multilingual" data-settings-panel="multilingual">
             <div class="admin-card settings-form">

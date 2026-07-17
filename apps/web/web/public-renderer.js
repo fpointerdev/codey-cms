@@ -3,6 +3,7 @@ import {
   defaultPage,
   elements,
   escapeHtml,
+  formatMoney,
   moduleEnabled,
   normalizePageLayout,
   setStatus,
@@ -12,6 +13,8 @@ import {
 import { currentLocale, pageHref } from "./routes.js";
 import { renderFormMessage } from "./ui.js";
 import { galleryItems, gallerySettings, isGalleryValue, sliderSettings, sliderSlides } from "./slider-config.js";
+import { normalizeShopSettings } from "./shop-config.js";
+import { enhanceStructuredTabs } from "./structured-tabs.js";
 import {
   advancedClassList,
   advancedIdAttribute,
@@ -230,6 +233,7 @@ function renderInlineRichText(value) {
 
 function safeRichHref(value = "") {
   const href = String(value || "").trim();
+  if (href.startsWith("//") || href.includes("\\")) return "#";
   if (/^(https?:\/\/|mailto:|tel:|#|\/)/i.test(href)) return href;
 
   return "#";
@@ -281,6 +285,7 @@ function uploadPathForConfiguredStorageUrl(src = "") {
 function safeMediaSrc(value = "") {
   const src = String(value || "").trim();
   if (!src) return "";
+  if (src.startsWith("//") || src.includes("\\")) return "";
 
   const s3Src = uploadPathForS3Url(src);
   if (s3Src) return s3Src;
@@ -512,37 +517,36 @@ function renderStructuredTabs(items, variant, blockKey = "tabs") {
   const group = cssToken(`${blockKey}-${variant}`, "tabs");
 
   return `
-    <div class="structured-tabs structured-tabs-${escapeHtml(cssToken(variant, "tabs"))}">
-      ${panels
-        .map((_, index) => `
-          <input
-            class="structured-tab-input"
-            type="radio"
-            id="${escapeHtml(`${group}-${index + 1}`)}"
-            name="${escapeHtml(group)}"
-            ${index === 0 ? "checked" : ""}
-          />
-        `)
-        .join("")}
+    <div class="structured-tabs structured-tabs-${escapeHtml(cssToken(variant, "tabs"))}" data-structured-tabs>
       <div class="structured-tab-list" role="tablist">
         ${panels
           .map((panel, index) => `
-            <label
+            <button
+              type="button"
               class="structured-tab-label"
               role="tab"
               id="${escapeHtml(`${group}-${index + 1}-label`)}"
-              for="${escapeHtml(`${group}-${index + 1}`)}"
+              aria-controls="${escapeHtml(`${group}-${index + 1}-panel`)}"
+              aria-selected="${index === 0 ? "true" : "false"}"
+              tabindex="${index === 0 ? "0" : "-1"}"
+              data-structured-tab
             >
               <span class="structured-tab-count">${escapeHtml(String(index + 1).padStart(2, "0"))}</span>
               <span>${escapeHtml(panel.title)}</span>
-            </label>
+            </button>
           `)
           .join("")}
       </div>
       <div class="structured-tab-panels">
         ${panels
           .map((panel, index) => `
-            <article class="structured-tab-panel" role="tabpanel" aria-labelledby="${escapeHtml(`${group}-${index + 1}-label`)}">
+            <article
+              class="structured-tab-panel"
+              id="${escapeHtml(`${group}-${index + 1}-panel`)}"
+              role="tabpanel"
+              aria-labelledby="${escapeHtml(`${group}-${index + 1}-label`)}"
+              data-structured-tab-panel
+            >
               <div class="structured-card-copy">
                 ${panel.note ? `<p class="structured-note">${escapeHtml(panel.note)}</p>` : ""}
                 <h4>${escapeHtml(panel.title)}</h4>
@@ -986,6 +990,224 @@ export function renderSections(page, options = {}) {
   `;
 }
 
+function shopPrimaryImage(product = {}) {
+  return product.images?.find((image) => image.isPrimary) || product.images?.[0] || null;
+}
+
+function shopProductAttributes(product = {}) {
+  const metadata = isRecord(product.metadata) ? product.metadata : {};
+  return Array.isArray(metadata.attributes) ? metadata.attributes : [];
+}
+
+function shopAttributeSlug(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function localizedShopPath(path, options = {}) {
+  const defaultLocale = options.defaultLocale || state.config?.localization?.defaultLocale || "en";
+  const locale = options.locale || currentLocale();
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  return locale === defaultLocale ? normalizedPath : `/${encodePathSegment(locale)}${normalizedPath}`;
+}
+
+function renderShopProductImage(image, fallbackAlt = "", priority = false) {
+  const src = safeMediaSrc(image?.url);
+  if (!src) return "";
+
+  const widths = responsiveImageWidths();
+  const responsiveAttrs = isUploadedImageSrc(src)
+    ? ` srcset="${escapeHtml(widths.map((width) => `${imageVariantSrc(src, width)} ${width}w`).join(", "))}" sizes="(max-width: 760px) 92vw, 34vw"`
+    : "";
+  const loadingAttributes = priority
+    ? 'loading="eager" decoding="async" fetchpriority="high"'
+    : 'loading="lazy" decoding="async"';
+
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(image?.alt || fallbackAlt)}"${responsiveAttrs} ${loadingAttributes} />`;
+}
+
+function renderShopProductCard(product, options) {
+  const image = shopPrimaryImage(product);
+  const imageHtml = renderShopProductImage(image, product.name);
+  const href = localizedShopPath(`/product/${encodePathSegment(product.slug)}`, options);
+  const settings = normalizeShopSettings(options.shopSettings);
+
+  return `
+    <article class="shop-product-card">
+      <a href="${escapeHtml(href)}">
+        ${imageHtml || `<div class="shop-product-image-placeholder">${escapeHtml(translateString("shop.noImage", "No image"))}</div>`}
+        <span class="shop-product-category">${escapeHtml(product.category?.name || translateString("shop.product", "Product"))}</span>
+        <strong>${escapeHtml(product.name)}</strong>
+      </a>
+      <p>${escapeHtml(product.description || "")}</p>
+      <div class="shop-product-card-meta">
+        ${settings.showSku ? `<small>${escapeHtml(product.sku || translateString("shop.noSku", "No SKU"))}</small>` : ""}
+        ${settings.showStock ? `<span>${escapeHtml(product.stockQuantity)} ${escapeHtml(translateString("shop.inStock", "in stock"))}</span>` : ""}
+        <b>${escapeHtml(formatMoney(product.priceCents, product.currency || "EUR"))}</b>
+      </div>
+    </article>
+  `;
+}
+
+function renderShopCategoryLinks(categories = [], activeSlug = "", options = {}) {
+  return `
+    <div class="shop-filter-row">
+      <a href="${escapeHtml(localizedShopPath("/shop", options))}" class="${activeSlug ? "" : "active"}">${escapeHtml(translateString("shop.allProducts", "All products"))}</a>
+      ${categories
+        .map((category) => {
+          const href = localizedShopPath(`/shop/category/${encodePathSegment(category.slug)}`, options);
+          return `<a href="${escapeHtml(href)}" class="${category.slug === activeSlug ? "active" : ""}">${escapeHtml(category.name)}</a>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderShopAttributeLinks(attributes = [], route = {}, options = {}) {
+  return `
+    <div class="shop-filter-groups">
+      ${attributes
+        .map((attribute) => {
+          const values = Array.isArray(attribute.values) ? attribute.values : [];
+          if (!values.length) return "";
+
+          return `
+            <div class="shop-filter-group">
+              <strong>${escapeHtml(attribute.name)}</strong>
+              <div class="shop-filter-row compact">
+                ${values
+                  .map((value) => {
+                    const slug = shopAttributeSlug(value);
+                    const active = route.attributeName === attribute.slug && route.attributeValue === slug;
+                    const href = localizedShopPath(
+                      `/shop/attribute/${encodePathSegment(attribute.slug)}/${encodePathSegment(slug)}`,
+                      options
+                    );
+                    return `<a href="${escapeHtml(href)}" class="${active ? "active" : ""}">${escapeHtml(value)}</a>`;
+                  })
+                  .join("")}
+              </div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function shopListingPath(route = {}, options = {}) {
+  if (route.category) {
+    return localizedShopPath(`/shop/category/${encodePathSegment(route.category)}`, options);
+  }
+  if (route.attributeName) {
+    return localizedShopPath(
+      `/shop/attribute/${encodePathSegment(route.attributeName)}/${encodePathSegment(route.attributeValue || "")}`,
+      options
+    );
+  }
+
+  return localizedShopPath("/shop", options);
+}
+
+function renderShopPagination(pagination = {}, route = {}, options = {}) {
+  const page = Math.max(1, Number(pagination.page || route.page || 1));
+  const limit = Math.max(1, Number(pagination.limit || 20));
+  const total = Math.max(0, Number(pagination.total || 0));
+  const pages = Math.max(1, Math.ceil(total / limit));
+  if (pages <= 1 && page <= 1) return "";
+
+  const pageHref = (targetPage) => {
+    const path = shopListingPath(route, options);
+    return targetPage > 1 ? `${path}?page=${targetPage}` : path;
+  };
+  const previousPage = page > pages ? pages : page - 1;
+  const previous = page > 1
+    ? `<a class="secondary-button" href="${escapeHtml(pageHref(previousPage))}" rel="prev">${escapeHtml(translateString("pagination.previous", "Previous"))}</a>`
+    : `<span class="secondary-button disabled" aria-disabled="true">${escapeHtml(translateString("pagination.previous", "Previous"))}</span>`;
+  const next = page < pages
+    ? `<a class="secondary-button" href="${escapeHtml(pageHref(page + 1))}" rel="next">${escapeHtml(translateString("pagination.next", "Next"))}</a>`
+    : `<span class="secondary-button disabled" aria-disabled="true">${escapeHtml(translateString("pagination.next", "Next"))}</span>`;
+
+  return `
+    <nav class="shop-pagination" aria-label="${escapeHtml(translateString("pagination.label", "Product pages"))}">
+      ${previous}
+      <span>${escapeHtml(translateString("pagination.page", "Page"))} ${escapeHtml(page)} ${escapeHtml(translateString("pagination.of", "of"))} ${escapeHtml(pages)}</span>
+      ${next}
+    </nav>
+  `;
+}
+
+export function renderShopListingContent(
+  { products = [], categories = [], attributes = [], route = {}, pagination = {} },
+  options = {}
+) {
+  const settings = normalizeShopSettings(options.shopSettings);
+  const title = route.category
+    ? categories.find((category) => category.slug === route.category)?.name || translateString("shop.category", "Category")
+    : route.attributeValue
+      ? `${route.attributeName}: ${route.attributeValue}`.replaceAll("-", " ")
+      : settings.catalogTitle;
+  const categoriesHtml = settings.showCategories
+    ? renderShopCategoryLinks(categories, route.category || "", options)
+    : "";
+  const attributesHtml = settings.showAttributes
+    ? renderShopAttributeLinks(attributes, route, options)
+    : "";
+
+  return `
+    <section class="shop-public-page shop-layout-${escapeHtml(settings.catalogLayout)} shop-card-${escapeHtml(settings.cardStyle)}">
+      <header class="shop-public-header">
+        <p class="section-label">${escapeHtml(translateString("shop.catalog", "Catalog"))}</p>
+        <h1>${escapeHtml(title)}</h1>
+        ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
+      </header>
+      ${categoriesHtml || attributesHtml ? `<aside class="shop-public-filters">${categoriesHtml}${attributesHtml}</aside>` : ""}
+      <div class="shop-product-grid">
+        ${products.length
+          ? products.map((product) => renderShopProductCard(product, options)).join("")
+          : `<div class="fallback-content">${escapeHtml(translateString("shop.empty", "No products match this filter yet."))}</div>`}
+      </div>
+      ${renderShopPagination(pagination, route, options)}
+    </section>
+  `;
+}
+
+export function renderProductDetailContent(product, options = {}) {
+  const image = shopPrimaryImage(product);
+  const imageHtml = renderShopProductImage(image, product.name, true);
+  const attributes = shopProductAttributes(product);
+  const settings = normalizeShopSettings(options.shopSettings);
+
+  return `
+    <article class="shop-product-detail shop-detail-layout-${escapeHtml(settings.detailLayout)} shop-detail-style-${escapeHtml(settings.detailStyle)}">
+      <a class="secondary-button" href="${escapeHtml(localizedShopPath("/shop", options))}">${escapeHtml(translateString("shop.backToShop", "Back to shop"))}</a>
+      <section class="shop-product-detail-hero">
+        <div>
+          ${imageHtml || `<div class="shop-product-image-placeholder large">${escapeHtml(translateString("shop.noImage", "No image"))}</div>`}
+        </div>
+        <div>
+          <p class="section-label">${escapeHtml(product.category?.name || translateString("shop.product", "Product"))}</p>
+          <h1>${escapeHtml(product.name)}</h1>
+          <p>${escapeHtml(product.description || "")}</p>
+          <strong>${escapeHtml(formatMoney(product.priceCents, product.currency || "EUR"))}</strong>
+          ${settings.showSku ? `<span class="shop-product-detail-sku">${escapeHtml(product.sku || translateString("shop.noSku", "No SKU"))}</span>` : ""}
+          ${settings.showStock ? `<span>${escapeHtml(product.stockQuantity)} ${escapeHtml(translateString("shop.inStock", "in stock"))}</span>` : ""}
+        </div>
+      </section>
+      ${settings.showAttributes ? `<section class="shop-product-specs">
+        <h2>${escapeHtml(translateString("shop.productAttributes", "Product attributes"))}</h2>
+        ${attributes.length
+          ? `<dl>${attributes.map((item) => `<div><dt>${escapeHtml(item.name || "")}</dt><dd>${escapeHtml(item.value || "")}</dd></div>`).join("")}</dl>`
+          : `<p class="dashboard-copy">${escapeHtml(translateString("shop.noAttributes", "No attributes have been added yet."))}</p>`}
+      </section>` : ""}
+    </article>
+  `;
+}
+
 export function renderPageContent(page, options = {}) {
   return `
     ${page.content?.hideTitle === true ? "" : `<h1 class="page-title">${escapeHtml(page.title)}</h1>`}
@@ -1044,6 +1266,7 @@ export function renderPage(page) {
     ${renderPageContent(page, { canEdit: canEditCms })}
   `;
   elements.page.removeAttribute("data-server-rendered");
+  enhanceStructuredTabs(elements.page);
   elements.footer.innerHTML = renderFooter(page, Boolean(state.user));
 
   document.body.classList.remove("auth-enabled", "dashboard-enabled");

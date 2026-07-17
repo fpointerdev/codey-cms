@@ -1,79 +1,118 @@
 import type { AppModule, ModuleContext } from "../../core/types/module.js";
 import { sendSuccess } from "../../core/http/response.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
+import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
+import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
+import { createStorageAdapter } from "../../infrastructure/storage/s3-storage.js";
 
 type CheckStatus = "pass" | "fail" | "skipped";
 
 type ReadinessCheck = {
   status: CheckStatus;
+  blocking: boolean;
   message?: string;
   details?: Record<string, unknown>;
 };
 
-type ReadinessChecks = Record<"database" | "storage" | "email", ReadinessCheck>;
+type ReadinessChecks = Record<"database" | "storage" | "email" | "backup", ReadinessCheck>;
 
-function storageReadinessCheck(context: ModuleContext): ReadinessCheck {
+async function databaseReadinessCheck(context: ModuleContext): Promise<ReadinessCheck> {
+  try {
+    await context.prisma.$queryRaw`SELECT 1`;
+    return { status: "pass", blocking: true };
+  } catch (error) {
+    return {
+      status: "fail",
+      blocking: true,
+      message: "Database query failed.",
+      details: {
+        error: error instanceof Error ? error.message : "Unknown database error."
+      }
+    };
+  }
+}
+
+async function storageReadinessCheck(context: ModuleContext): Promise<ReadinessCheck> {
   const storage = context.config.storage;
 
   if (storage.driver === "disabled") {
     return context.config.isProduction
-      ? { status: "fail", message: "Storage is disabled in production." }
-      : { status: "skipped", message: "Storage is disabled for this runtime." };
+      ? { status: "fail", blocking: true, message: "Storage is disabled in production." }
+      : { status: "skipped", blocking: false, message: "Storage is disabled for this runtime." };
   }
 
-  if (storage.driver === "local") {
-    return context.config.isProduction
-      ? { status: "fail", message: "Local storage is not allowed in production." }
-      : { status: "pass", message: "Local storage is configured for this runtime." };
-  }
-
-  const missingFields = [
-    ["STORAGE_S3_ENDPOINT", storage.endpoint],
-    ["STORAGE_S3_BUCKET", storage.bucket],
-    ["STORAGE_S3_ACCESS_KEY_ID", storage.accessKeyId],
-    ["STORAGE_S3_SECRET_ACCESS_KEY", storage.secretAccessKey]
-  ]
-    .filter(([, value]) => !value)
-    .map(([field]) => field);
-
-  if (missingFields.length > 0) {
+  try {
+    await createStorageAdapter(storage).checkConnection();
+    return {
+      status: "pass",
+      blocking: true,
+      details: { driver: storage.driver }
+    };
+  } catch (error) {
     return {
       status: "fail",
-      message: "S3 storage configuration is incomplete.",
-      details: { missingFields }
+      blocking: true,
+      message: "Storage connectivity check failed.",
+      details: {
+        driver: storage.driver,
+        error: error instanceof Error ? error.message : "Unknown storage error."
+      }
     };
   }
-
-  return { status: "pass" };
 }
 
-function emailReadinessCheck(context: ModuleContext): ReadinessCheck {
-  const email = context.config.email;
+async function emailReadinessCheck(context: ModuleContext): Promise<ReadinessCheck> {
+  const required =
+    context.config.auth.recoveryTokenDelivery === "email" ||
+    context.config.isProduction && (
+      context.config.app.mode === "shop" ||
+      context.config.features.orders
+    );
 
-  if (email.driver === "disabled") {
-    const needsShopEmail = context.config.app.mode === "shop" || context.config.features.orders;
+  try {
+    const status = await new EmailSettingsService(context.prisma, context.config).getAdminStatus();
 
-    return context.config.isProduction && needsShopEmail
-      ? { status: "fail", message: "Shop order email delivery is disabled in production." }
-      : { status: "skipped", message: "Transactional email is disabled for this runtime." };
-  }
+    if (!status.configured) {
+      return required
+        ? { status: "fail", blocking: true, message: "Required transactional email is not configured." }
+        : { status: "skipped", blocking: false, message: "Transactional email is not configured." };
+    }
 
-  const missingFields = [
-    ["EMAIL_FROM", email.from],
-    ["EMAIL_HTTP_ENDPOINT", email.httpEndpoint]
-  ]
-    .filter(([, value]) => !value)
-    .map(([field]) => field);
+    if (status.lastTestSucceeded === false) {
+      return {
+        status: "fail",
+        blocking: required,
+        message: "The most recent transactional email test failed.",
+        details: { source: status.source, lastTestedAt: status.lastTestedAt }
+      };
+    }
+    if (context.config.isProduction && status.lastTestSucceeded !== true) {
+      return {
+        status: "fail",
+        blocking: required,
+        message: "Transactional email has not passed a provider test.",
+        details: { source: status.source }
+      };
+    }
 
-  if (missingFields.length > 0) {
+    return {
+      status: "pass",
+      blocking: required,
+      details: {
+        source: status.source,
+        lastTestedAt: status.lastTestedAt
+      }
+    };
+  } catch (error) {
     return {
       status: "fail",
-      message: "Transactional email configuration is incomplete.",
-      details: { missingFields }
+      blocking: required,
+      message: "Transactional email readiness check failed.",
+      details: {
+        error: error instanceof Error ? error.message : "Unknown email error."
+      }
     };
   }
-
-  return { status: "pass" };
 }
 
 export const healthModule: AppModule = {
@@ -97,25 +136,22 @@ export const healthModule: AppModule = {
     router.get(
       "/ready",
       asyncHandler(async (_req, res) => {
+        const [database, storage, email, backup] = await Promise.all([
+          databaseReadinessCheck(context),
+          storageReadinessCheck(context),
+          emailReadinessCheck(context),
+          readBackupHealth(context.config.backup)
+        ]);
         const checks: ReadinessChecks = {
-          database: { status: "pass" },
-          storage: storageReadinessCheck(context),
-          email: emailReadinessCheck(context)
+          database,
+          storage,
+          email,
+          backup
         };
 
-        try {
-          await context.prisma.$queryRaw`SELECT 1`;
-        } catch (error) {
-          checks.database = {
-            status: "fail",
-            message: "Database query failed.",
-            details: {
-              error: error instanceof Error ? error.message : "Unknown database error."
-            }
-          };
-        }
-
-        const ready = Object.values(checks).every((check) => check.status !== "fail");
+        const ready = Object.values(checks).every(
+          (check) => check.status !== "fail" || !check.blocking
+        );
         const data = {
           status: ready ? "ready" : "not_ready",
           app: context.config.app.name,
@@ -148,6 +184,7 @@ export const healthModule: AppModule = {
       "/metrics",
       asyncHandler(async (_req, res) => {
         const memory = process.memoryUsage();
+        const backup = await readBackupHealth(context.config.backup);
 
         return sendSuccess(res, {
           status: "ok",
@@ -162,7 +199,8 @@ export const healthModule: AppModule = {
             node: process.version,
             env: context.config.env,
             mode: context.config.app.mode
-          }
+          },
+          operations: { backup }
         });
       })
     );

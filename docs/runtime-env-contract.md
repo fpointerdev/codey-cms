@@ -80,11 +80,16 @@ Store `STORAGE_S3_ACCESS_KEY_ID` and `STORAGE_S3_SECRET_ACCESS_KEY` only in the 
 
 Before launch, verify upload, responsive variant delivery, signed download, and deletion against the configured S3-compatible bucket.
 
-## Payments And Email
+## Dashboard Credentials, Payments And Email
 
-Shop runtimes need:
+Production runtimes need `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned credentials at rest. This key is deployment-owned infrastructure material, not a provider credential.
 
-- `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned provider credentials at rest
+Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server.
+
+The email form stores the optional HTTP bearer token in an encrypted envelope and provides a provider test. The configured endpoint receives a JSON message containing `to`, `from`, `subject`, `text`, optional `html`, and `metadata`. Email endpoints must use HTTP or HTTPS, and production endpoints must use HTTPS.
+
+These environment values are an optional initial fallback for transactional email:
+
 - `EMAIL_DRIVER=http`
 - `EMAIL_FROM`
 - `EMAIL_HTTP_ENDPOINT`
@@ -93,7 +98,7 @@ Shop runtimes need:
 
 Order received, paid, refunded, and status-change notifications are queued in the database and delivered through the configured HTTP email adapter.
 
-Stripe API keys, Stripe webhook signing secrets, PayPal client credentials, and PayPal webhook IDs are not runtime environment variables. A site owner configures them under **Shop > Shop Configuration**. The API only returns public provider identifiers and write-only secret status; encrypted credentials never leave the server.
+Stripe API keys, Stripe webhook signing secrets, PayPal client credentials, and PayPal webhook IDs are not runtime environment variables.
 
 `CMS_CREDENTIAL_ENCRYPTION_KEY` is deployment-owned infrastructure material, not a payment-provider credential. Use a unique high-entropy value, store it in the platform secret manager, back it up securely, and do not rotate it without re-encrypting or re-entering every saved provider secret.
 
@@ -103,15 +108,14 @@ See [payment-providers.md](payment-providers.md) for setup, checkout, webhook, r
 
 `AUTH_RECOVERY_TOKEN_DELIVERY=response` is only for local development and tests. Production rejects response-based token delivery.
 
-Production auth recovery and invite flows require:
+Production password recovery and email verification require:
 
 - `AUTH_RECOVERY_TOKEN_DELIVERY=email`
 - `APP_PUBLIC_URL`
-- `EMAIL_DRIVER=http`
-- `EMAIL_FROM`
-- `EMAIL_HTTP_ENDPOINT`
+- Transactional email saved and enabled under **Settings > Email**, or the environment fallback above
+- A successful provider test before production launch
 
-Email verification, password reset, and invite tokens are created server-side, delivered through the email adapter, and hidden from API responses in production.
+Email verification and password reset tokens are created server-side, delivered through the email adapter, and hidden from API responses in production. The same email configuration delivers invitations; administrators can instead copy a manual invite URL when transactional email is unavailable.
 
 ## Maintenance And Observability
 
@@ -131,12 +135,17 @@ Email verification, password reset, and invite tokens are created server-side, d
 - Start runtime: `pnpm runtime:start`
 - First bootstrap after provisioning: `pnpm runtime:bootstrap`
 - Backup: `pnpm runtime:backup`
+- Scheduled backup worker: `pnpm runtime:backup:scheduler`
 - Restore: `pnpm runtime:restore -- /path/to/runtime.dump`
 
-`runtime:start` deploys migrations before starting the API. `runtime:bootstrap` deploys migrations and runs the idempotent seed flow once after a new copied site is provisioned.
+`runtime:start` deploys migrations before starting the API. `runtime:bootstrap` deploys migrations and runs the idempotent seed flow once after a new copied site is provisioned. The seed only creates an owner when explicit `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` values are present; otherwise run `pnpm setup:admin` after bootstrap. If the configured email already belongs to a non-owner, the seed refuses to elevate it and `pnpm setup:admin` must be used to reset its password and sessions during promotion.
 
-Set `BACKUP_DIR` to the directory where `runtime:backup` writes `pg_dump` files. Production restore requires `ALLOW_PRODUCTION_RESTORE=true`.
+Backup controls are `BACKUP_DIR`, `BACKUP_MIRROR_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_INTERVAL_HOURS`, `BACKUP_MAX_AGE_HOURS`, `BACKUP_REQUIRED`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_REQUIRE_ENCRYPTION`, `BACKUP_S3_MEDIA_PROTECTED`, and the optional alert webhook values. Production should require encryption and a recent successful backup. See [backup-disaster-recovery.md](backup-disaster-recovery.md).
+
+Production restore requires `ALLOW_PRODUCTION_RESTORE=true`. Use the generated manifest so checksums, encryption, and matching media are verified.
 
 ## Readiness
 
-Use `/api/v1/health/ready` for container and reverse-proxy health checks. It verifies the database query path and required storage/email runtime configuration.
+Use `/api/v1/health/ready` for container and reverse-proxy health checks. It verifies the database query path, live storage connectivity, dashboard-managed email state, the last provider test, and backup freshness. Optional email or backup failures remain visible but only block readiness when that capability is required.
+
+`/api/v1/health/metrics` includes process telemetry and the current backup health summary.

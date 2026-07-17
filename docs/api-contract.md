@@ -74,11 +74,14 @@ Responses should include:
 
 Auth uses JWT access tokens and rotating refresh tokens. Generated sites should assume:
 
-- Login returns access and refresh tokens only when auth succeeds.
-- Refresh rotates the refresh token and invalidates the previous token.
-- Logout revokes the submitted refresh token.
-- Password reset, email verification, and invite tokens are delivered through the configured recovery delivery mode.
-- Production must not return recovery tokens in API responses.
+- Login returns a short-lived access token and stores the refresh token in a strict HttpOnly cookie.
+- Browser code keeps access tokens in memory and never stores credentials in local storage.
+- Refresh rotates the HttpOnly refresh cookie and invalidates the previous token.
+- Logout revokes the current refresh cookie.
+- Password changes and session revocation invalidate all access and refresh tokens through the user's session version.
+- Password reset and email verification tokens are delivered through the configured recovery delivery mode.
+- Production never returns password reset or email verification tokens in API responses.
+- Authenticated administrators can receive a manual invite URL when transactional email is unavailable.
 
 ## RBAC
 
@@ -120,15 +123,34 @@ Public endpoints must never expose drafts or archived records to anonymous users
 
 Stable `/api/v1` endpoint families:
 
-- `auth`: register, login, refresh, logout, password reset, email verification, invites, current user.
+- `auth`: register, login, refresh, logout, password changes, session revocation, password reset, email verification, invites, current user.
 - `users`: user list, detail, profile, status updates.
 - `roles`: role and permission metadata.
 - `config`: runtime config, modules, domains, audit logs, generation contract.
 - `cms`: pages, posts, sections, blocks, revisions, menus, redirects, media, forms, sitemap, robots.
-- `products`: catalog, product media, options, variants.
+- `products`: catalog, product media, options, variants, and public storefront settings.
 - `orders`: orders, carts, checkout, shipping, tax, coupons, order notifications.
 - `payments`: site payment-provider configuration, public provider discovery, Stripe intents, PayPal orders/capture, manual settlement, and verified idempotent webhooks.
 - `health`: liveness, readiness, metrics.
+
+Transactional email configuration is site-owned:
+
+```text
+GET   /api/v1/config/email
+PATCH /api/v1/config/email
+POST  /api/v1/config/email/test
+```
+
+The bearer token is write-only and encrypted at rest. The test endpoint records provider success or failure for readiness checks.
+
+Storefront customization is site-owned and public rendering reads the same validated settings:
+
+```text
+GET   /api/v1/products/settings
+PATCH /api/v1/products/settings  # update:products
+```
+
+The settings contract covers catalog copy, listing and product-detail presentation, page size, and category, attribute, SKU, and stock visibility.
 
 ## Contract Source
 

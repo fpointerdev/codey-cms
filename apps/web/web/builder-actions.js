@@ -582,7 +582,7 @@ function sectionControlFields(section = {}) {
       value: animation.durationMs,
       min: 120,
       max: 3000,
-      step: 50,
+      step: 10,
       required: false,
       group: "Motion"
     },

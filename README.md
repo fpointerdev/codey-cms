@@ -13,6 +13,7 @@ Docker is the simplest local start because it includes PostgreSQL:
 ```bash
 cp .env.example .env
 docker compose up --build
+docker compose exec backend pnpm setup:admin
 ```
 
 Open:
@@ -21,7 +22,7 @@ Open:
 - CMS admin: http://localhost:4000/cy-admin
 - API base: http://localhost:4000/api/v1
 
-Default local admin values come from `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` in `.env` or Docker Compose defaults. Change them before using the runtime for real work.
+The seed does not create a default owner. Set explicit `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` values before the first seed, or run `pnpm setup:admin` once after migrations. Remove bootstrap credentials from the environment after first use. The setup command uses a hidden password prompt, accepts those environment values in non-interactive deployments, and refuses to replace an existing owner. If the bootstrap email belongs to an existing non-owner, the seed stops and `pnpm setup:admin` must be used so the password and active sessions are reset safely. The Docker command above runs it inside the backend container.
 
 ## Local Development
 
@@ -30,10 +31,21 @@ cp .env.example .env
 pnpm install
 pnpm db:push
 pnpm db:seed
+pnpm setup:admin
 pnpm dev
 ```
 
 Node.js 24 and pnpm 11 are expected.
+
+Release checks:
+
+```bash
+pnpm validate
+TEST_DATABASE_URL=postgresql://.../codey_cms_test pnpm test:integration
+TEST_DATABASE_URL=postgresql://.../codey_cms_test pnpm test:e2e
+```
+
+Integration and browser tests refuse database names that do not contain `test`, `ci`, or `e2e`.
 
 ## Runtime Shape
 

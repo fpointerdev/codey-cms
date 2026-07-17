@@ -63,6 +63,7 @@ test("updating a user changes roles, suspends sessions, and writes an audit even
   const calls = {
     deletedRoles: 0,
     createdRoles: [] as unknown[],
+    userUpdates: [] as Array<{ data: Record<string, unknown> }>,
     revokedTokens: 0,
     audits: [] as Array<{ data: { action: string } }>
   };
@@ -70,7 +71,10 @@ test("updating a user changes roles, suspends sessions, and writes an audit even
   const tx = {
     user: {
       findUnique: async () => accessUser({ roleId: "role-viewer" }),
-      update: async () => updatedUser,
+      update: async (args: { data: Record<string, unknown> }) => {
+        calls.userUpdates.push(args);
+        return updatedUser;
+      },
       count: async () => 1
     },
     role: {
@@ -116,6 +120,7 @@ test("updating a user changes roles, suspends sessions, and writes an audit even
   assert.equal(result.status, "SUSPENDED");
   assert.equal(calls.deletedRoles, 1);
   assert.equal(calls.createdRoles.length, 1);
+  assert.deepEqual(calls.userUpdates[0]?.data.authVersion, { increment: 1 });
   assert.equal(calls.revokedTokens, 1);
   assert.equal(calls.audits[0]?.data.action, "user.update");
 });
@@ -136,7 +141,10 @@ test("a user cannot change their own access or assign permissions they do not ha
   const restrictedActor = {
     ...actor,
     id: "limited-actor",
-    permissions: [{ action: "update", subject: "users" }]
+    permissions: [
+      { action: "update", subject: "users" },
+      { action: "read", subject: "cms" }
+    ]
   };
   const restrictedTx = {
     user: { findUnique: async () => accessUser() },
@@ -154,6 +162,19 @@ test("a user cannot change their own access or assign permissions they do not ha
   await assert.rejects(
     () => restrictedService.update("user-1", { roleIds: ["role-owner"] }, { actor: restrictedActor }),
     (error) => error instanceof AppError && error.code === "role_assignment_forbidden"
+  );
+
+  const privilegedTargetService = new UserService({
+    $transaction: async (callback: (database: typeof restrictedTx) => Promise<unknown>) =>
+      callback({
+        ...restrictedTx,
+        user: { findUnique: async () => accessUser({ manager: true }) }
+      })
+  } as unknown as PrismaClient);
+
+  await assert.rejects(
+    () => privilegedTargetService.update("user-1", { status: "SUSPENDED" }, { actor: restrictedActor }),
+    (error) => error instanceof AppError && error.code === "user_access_forbidden"
   );
 });
 
@@ -207,4 +228,31 @@ test("deleting a regular user returns the account and records the action", async
   const deleted = await service.delete("editor-2", { actor });
   assert.equal(deleted.id, "editor-2");
   assert.deepEqual(audits, ["user.delete"]);
+});
+
+test("a user cannot delete an account with access above their own", async () => {
+  let deleted = false;
+  const restrictedActor = {
+    ...actor,
+    id: "limited-actor",
+    permissions: [{ action: "delete", subject: "users" }]
+  };
+  const tx = {
+    user: {
+      findUnique: async () => accessUser({ id: "owner-2", manager: true }),
+      delete: async () => {
+        deleted = true;
+        return publicUser("owner-2");
+      }
+    }
+  };
+  const service = new UserService({
+    $transaction: async (callback: (database: typeof tx) => Promise<unknown>) => callback(tx)
+  } as unknown as PrismaClient);
+
+  await assert.rejects(
+    () => service.delete("owner-2", { actor: restrictedActor }),
+    (error) => error instanceof AppError && error.code === "user_access_forbidden"
+  );
+  assert.equal(deleted, false);
 });

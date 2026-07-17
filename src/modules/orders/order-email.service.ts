@@ -1,4 +1,5 @@
 import type { OrderNotificationEvent, OrderStatus, Prisma } from "@prisma/client";
+import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { createEmailClient, isEmailDeliveryConfigured } from "../../infrastructure/email/http-email.js";
 import type { ModuleContext } from "../../core/types/module.js";
 
@@ -149,7 +150,8 @@ export async function deliverQueuedOrderEmails(
   context: ModuleContext,
   options: DeliverQueuedOrderEmailsOptions = {}
 ) {
-  if (!isEmailDeliveryConfigured(context.config)) {
+  const emailSettings = await new EmailSettingsService(context.prisma, context.config).resolve();
+  if (!isEmailDeliveryConfigured(emailSettings)) {
     return {
       sent: 0,
       failed: 0,
@@ -157,7 +159,7 @@ export async function deliverQueuedOrderEmails(
     };
   }
 
-  const emailClient = createEmailClient(context.config);
+  const emailClient = createEmailClient(emailSettings);
   const notifications = await context.prisma.orderNotification.findMany({
     where: {
       status: "QUEUED",
@@ -173,7 +175,7 @@ export async function deliverQueuedOrderEmails(
     try {
       await emailClient.send({
         to: notification.recipient,
-        from: context.config.email.from!,
+        from: emailSettings.from!,
         subject: notification.subject,
         text: notification.body,
         html: notification.htmlBody ?? undefined,

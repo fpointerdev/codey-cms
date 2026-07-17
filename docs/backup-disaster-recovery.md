@@ -1,44 +1,71 @@
 # Backup And Disaster Recovery
 
-Each generated customer site is a copied runtime with its own database, environment, storage prefix, and backup directory. Treat every copy as an isolated tenant.
+Each copied runtime has its own database, storage prefix, encryption keys, and backup directories. Never share backup artifacts between customer sites.
 
-## Backup Strategy
+## Backup Configuration
 
-- Run `pnpm runtime:backup` for every copied site on a fixed schedule.
-- Store database dumps outside the application container, preferably in S3-compatible storage.
-- Use a unique `BACKUP_DIR` per site when multiple runtimes share a VPS.
-- Keep media under a unique `STORAGE_KEY_PREFIX` per site.
-- Snapshot the runtime environment file alongside database backups.
-- Retain at least daily backups for 30 days and weekly backups for 90 days for paid shop/CMS plans.
-- Monitor backup success and alert when no backup exists for the last scheduled window.
+The production Compose stack runs `scripts/backup-scheduler.mjs` immediately on startup and then at `BACKUP_INTERVAL_HOURS` intervals. A backup includes:
+
+- A PostgreSQL custom-format dump verified with `pg_restore --list`.
+- A compressed media snapshot when `STORAGE_DRIVER=local`.
+- An S3 media-protection declaration when `STORAGE_DRIVER=s3`.
+- A manifest containing checksums, byte sizes, timestamps, and encryption state.
+- `latest.json`, consumed by readiness and metrics.
+
+Set these values per runtime:
+
+```env
+BACKUP_DIR=/app/backups
+BACKUP_MIRROR_DIR=/app/backups-mirror
+BACKUP_RETENTION_DAYS=30
+BACKUP_INTERVAL_HOURS=24
+BACKUP_MAX_AGE_HOURS=30
+BACKUP_REQUIRED=true
+BACKUP_ENCRYPTION_KEY=<unique secret of at least 32 characters>
+BACKUP_REQUIRE_ENCRYPTION=true
+BACKUP_S3_MEDIA_PROTECTED=true
+BACKUP_ALERT_WEBHOOK_URL=https://monitor.example.com/hooks/codey
+BACKUP_ALERT_WEBHOOK_TOKEN=<optional bearer token>
+```
+
+`BACKUP_MIRROR_DIR` should be mounted on independent storage or synchronized off-host. A second volume on the same server is not a complete disaster-recovery strategy.
+
+For S3-compatible media, enable and test bucket versioning, replication, or an independent object backup before setting `BACKUP_S3_MEDIA_PROTECTED=true`. The database dump does not copy S3 objects.
+
+Run one backup manually after provisioning:
+
+```bash
+pnpm runtime:backup
+```
+
+The failure webhook receives `codey.backup.failed`. A mirror failure is reported as failed but does not delete a completed local backup.
 
 ## Restore Procedure
 
-1. Put the copied site into maintenance mode.
-2. Stop traffic at the reverse proxy or keep only `/health`, `/auth`, and `/config` open.
-3. Restore the matching database dump:
+1. Put the site into maintenance mode and stop public writes.
+2. Verify the target runtime, database, and storage prefix.
+3. Locate the matching `.manifest.json`, database archive, and media archive.
+4. Restore the database and optional local media:
 
 ```bash
-ALLOW_PRODUCTION_RESTORE=true pnpm runtime:restore -- /path/to/runtime.dump
+ALLOW_PRODUCTION_RESTORE=true \
+RESTORE_MEDIA=true \
+RESTORE_REPLACE_MEDIA=true \
+BACKUP_ENCRYPTION_KEY=<matching-key> \
+pnpm runtime:restore -- /path/to/runtime-....manifest.json
 ```
 
-4. Restore media objects for the same `STORAGE_KEY_PREFIX`.
-5. Run `pnpm db:deploy`.
-6. Start the runtime with `pnpm runtime:start`.
-7. Check `/api/v1/health/ready`.
-8. Process queued order notifications if the outage included shop activity.
-9. Disable maintenance mode after manual smoke checks.
+5. For S3 media, use the bucket versioning or replication recovery workflow recorded in the manifest.
+6. Run `pnpm db:deploy` and start the runtime.
+7. Check `/api/v1/health/ready` and `/api/v1/health/metrics`.
+8. Smoke test login, public pages, media, forms, and shop workflows before disabling maintenance mode.
 
-## Recovery Targets
+The restore command verifies manifest checksums and sizes, encrypted-file authentication, PostgreSQL archive structure, and media archive paths and entry types before modifying the target. Media archives containing links or special files are rejected. The command also supports legacy plain SQL dumps. Production restore is blocked unless `ALLOW_PRODUCTION_RESTORE=true`.
 
-- Presentation site: restore within 4 hours.
-- CMS site: restore within 2 hours.
-- Shop site: restore within 1 hour.
-- Shop order and payment data loss target: last successful backup plus provider reconciliation.
+## Recovery Rules
 
-## Disaster Recovery Notes
-
-- Never restore one customer dump into another customer's runtime.
-- Keep provider webhook secrets and JWT secrets per copied site.
-- Reconcile paid orders with the payment provider after any database restore.
-- Do not run production restore unless the target database and storage prefix have been verified.
+- Keep `BACKUP_ENCRYPTION_KEY`, `CMS_CREDENTIAL_ENCRYPTION_KEY`, and runtime secrets in a separate secret manager backup.
+- Test a restore into an isolated database at least quarterly and after backup-script changes.
+- Alert when `latest.json` reports failure or exceeds `BACKUP_MAX_AGE_HOURS`.
+- Reconcile paid orders with Stripe or PayPal after restoring shop data.
+- Do not claim a recovery target until a timed restore test proves it.

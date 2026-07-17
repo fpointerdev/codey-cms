@@ -11,6 +11,11 @@ import {
   optimizedImageMimeType,
   optimizedImageStorageKey
 } from "./media-optimizer.js";
+import {
+  assertAllowedMediaDeclaration,
+  inspectMediaFile,
+  normalizeMediaMimeType
+} from "./media-policy.js";
 
 type MediaDatabase = PrismaClient | Prisma.TransactionClient;
 
@@ -106,21 +111,6 @@ function sanitizeFilename(filename: string) {
   return cleaned || "upload";
 }
 
-function inferKind(mimeType: string): MediaKind {
-  if (mimeType.startsWith("image/")) return "IMAGE";
-  if (mimeType.startsWith("video/")) return "VIDEO";
-  if (
-    mimeType === "application/pdf" ||
-    mimeType.includes("document") ||
-    mimeType.includes("spreadsheet") ||
-    mimeType.includes("presentation")
-  ) {
-    return "DOCUMENT";
-  }
-
-  return "OTHER";
-}
-
 function normalizeKeyPrefix(prefix: string) {
   return prefix.replace(/^\/+|\/+$/g, "");
 }
@@ -143,10 +133,6 @@ function collectVariantSizeBytes(variants: Prisma.JsonValue | ImageVariant[] | n
     const sizeBytes = (variant as Record<string, unknown>).sizeBytes;
     return total + (typeof sizeBytes === "number" ? sizeBytes : 0);
   }, 0);
-}
-
-function normalizedMimeType(mimeType?: string) {
-  return mimeType?.split(";")[0]?.trim().toLowerCase();
 }
 
 function errorMessage(error: unknown) {
@@ -193,16 +179,30 @@ export class MediaService {
   }
 
   async createExternalMedia(input: CreateExternalMediaInput) {
+    const url = new URL(input.url);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new AppError(422, "invalid_media_url", "External media URL must use HTTP or HTTPS.");
+    }
+
+    const filename = url.pathname.split("/").filter(Boolean).at(-1) ?? "external-media";
+    const declaredMedia = input.mimeType
+      ? assertAllowedMediaDeclaration(filename, input.mimeType, input.kind)
+      : null;
+    const kind = declaredMedia?.kind ?? input.kind;
+    if (!kind || kind === "OTHER") {
+      throw new AppError(422, "unsupported_media_type", "External media must be an image, video, or PDF document.");
+    }
+
     const site = await this.getDefaultSite();
     await this.assertQuota(site, input.sizeBytes ?? 0);
 
     return this.prisma.mediaAsset.create({
       data: {
         siteId: site.id,
-        kind: input.kind ?? (input.mimeType ? inferKind(input.mimeType) : "OTHER"),
+        kind,
         storageKey: input.storageKey,
         url: input.url,
-        mimeType: input.mimeType,
+        mimeType: declaredMedia?.mimeType,
         sizeBytes: input.sizeBytes,
         width: input.width,
         height: input.height,
@@ -214,12 +214,13 @@ export class MediaService {
   async createSignedUpload(input: SignedUploadInput) {
     this.assertStorageEnabled();
     this.assertUploadSize(input.sizeBytes);
+    const media = assertAllowedMediaDeclaration(input.filename, input.mimeType, input.kind);
 
     const site = await this.getDefaultSite();
     await this.assertQuota(site, input.sizeBytes);
 
     const storageKey = this.createStorageKey(site.slug, input.filename);
-    const upload = await this.storage.createUploadUrl(storageKey, input.mimeType);
+    const upload = await this.storage.createUploadUrl(storageKey, media.mimeType);
 
     return {
       storageKey,
@@ -236,28 +237,34 @@ export class MediaService {
 
     const site = await this.getDefaultSite();
     this.assertSiteStorageKey(site.slug, input.storageKey);
-
-    const objectMetadata = await this.storage.headObject(input.storageKey);
-    const sizeBytes = objectMetadata.sizeBytes ?? input.sizeBytes;
-    this.assertUploadSize(sizeBytes);
-    await this.assertQuota(site, sizeBytes);
-
-    const mimeType = objectMetadata.mimeType ?? input.mimeType;
-    const kind = input.kind ?? inferKind(mimeType);
     const uploadedKeys = [input.storageKey];
 
     try {
-      const body = kind === "IMAGE" ? await this.storage.getObject(input.storageKey) : undefined;
-      const imageMetadata = body ? extractImageMetadata(body, normalizedMimeType(mimeType)) : {};
+      const declaredMedia = assertAllowedMediaDeclaration(input.filename, input.mimeType, input.kind);
+      const objectMetadata = await this.storage.headObject(input.storageKey);
+      const sizeBytes = objectMetadata.sizeBytes ?? input.sizeBytes;
+      this.assertUploadSize(sizeBytes);
+      await this.assertQuota(site, sizeBytes);
+
+      const storedMimeType = objectMetadata.mimeType
+        ? normalizeMediaMimeType(objectMetadata.mimeType)
+        : declaredMedia.mimeType;
+      if (storedMimeType !== declaredMedia.mimeType) {
+        throw new AppError(422, "media_type_mismatch", "Stored file type does not match the upload request.");
+      }
+
+      const body = await this.storage.getObject(input.storageKey);
+      const media = inspectMediaFile(input.filename, declaredMedia.mimeType, body, input.kind);
+      const imageMetadata = media.kind === "IMAGE" ? extractImageMetadata(body, media.mimeType) : {};
       const width = input.width ?? imageMetadata.width;
       const height = input.height ?? imageMetadata.height;
       const variantPlan = this.createImageVariantPlan(input.storageKey, {
-        kind,
+        kind: media.kind,
         width,
         height,
-        mimeType
+        mimeType: media.mimeType
       });
-      const variants = body ? await this.generateImageVariants(body, mimeType, variantPlan) : variantPlan;
+      const variants = await this.generateImageVariants(body, media.mimeType, variantPlan);
       uploadedKeys.push(...this.readyVariantStorageKeys(variants));
 
       const totalIncomingBytes = sizeBytes + collectVariantSizeBytes(variants);
@@ -268,11 +275,11 @@ export class MediaService {
       return await this.prisma.mediaAsset.create({
         data: {
           siteId: site.id,
-          kind,
+          kind: media.kind,
           storageKey: input.storageKey,
           originalFilename: input.filename,
           url: this.storage.publicUrl(input.storageKey),
-          mimeType,
+          mimeType: media.mimeType,
           sizeBytes,
           width,
           height,
@@ -291,25 +298,25 @@ export class MediaService {
 
     const body = decodeBase64(input.dataBase64);
     this.assertUploadSize(body.byteLength);
+    const media = inspectMediaFile(input.filename, input.mimeType, body, input.kind);
 
     const site = await this.getDefaultSite();
     await this.assertQuota(site, body.byteLength);
 
-    const kind = input.kind ?? inferKind(input.mimeType);
     const storageKey = this.createStorageKey(site.slug, input.filename);
     const uploadedKeys = [storageKey];
-    const imageMetadata = kind === "IMAGE" ? extractImageMetadata(body, normalizedMimeType(input.mimeType)) : {};
+    const imageMetadata = media.kind === "IMAGE" ? extractImageMetadata(body, media.mimeType) : {};
     const variantPlan = this.createImageVariantPlan(storageKey, {
-      kind,
+      kind: media.kind,
       width: imageMetadata.width,
       height: imageMetadata.height,
-      mimeType: input.mimeType
+      mimeType: media.mimeType
     });
 
     try {
-      await this.storage.putObject(storageKey, body, input.mimeType);
+      await this.storage.putObject(storageKey, body, media.mimeType);
 
-      const variants = await this.generateImageVariants(body, input.mimeType, variantPlan);
+      const variants = await this.generateImageVariants(body, media.mimeType, variantPlan);
       uploadedKeys.push(...this.readyVariantStorageKeys(variants));
 
       const totalIncomingBytes = body.byteLength + collectVariantSizeBytes(variants);
@@ -320,12 +327,12 @@ export class MediaService {
       return await this.prisma.mediaAsset.create({
         data: {
           siteId: site.id,
-          kind,
+          kind: media.kind,
           storageKey,
           originalFilename: input.filename,
           checksumSha256: checksumSha256(body),
           url: this.storage.publicUrl(storageKey),
-          mimeType: input.mimeType,
+          mimeType: media.mimeType,
           sizeBytes: body.byteLength,
           width: imageMetadata.width,
           height: imageMetadata.height,

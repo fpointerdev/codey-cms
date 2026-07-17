@@ -140,13 +140,16 @@ export function pageHref(slug) {
 export function publicShopRoute() {
   const path = (window.location.pathname || "/").replace(/\/+$/, "") || "/";
   const parts = path.replace(/^\/+/, "").split("/").map((part) => decodeURIComponent(part));
+  const pageValue = new URLSearchParams(window.location.search || "").get("page") || "1";
+  const requestedPage = /^\d+$/.test(pageValue) ? Number(pageValue) : 1;
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, 10_000) : 1;
   if (isConfiguredRouteLocale(parts[0])) parts.shift();
 
   if (parts[0] !== "shop" && parts[0] !== "product") return null;
-  if (parts[0] === "shop" && parts.length === 1) return { view: "shop" };
-  if (parts[0] === "shop" && parts[1] === "category" && parts[2]) return { view: "shop-category", category: parts[2] };
+  if (parts[0] === "shop" && parts.length === 1) return { view: "shop", page };
+  if (parts[0] === "shop" && parts[1] === "category" && parts[2]) return { view: "shop-category", category: parts[2], page };
   if (parts[0] === "shop" && parts[1] === "attribute" && parts[2]) {
-    return { view: "shop-attribute", attributeName: parts[2], attributeValue: parts[3] || "" };
+    return { view: "shop-attribute", attributeName: parts[2], attributeValue: parts[3] || "", page };
   }
   if (parts[0] === "product" && parts[1]) return { view: "product", slug: parts[1] };
 
