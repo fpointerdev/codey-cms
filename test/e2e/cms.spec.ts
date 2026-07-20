@@ -38,7 +38,7 @@ test("admin settings and builder controls complete their primary workflows", asy
   await expect(builder).toBeVisible();
   await expect(page.getByRole("group", { name: "Canvas history" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Preview device" })).toBeVisible();
-  await expect(page.getByText("Reusable sections", { exact: true })).toBeVisible();
+  await expect(page.getByText("Section patterns", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Delete Hero", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Mobile", exact: true }).click();
@@ -55,12 +55,74 @@ test("admin settings and builder controls complete their primary workflows", asy
   await expect(page.locator("[data-builder-section]")).toHaveCount(sectionCount);
 
   const blockCount = await page.locator("[data-builder-block-key]").count();
-  await page.locator("[data-builder-block-key]").first().getByRole("button", { name: "Duplicate" }).click();
+  await page.locator("[data-builder-block-key]").first().locator("[data-duplicate-builder-block]").click();
   await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount + 1);
   await page.getByRole("button", { name: "Undo last canvas change" }).click();
   await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
 
   expect(browserErrors).toEqual([]);
+});
+
+test("builder discovery, structure navigation, and responsive preview stay usable", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+
+  await login(page);
+  await page.getByRole("link", { name: "Pages", exact: true }).click();
+  const homeRow = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Home", exact: true })
+  });
+  await homeRow.getByRole("link", { name: "Backend builder" }).click();
+  await expect(page.locator("[data-page-builder]")).toBeVisible();
+
+  const librarySearch = page.getByPlaceholder("Search sections and elements");
+  await librarySearch.fill("slider");
+  await expect(page.locator("[data-builder-template='slider']")).toBeVisible();
+  await expect(page.locator("[data-builder-template='gallery']")).toBeHidden();
+  await librarySearch.fill("");
+
+  await page.locator("[data-builder-rail-view='structure']").click();
+  const firstStructureSection = page.locator("[data-builder-structure-section]").first();
+  await expect(firstStructureSection).toBeVisible();
+  await firstStructureSection.click();
+  await expect(page.locator("[data-builder-section]").first()).toBeFocused();
+
+  await page.locator("[data-builder-canvas-view='preview']").click();
+  await expect(page.locator("[data-builder-live-preview]")).toBeVisible();
+  await expect.poll(() => page.locator("[data-builder-preview-frame]").evaluate((frame) => frame.getBoundingClientRect().width)).toBe(1024);
+  await page.getByRole("button", { name: "Mobile", exact: true }).click();
+  await expect(page.locator("[data-builder-live-preview]")).toHaveAttribute("data-builder-preview-device", "mobile");
+  await expect.poll(() => page.locator("[data-builder-preview-frame]").evaluate((frame) => frame.getBoundingClientRect().width)).toBe(390);
+
+  const preview = page.locator("[data-builder-preview-frame]").contentFrame();
+  await expect(preview.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  expect(browserErrors).toEqual([]);
+});
+
+test("admin pages stay contained and use compact navigation on small screens", async ({ page }) => {
+  await login(page);
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/dashboard/users");
+    await expect(page.locator("[data-admin-layout]")).toBeVisible();
+    await expect(page.locator("[data-admin-sidebar]")).toHaveClass(/collapsed/);
+    await expect(page.locator(".table-card").first()).toBeVisible();
+
+    const sizes = await page.evaluate(() => ({
+      viewport: window.innerWidth,
+      document: document.documentElement.scrollWidth,
+      workspace: document.querySelector(".admin-workspace")?.getBoundingClientRect().width || 0
+    }));
+    expect(sizes.document).toBeLessThanOrEqual(sizes.viewport);
+    expect(sizes.workspace).toBeLessThanOrEqual(sizes.viewport);
+  }
 });
 
 test("shop customization and product creation keep advanced controls out of the primary flow", async ({ page }) => {
@@ -108,7 +170,9 @@ test("shop customization and product creation keep advanced controls out of the 
 
 test("public structured tabs support keyboard navigation", async ({ page }) => {
   await page.goto("/");
-  await page.locator("[data-page]").evaluate((element) => {
+  const pageRoot = page.locator("[data-page]");
+  await expect(pageRoot).not.toHaveAttribute("data-server-rendered", "true");
+  await pageRoot.evaluate((element) => {
     element.innerHTML = `
       <div data-structured-tabs>
         <div role="tablist">

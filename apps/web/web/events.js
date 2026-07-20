@@ -52,7 +52,7 @@ import {
   savePostEditor,
   undoBuilderChange
 } from "./builder-actions.js";
-import { insertIntoTextarea, refreshRichPreview } from "./builder-views.js";
+import { hydrateBuilderPreview, insertIntoTextarea, refreshRichPreview } from "./builder-views.js";
 import {
   acceptUserInvite,
   changeOwnPassword,
@@ -99,6 +99,7 @@ import {
   handleStructuredTabClick,
   handleStructuredTabKeydown
 } from "./structured-tabs.js";
+import { handleSliderClick } from "./slider-runtime.js";
 
 const builderDragType = "application/x-codey-builder";
 
@@ -266,69 +267,71 @@ function bindDashboardClick(event) {
   return true;
 }
 
-function updateSlider(slider, nextIndex) {
-  const track = slider.querySelector("[data-slider-track]");
-  const slides = slider.querySelectorAll(".slider-slide");
-  const visibleStyle = typeof getComputedStyle === "function" ? getComputedStyle(slider).getPropertyValue("--slider-visible") : "";
-  const perView = Math.max(1, Number(visibleStyle || slider.dataset.sliderPerView || 1));
-  const effect = slider.dataset.sliderEffect || "slide";
-  const direction = slider.dataset.sliderDirection || "horizontal";
-  const focus = slider.dataset.sliderFocus || "standard";
-  const singleStep = effect === "fade" || effect === "zoom" || focus === "peek";
-  const maxIndex = Math.max(0, slides.length - (singleStep ? 1 : perView));
-  const loop = slider.dataset.sliderLoop === "true";
-  let index = nextIndex;
-
-  if (loop && slides.length > perView) {
-    if (index < 0) index = maxIndex;
-    if (index > maxIndex) index = 0;
-  } else {
-    index = Math.min(maxIndex, Math.max(0, index));
-  }
-
-  slider.dataset.sliderIndex = String(index);
-  slides.forEach((slide, slideIndex) => {
-    slide.classList.toggle("active", slideIndex === index);
-    slide.classList.toggle("is-before", slideIndex < index);
-    slide.classList.toggle("is-after", slideIndex > index);
-  });
-
-  if (track && (effect === "fade" || effect === "zoom")) {
-    track.style.transform = "";
-  } else if (track && focus === "peek") {
-    const activeSlide = slides[index];
-    const stage = slider.querySelector(".slider-stage");
-    const offset = direction === "vertical"
-      ? Math.max(0, activeSlide.offsetTop - ((stage?.clientHeight || activeSlide.clientHeight) - activeSlide.clientHeight) / 2)
-      : Math.max(0, activeSlide.offsetLeft - ((stage?.clientWidth || activeSlide.clientWidth) - activeSlide.clientWidth) / 2);
-    track.style.transform = direction === "vertical" ? `translateY(-${offset}px)` : `translateX(-${offset}px)`;
-  } else if (track) {
-    const amount = index * (100 / perView);
-    track.style.transform = direction === "vertical" ? `translateY(-${amount}%)` : `translateX(-${amount}%)`;
-  }
-
-  const count = slider.querySelector("[data-slider-count]");
-  if (count) count.textContent = `${index + 1} / ${Math.max(1, maxIndex + 1)}`;
-
-  slider.querySelectorAll("[data-slider-caption]").forEach((caption) => {
-    caption.classList.toggle("active", Number(caption.dataset.sliderCaption) === index);
-  });
-
-  const previous = slider.querySelector("[data-slider-prev]");
-  const next = slider.querySelector("[data-slider-next]");
-  if (previous) previous.disabled = maxIndex === 0 || !loop && index <= 0;
-  if (next) next.disabled = maxIndex === 0 || !loop && index >= maxIndex;
+function bindSliderClick(event) {
+  return handleSliderClick(event);
 }
 
-function bindSliderClick(event) {
-  const direction = event.target.closest("[data-slider-prev]") ? -1 : event.target.closest("[data-slider-next]") ? 1 : 0;
-  if (!direction) return false;
+function applyBuilderLibraryFilters(rail) {
+  const query = String(rail?.querySelector?.("[data-builder-library-search]")?.value || "").trim().toLowerCase();
+  const selectedFilter = Array.from(rail?.querySelectorAll?.("[data-builder-library-filter]") || [])
+    .find((button) => button.getAttribute("aria-pressed") === "true")?.dataset.builderLibraryFilter || "all";
+  const items = Array.from(rail?.querySelectorAll?.("[data-builder-library-item]") || []);
+  let visibleItems = 0;
 
-  const slider = event.target.closest("[data-slider]");
-  if (!slider) return false;
+  items.forEach((item) => {
+    const matchesQuery = !query || String(item.dataset.builderLibrarySearchText || item.textContent || "").includes(query);
+    const matchesFilter = selectedFilter === "all" || item.dataset.builderLibraryCategory === selectedFilter;
+    item.hidden = !matchesQuery || !matchesFilter;
+    if (!item.hidden) visibleItems += 1;
+  });
 
-  event.preventDefault();
-  updateSlider(slider, Number(slider.dataset.sliderIndex || 0) + direction);
+  rail?.querySelectorAll?.("[data-builder-library-group]").forEach((group) => {
+    group.hidden = !Array.from(group.querySelectorAll("[data-builder-library-item]")).some((item) => !item.hidden);
+  });
+
+  const empty = rail?.querySelector?.("[data-builder-library-empty]");
+  if (empty) empty.hidden = visibleItems > 0;
+}
+
+function setBuilderCanvasView(builder, view) {
+  state.builderCanvasView = view;
+  builder?.querySelectorAll?.("[data-builder-canvas-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.builderCanvasPanel !== view;
+  });
+  builder?.querySelectorAll?.("[data-builder-canvas-view]").forEach((button) => {
+    const active = button.dataset.builderCanvasView === view;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  if (view === "preview" && state.builderPage) hydrateBuilderPreview(state.builderPage);
+}
+
+function focusBuilderStructureTarget(control) {
+  const builder = control.closest("[data-page-builder]");
+  if (!builder) return false;
+
+  const sectionId = control.dataset.builderStructureSection || control.dataset.builderSectionId;
+  const blockKey = control.dataset.builderStructureBlock;
+  const target = blockKey
+    ? Array.from(builder.querySelectorAll("[data-builder-block-key]")).find((item) => item.dataset.builderBlockKey === blockKey)
+    : Array.from(builder.querySelectorAll("[data-builder-section]")).find((item) => item.dataset.builderSection === sectionId);
+  if (!target) return false;
+
+  setBuilderCanvasView(builder, "edit");
+  if (sectionId) state.activeBuilderSectionId = sectionId;
+  builder.querySelectorAll("[data-builder-section]").forEach((section) => {
+    section.classList.toggle("active", section.dataset.builderSection === sectionId);
+  });
+  builder.querySelectorAll("[data-builder-structure-section-row]").forEach((row) => {
+    row.classList.toggle("active", row.dataset.builderStructureSectionRow === sectionId);
+  });
+  builder.querySelectorAll("[data-builder-structure-block-row]").forEach((row) => {
+    row.classList.toggle("active", Boolean(blockKey) && row.dataset.builderStructureBlockRow === blockKey);
+  });
+
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView?.({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+  target.focus?.({ preventScroll: true });
   return true;
 }
 
@@ -356,7 +359,46 @@ function bindBuilderClick(event) {
     shell?.classList.toggle("builder-shell-collapsed", state.builderRailCollapsed);
     rail?.classList.toggle("collapsed", state.builderRailCollapsed);
     builderRailToggle.setAttribute?.("aria-expanded", state.builderRailCollapsed ? "false" : "true");
-    builderRailToggle.textContent = state.builderRailCollapsed ? "Elements" : "Collapse";
+    builderRailToggle.textContent = state.builderRailCollapsed ? "Builder" : "Collapse";
+    return true;
+  }
+
+  const builderRailViewButton = event.target.closest("[data-builder-rail-view]");
+  if (builderRailViewButton?.dataset.builderRailView) {
+    const view = builderRailViewButton.dataset.builderRailView;
+    if (!["library", "structure"].includes(view)) return true;
+
+    state.builderRailView = view;
+    const rail = builderRailViewButton.closest("[data-builder-rail]");
+    rail?.querySelectorAll?.("[data-builder-rail-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.builderRailPanel !== view;
+    });
+    rail?.querySelectorAll?.("[data-builder-rail-view]").forEach((button) => {
+      const active = button.dataset.builderRailView === view;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    return true;
+  }
+
+  const builderLibraryFilter = event.target.closest("[data-builder-library-filter]");
+  if (builderLibraryFilter?.dataset.builderLibraryFilter) {
+    const rail = builderLibraryFilter.closest("[data-builder-rail]");
+    rail?.querySelectorAll?.("[data-builder-library-filter]").forEach((button) => {
+      const active = button === builderLibraryFilter;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    applyBuilderLibraryFilters(rail);
+    return true;
+  }
+
+  const canvasViewButton = event.target.closest("[data-builder-canvas-view]");
+  if (canvasViewButton?.dataset.builderCanvasView) {
+    const view = canvasViewButton.dataset.builderCanvasView;
+    if (!["edit", "preview"].includes(view)) return true;
+
+    setBuilderCanvasView(canvasViewButton.closest("[data-page-builder]"), view);
     return true;
   }
 
@@ -367,13 +409,35 @@ function bindBuilderClick(event) {
 
     state.builderPreviewDevice = device;
     const builder = previewDeviceButton.closest("[data-page-builder]");
-    const canvas = builder?.querySelector?.("[data-builder-canvas-dropzone]");
-    if (canvas) canvas.dataset.builderPreviewDevice = device;
-    builder?.querySelectorAll?.("[data-builder-preview-device]").forEach((button) => {
+    builder?.querySelectorAll?.("[data-builder-canvas-dropzone], [data-builder-live-preview]").forEach((preview) => {
+      preview.dataset.builderPreviewDevice = device;
+    });
+    builder?.querySelectorAll?.("button[data-builder-preview-device]").forEach((button) => {
       const active = button.dataset.builderPreviewDevice === device;
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
+    return true;
+  }
+
+  const structureSectionMove = event.target.closest("[data-builder-structure-move-section]");
+  if (structureSectionMove?.dataset.builderSectionId) {
+    event.preventDefault();
+    void moveBuilderSection(structureSectionMove.dataset.builderSectionId, structureSectionMove.dataset.builderStructureMoveSection);
+    return true;
+  }
+
+  const structureBlockMove = event.target.closest("[data-builder-structure-move-block]");
+  if (structureBlockMove?.dataset.builderStructureBlockKey) {
+    event.preventDefault();
+    void moveBuilderBlock(structureBlockMove.dataset.builderStructureBlockKey, structureBlockMove.dataset.builderStructureMoveBlock);
+    return true;
+  }
+
+  const structureTarget = event.target.closest("[data-builder-structure-section], [data-builder-structure-block]");
+  if (structureTarget) {
+    event.preventDefault();
+    focusBuilderStructureTarget(structureTarget);
     return true;
   }
 
@@ -883,6 +947,12 @@ function bindClickEvents() {
 
 function bindRichTextEvents() {
   elements.page.addEventListener("input", (event) => {
+    const librarySearch = event.target.closest("[data-builder-library-search]");
+    if (librarySearch) {
+      applyBuilderLibraryFilters(librarySearch.closest("[data-builder-rail]"));
+      return;
+    }
+
     const richSource = event.target.closest("[data-rich-source]");
     if (richSource) refreshRichPreview(richSource.closest("[data-rich-editor]"));
   });

@@ -255,7 +255,11 @@ export async function loadAdminRoute(route) {
   if (route.view === "page-builder" && route.slug) {
     const [{ renderPageBuilderPage }, { renderPagesPage }] = await Promise.all([builderViews(), adminViews()]);
     try {
-      const { page } = await api(adminLocaleUrl(`/cms/pages/${encodeURIComponent(route.slug)}`, { preview: "true" }));
+      const [{ page }, menuResponse] = await Promise.all([
+        api(adminLocaleUrl(`/cms/pages/${encodeURIComponent(route.slug)}`, { preview: "true" })),
+        api(adminLocaleUrl("/cms/menus/main")).catch(() => ({ menu: null }))
+      ]);
+      state.menu = menuResponse.menu;
       renderPageBuilderPage(page);
     } catch (error) {
       renderPagesPage([], error.message || "Unable to load page builder.");

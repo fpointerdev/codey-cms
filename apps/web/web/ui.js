@@ -26,6 +26,15 @@ function isEditorRoute(route) {
   return route.view === "page-builder" || route.view === "post-builder";
 }
 
+function shouldCollapseAdminSidebar(route) {
+  if (isEditorRoute(route)) return true;
+
+  return Boolean(
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(max-width: 960px)").matches
+  );
+}
+
 function adminRouteKey(route) {
   return `${route.view}:${route.slug || route.userId || ""}`;
 }
@@ -54,7 +63,7 @@ export function renderAuthShell(content) {
 export function renderAdminShell(route, content) {
   const routeKey = adminRouteKey(route);
   if (state.adminSidebarRoute !== routeKey) {
-    state.adminSidebarCollapsed = isEditorRoute(route);
+    state.adminSidebarCollapsed = shouldCollapseAdminSidebar(route);
     state.adminSidebarRoute = routeKey;
   }
 

@@ -1,6 +1,7 @@
 import {
   availableSectionPatterns,
   availableComponentTemplates,
+  elements,
   escapeHtml,
   layoutOptionHtml,
   normalizePageLayout,
@@ -8,10 +9,10 @@ import {
   state
 } from "./core.js";
 import { adminHref, publicPageHref } from "./routes.js";
-import { renderBlock, renderRichText } from "./public-renderer.js";
+import { renderBlock, renderFooter, renderMenuItems, renderPageContent, renderRichText } from "./public-renderer.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
 import { hydrateRichEditors } from "./rich-editor.js";
-import { styleAttribute } from "./custom-css.js";
+import { sanitizeStylesheet, styleAttribute } from "./custom-css.js";
 
 function statusOptionHtml(value = "DRAFT") {
   return ["DRAFT", "PUBLISHED", "ARCHIVED"]
@@ -22,6 +23,7 @@ function statusOptionHtml(value = "DRAFT") {
 function templateIcon(templateId) {
   const icons = {
     slider: "SL",
+    carousel: "CR",
     gallery: "GL",
     "hero-creative": "HR",
     "stats-grid": "ST",
@@ -152,7 +154,113 @@ function localizedPublicPageHref(page) {
   return `/${encodeURIComponent(locale)}${href}`;
 }
 
-function renderBuilderLibrary({ action = "builder", selectedTemplateId = "" } = {}) {
+function templateCategory(templateId) {
+  const categories = {
+    slider: "media",
+    carousel: "media",
+    gallery: "media",
+    "image-text": "media",
+    "pricing-cards": "commerce",
+    "product-list": "commerce",
+    "contact-form": "forms"
+  };
+
+  return categories[templateId] || "content";
+}
+
+function renderBuilderLibraryFilters(includeSections) {
+  const filters = [
+    ["all", "All"],
+    ...(includeSections ? [["sections", "Sections"]] : []),
+    ["content", "Content"],
+    ["media", "Media"],
+    ["commerce", "Commerce"],
+    ["forms", "Forms"]
+  ];
+
+  return `
+    <div class="builder-library-controls">
+      <label class="builder-library-search">
+        <span class="visually-hidden">Search builder library</span>
+        <input type="search" placeholder="Search sections and elements" autocomplete="off" data-builder-library-search />
+      </label>
+      <div class="builder-library-filters" role="group" aria-label="Filter builder library">
+        ${filters
+          .map(
+            ([value, label], index) => `
+              <button
+                type="button"
+                class="secondary-button${index === 0 ? " active" : ""}"
+                data-builder-library-filter="${value}"
+                aria-pressed="${index === 0 ? "true" : "false"}"
+              >${label}</button>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderBuilderStructure(page) {
+  const sections = Array.isArray(page?.sections) ? page.sections : [];
+  if (!sections.length) {
+    return '<p class="builder-structure-empty">No containers yet. Add a section pattern or container to start the page.</p>';
+  }
+
+  return `
+    <ol class="builder-structure-list">
+      ${sections
+        .map((section, sectionIndex) => {
+          const blocks = Array.isArray(section.blocks) ? section.blocks : [];
+          const sectionLabel = section.label || section.key;
+
+          return `
+            <li class="builder-structure-section${section.id === state.activeBuilderSectionId ? " active" : ""}" data-builder-structure-section-row="${escapeHtml(section.id)}">
+              <div class="builder-structure-row">
+                <button type="button" class="builder-structure-target" data-builder-structure-section="${escapeHtml(section.id)}">
+                  <span class="builder-structure-index" aria-hidden="true">${sectionIndex + 1}</span>
+                  <span><strong>${escapeHtml(sectionLabel)}</strong><small>${blocks.length} element${blocks.length === 1 ? "" : "s"}</small></span>
+                </button>
+                <span class="builder-structure-order" role="group" aria-label="Reorder ${escapeHtml(sectionLabel)}">
+                  <button type="button" class="secondary-button builder-icon-button" data-builder-structure-move-section="up" data-builder-section-id="${escapeHtml(section.id)}" aria-label="Move ${escapeHtml(sectionLabel)} up" title="Move up"${sectionIndex === 0 ? " disabled" : ""}>&uarr;</button>
+                  <button type="button" class="secondary-button builder-icon-button" data-builder-structure-move-section="down" data-builder-section-id="${escapeHtml(section.id)}" aria-label="Move ${escapeHtml(sectionLabel)} down" title="Move down"${sectionIndex === sections.length - 1 ? " disabled" : ""}>&darr;</button>
+                </span>
+              </div>
+              ${blocks.length
+                ? `<ol class="builder-structure-blocks">
+                    ${blocks
+                      .map((block, blockIndex) => {
+                        const blockLabel = block.label || block.key;
+                        const blockType = String(block.type || "element").replaceAll("_", " ").toLowerCase();
+
+                        return `
+                          <li class="builder-structure-block" data-builder-structure-block-row="${escapeHtml(block.key)}">
+                            <div class="builder-structure-row">
+                              <button type="button" class="builder-structure-target" data-builder-structure-block="${escapeHtml(block.key)}" data-builder-section-id="${escapeHtml(section.id)}">
+                                <span class="builder-structure-line" aria-hidden="true"></span>
+                                <span><strong>${escapeHtml(blockLabel)}</strong><small>${escapeHtml(blockType)}</small></span>
+                              </button>
+                              <span class="builder-structure-order" role="group" aria-label="Reorder ${escapeHtml(blockLabel)}">
+                                <button type="button" class="secondary-button builder-icon-button" data-builder-structure-move-block="up" data-builder-structure-block-key="${escapeHtml(block.key)}" aria-label="Move ${escapeHtml(blockLabel)} up" title="Move up"${blockIndex === 0 ? " disabled" : ""}>&uarr;</button>
+                                <button type="button" class="secondary-button builder-icon-button" data-builder-structure-move-block="down" data-builder-structure-block-key="${escapeHtml(block.key)}" aria-label="Move ${escapeHtml(blockLabel)} down" title="Move down"${blockIndex === blocks.length - 1 ? " disabled" : ""}>&darr;</button>
+                              </span>
+                            </div>
+                          </li>
+                        `;
+                      })
+                      .join("")}
+                  </ol>`
+                : '<p class="builder-structure-empty compact">Empty container</p>'}
+            </li>
+          `;
+        })
+        .join("")}
+    </ol>
+  `;
+}
+
+function renderBuilderLibrary({ action = "builder", selectedTemplateId = "", page = null } = {}) {
   const attribute =
     action === "select"
       ? "data-select-template"
@@ -161,6 +269,74 @@ function renderBuilderLibrary({ action = "builder", selectedTemplateId = "" } = 
         : "data-builder-template";
   const collapsed = state.builderRailCollapsed;
   const sectionPatterns = action === "builder" ? availableSectionPatterns() : [];
+  const templates = availableComponentTemplates();
+  const railView = page && state.builderRailView === "structure" ? "structure" : "library";
+
+  const libraryPanel = `
+    <div class="builder-rail-panel" data-builder-rail-panel="library"${railView === "library" ? "" : " hidden"}>
+      ${renderBuilderLibraryFilters(sectionPatterns.length > 0)}
+      ${
+        sectionPatterns.length
+          ? `<div class="builder-library-group" data-builder-library-group>
+              <p class="builder-library-label">Section patterns</p>
+              <div class="builder-pattern-list">
+                ${sectionPatterns
+                  .map(
+                    (pattern) => `
+                      <button
+                        type="button"
+                        class="builder-template builder-pattern"
+                        draggable="true"
+                        data-builder-section-pattern="${escapeHtml(pattern.id)}"
+                        data-builder-library-item
+                        data-builder-library-category="sections"
+                        data-builder-library-search-text="${escapeHtml(`${pattern.label} ${pattern.category || "section"} ${pattern.description}`.toLowerCase())}"
+                      >
+                        <span class="builder-pattern-card-top">
+                          <span class="builder-template-icon" aria-hidden="true">${escapeHtml(patternIcon(pattern.id))}</span>
+                          ${builderSectionLayoutPreview({ settings: pattern.settings || {} })}
+                        </span>
+                        <strong>${escapeHtml(pattern.label)}</strong>
+                        <small>${escapeHtml(pattern.category || "Section")}</small>
+                        <span>${escapeHtml(pattern.description)}</span>
+                      </button>
+                    `
+                  )
+                  .join("")}
+              </div>
+            </div>`
+          : ""
+      }
+      <div class="builder-library-group" data-builder-library-group>
+        <p class="builder-library-label">Elements</p>
+        <div class="builder-template-list">
+          ${templates
+            .map((template) => {
+              const category = templateCategory(template.id);
+
+              return `
+                <button
+                  type="button"
+                  class="builder-template ${template.id === selectedTemplateId ? "active" : ""}"
+                  draggable="true"
+                  ${attribute}="${escapeHtml(template.id)}"
+                  data-template-id="${escapeHtml(template.id)}"
+                  data-builder-library-item
+                  data-builder-library-category="${escapeHtml(category)}"
+                  data-builder-library-search-text="${escapeHtml(`${template.label} ${category} ${template.description}`.toLowerCase())}"
+                >
+                  <span class="builder-template-icon" aria-hidden="true">${escapeHtml(templateIcon(template.id))}</span>
+                  <strong>${escapeHtml(template.label)}</strong>
+                  <span>${escapeHtml(template.description)}</span>
+                </button>
+              `;
+            })
+            .join("")}
+        </div>
+      </div>
+      <p class="builder-library-empty" data-builder-library-empty hidden>No sections or elements match this search.</p>
+    </div>
+  `;
 
   return `
     <aside class="builder-rail${collapsed ? " collapsed" : ""}" data-builder-rail>
@@ -170,7 +346,7 @@ function renderBuilderLibrary({ action = "builder", selectedTemplateId = "" } = 
         data-toggle-builder-rail
         aria-expanded="${collapsed ? "false" : "true"}"
       >
-        ${collapsed ? "Elements" : "Collapse"}
+        ${collapsed ? "Builder" : "Collapse"}
       </button>
       <div class="builder-rail-content">
         <div class="builder-rail-header">
@@ -178,57 +354,22 @@ function renderBuilderLibrary({ action = "builder", selectedTemplateId = "" } = 
           <h2>Sections & elements</h2>
           <p class="builder-help">Start with a section pattern, then refine individual elements.</p>
         </div>
-        ${
-          sectionPatterns.length
-            ? `<div class="builder-library-group">
-                <p class="builder-library-label">Reusable sections</p>
-                <div class="builder-pattern-list">
-                  ${sectionPatterns
-                    .map(
-                      (pattern) => `
-                        <button
-                          type="button"
-                          class="builder-template builder-pattern"
-                          draggable="true"
-                          data-builder-section-pattern="${escapeHtml(pattern.id)}"
-                        >
-                          <span class="builder-pattern-card-top">
-                            <span class="builder-template-icon" aria-hidden="true">${escapeHtml(patternIcon(pattern.id))}</span>
-                            ${builderSectionLayoutPreview({ settings: pattern.settings || {} })}
-                          </span>
-                          <strong>${escapeHtml(pattern.label)}</strong>
-                          <small>${escapeHtml(pattern.category || "Section")}</small>
-                          <span>${escapeHtml(pattern.description)}</span>
-                        </button>
-                      `
-                    )
-                    .join("")}
-                </div>
-              </div>`
-            : ""
-        }
-        <div class="builder-library-group">
-          <p class="builder-library-label">Elements</p>
-        <div class="builder-template-list">
-          ${availableComponentTemplates()
-            .map(
-              (template) => `
-                <button
-                  type="button"
-                  class="builder-template ${template.id === selectedTemplateId ? "active" : ""}"
-                  draggable="true"
-                  ${attribute}="${escapeHtml(template.id)}"
-                  data-template-id="${escapeHtml(template.id)}"
-                >
-                  <span class="builder-template-icon" aria-hidden="true">${escapeHtml(templateIcon(template.id))}</span>
-                  <strong>${escapeHtml(template.label)}</strong>
-                  <span>${escapeHtml(template.description)}</span>
-                </button>
-              `
-            )
-            .join("")}
-        </div>
-        </div>
+        ${page
+          ? `<div class="builder-rail-views" role="group" aria-label="Builder panel">
+              <button type="button" class="secondary-button${railView === "library" ? " active" : ""}" data-builder-rail-view="library" aria-pressed="${railView === "library"}">Add</button>
+              <button type="button" class="secondary-button${railView === "structure" ? " active" : ""}" data-builder-rail-view="structure" aria-pressed="${railView === "structure"}">Structure</button>
+            </div>`
+          : ""}
+        ${libraryPanel}
+        ${page
+          ? `<div class="builder-rail-panel" data-builder-rail-panel="structure"${railView === "structure" ? "" : " hidden"}>
+              <div class="builder-structure-heading">
+                <strong>Page structure</strong>
+                <span>Select an item to locate it on the canvas.</span>
+              </div>
+              ${renderBuilderStructure(page)}
+            </div>`
+          : ""}
       </div>
     </aside>
   `;
@@ -332,7 +473,7 @@ function renderMoveToContainerControl(block, section, sections) {
 
 function renderBuilderBlock(block, index, blocks, section, sections) {
   return `
-    <article class="builder-block" data-builder-block-key="${escapeHtml(block.key)}">
+    <article class="builder-block" data-builder-block-key="${escapeHtml(block.key)}" tabindex="-1">
       <header>
         <div class="builder-block-heading"><strong>${escapeHtml(block.label || block.key)}</strong><span>${escapeHtml(block.type.replace("_", " "))}</span></div>
         <div class="builder-block-actions">
@@ -409,7 +550,7 @@ function renderBuilderSections(page) {
   return page.sections
     .map(
       (section, sectionIndex) => `
-        <article class="builder-section-card ${section.id === activeSectionId ? "active" : ""}" data-builder-section="${escapeHtml(section.id)}" data-builder-section-key="${escapeHtml(section.key)}"${styleAttribute(section.settings?.customCss)}>
+        <article class="builder-section-card ${section.id === activeSectionId ? "active" : ""}" data-builder-section="${escapeHtml(section.id)}" data-builder-section-key="${escapeHtml(section.key)}" tabindex="-1"${styleAttribute(section.settings?.customCss)}>
           <header>
             <div><p class="section-label">Container</p><h3>${escapeHtml(section.label || section.key)}</h3></div>
             <div class="builder-section-actions">
@@ -567,10 +708,71 @@ function renderBuilderStickyHeader(page, layout) {
   `;
 }
 
+function renderBuilderPreviewDocument(page) {
+  const customCss = sanitizeStylesheet(state.config?.siteSettings?.customCss || "");
+  const language = currentLocaleForContent(page);
+
+  return `<!doctype html>
+<html lang="${escapeHtml(language)}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>${escapeHtml(page.title || "Page preview")}</title>
+    <link rel="stylesheet" href="/styles.css" />
+    ${customCss ? `<style data-site-custom-css>${customCss}</style>` : ""}
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="${escapeHtml(localizedPublicPageHref(page))}">${escapeHtml(page.title || "CMS Site")}</a>
+      <nav class="site-nav" aria-label="Site navigation">${renderMenuItems(state.menu?.items || [], false)}</nav>
+    </header>
+    <main class="page-shell">
+      <article data-page>${renderPageContent(page, { canEdit: false })}</article>
+    </main>
+    <footer class="site-footer">${renderFooter(page, false)}</footer>
+    <script type="module" src="/web/builder-preview.js"></script>
+  </body>
+</html>`;
+}
+
+function renderBuilderLivePreview(page) {
+  return `
+    <section
+      class="builder-live-preview"
+      data-builder-canvas-panel="preview"
+      data-builder-live-preview
+      data-builder-preview-device="${escapeHtml(state.builderPreviewDevice)}"
+      ${state.builderCanvasView === "preview" ? "" : "hidden"}
+    >
+      <header class="builder-live-preview-heading">
+        <div>
+          <p class="section-label">Responsive preview</p>
+          <h2>Public page viewport</h2>
+          <p>Styles and media queries run inside the selected device width.</p>
+        </div>
+        <a class="secondary-button" href="${escapeHtml(localizedPublicPageHref(page))}" target="_blank" rel="noreferrer">Open full page</a>
+      </header>
+      <div class="builder-preview-stage">
+        <iframe title="Responsive preview of ${escapeHtml(page.title || "page")}" data-builder-preview-frame></iframe>
+      </div>
+    </section>
+  `;
+}
+
+export function hydrateBuilderPreview(page) {
+  const frame = elements.page?.querySelector?.("[data-builder-preview-frame]");
+  if (!frame || frame.dataset.builderPreviewHydrated === "true") return;
+
+  frame.srcdoc = renderBuilderPreviewDocument(page);
+  frame.dataset.builderPreviewHydrated = "true";
+}
+
 function renderBuilderCanvasTools() {
   const previewDevice = ["desktop", "tablet", "mobile"].includes(state.builderPreviewDevice)
     ? state.builderPreviewDevice
     : "desktop";
+  const canvasView = state.builderCanvasView === "preview" ? "preview" : "edit";
 
   return `
     <section class="builder-canvas-tools">
@@ -582,6 +784,11 @@ function renderBuilderCanvasTools() {
         <span class="builder-order-controls" role="group" aria-label="Canvas history">
           <button type="button" class="secondary-button builder-icon-button" data-builder-undo aria-label="Undo last canvas change" title="Undo"${state.builderUndoStack.length ? "" : " disabled"}>&#8630;</button>
           <button type="button" class="secondary-button builder-icon-button" data-builder-redo aria-label="Redo canvas change" title="Redo"${state.builderRedoStack.length ? "" : " disabled"}>&#8631;</button>
+        </span>
+        <span class="builder-canvas-view-switch" role="group" aria-label="Canvas view">
+          ${["edit", "preview"]
+            .map((view) => `<button type="button" class="secondary-button${canvasView === view ? " active" : ""}" data-builder-canvas-view="${view}" aria-pressed="${canvasView === view}">${view === "edit" ? "Edit" : "Preview"}</button>`)
+            .join("")}
         </span>
         <span class="builder-device-switch" role="group" aria-label="Preview device">
           ${["desktop", "tablet", "mobile"]
@@ -601,9 +808,11 @@ export function renderPageBuilderPage(page, message = "") {
     state.builderHistorySlug = page.slug;
     state.builderUndoStack = [];
     state.builderRedoStack = [];
+    state.builderRailView = "library";
+    state.builderCanvasView = "edit";
     state.builderPreviewDevice = "desktop";
   }
-  if (enteringBuilderPage && window.matchMedia?.("(max-width: 760px)").matches) {
+  if (enteringBuilderPage && window.matchMedia?.("(max-width: 1180px)").matches) {
     state.builderRailCollapsed = true;
   }
 
@@ -623,19 +832,21 @@ export function renderPageBuilderPage(page, message = "") {
     { view: "page-builder", slug: page.slug || "" },
     `
       <section class="${builderShellClass()}" data-page-builder data-builder-page-slug="${escapeHtml(page.slug)}">
-        ${renderBuilderLibrary({ action: "builder" })}
+        ${renderBuilderLibrary({ action: "builder", page })}
         <main class="builder-main">
           ${renderBuilderStickyHeader(page, layout)}
           ${message ? `<p class="form-message" role="status" aria-live="polite">${escapeHtml(message)}</p>` : ""}
           ${renderBuilderCanvasTools()}
-          ${renderRevisionPanel(page)}
-          <section class="builder-canvas page-layout-${escapeHtml(layout)}" data-builder-canvas-dropzone data-builder-preview-device="${escapeHtml(state.builderPreviewDevice)}">
+          ${renderBuilderLivePreview(page)}
+          <section class="builder-canvas page-layout-${escapeHtml(layout)}" data-builder-canvas-panel="edit" data-builder-canvas-dropzone data-builder-preview-device="${escapeHtml(state.builderPreviewDevice)}"${state.builderCanvasView === "edit" ? "" : " hidden"}>
             ${renderBuilderSections(page)}
           </section>
+          ${renderRevisionPanel(page)}
         </main>
       </section>
     `
   );
+  if (state.builderCanvasView === "preview") hydrateBuilderPreview(page);
   setStatus(message || "Page builder loaded.");
   hydrateRichEditors();
 }

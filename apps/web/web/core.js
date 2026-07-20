@@ -32,9 +32,11 @@ export const state = {
   shopCategories: [],
   activeBuilderSectionId: null,
   builderRailCollapsed: false,
+  builderRailView: "library",
   builderHistorySlug: "",
   builderUndoStack: [],
   builderRedoStack: [],
+  builderCanvasView: "edit",
   builderPreviewDevice: "desktop",
   adminSidebarCollapsed: false,
   adminSidebarRoute: ""
@@ -777,9 +779,11 @@ export function resetState() {
   state.shopCategories = [];
   state.activeBuilderSectionId = null;
   state.builderRailCollapsed = false;
+  state.builderRailView = "library";
   state.builderHistorySlug = "";
   state.builderUndoStack = [];
   state.builderRedoStack = [];
+  state.builderCanvasView = "edit";
   state.builderPreviewDevice = "desktop";
   state.adminSidebarCollapsed = false;
   state.adminSidebarRoute = "";
