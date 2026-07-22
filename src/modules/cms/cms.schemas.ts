@@ -44,6 +44,14 @@ export const mediaAssetParams = z.object({
   assetId: z.string().trim().min(1)
 });
 
+export const templateParams = z.object({
+  templateId: z.string().trim().min(1)
+});
+
+export const templateQuerySchema = z.object({
+  type: z.enum(["SECTION", "PAGE"]).optional()
+});
+
 export const menuItemParams = menuParams.extend({
   itemId: z.string().trim().min(1)
 });
@@ -106,6 +114,37 @@ export const pageSectionSchema = z.object({
   settings: sectionSettingsSchema.default({}),
   blocks: z.array(contentBlockSchema).default([])
 });
+
+const sectionTemplateContentSchema = z.object({
+  section: pageSectionSchema
+});
+
+const pageTemplateContentSchema = z.object({
+  excerpt: z.string().trim().max(500).optional(),
+  content: jsonObjectSchema.default({}),
+  sections: z.array(pageSectionSchema).default([])
+});
+
+export const createCmsTemplateSchema = z.discriminatedUnion("type", [
+  z.object({
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(300).optional(),
+    type: z.literal("SECTION"),
+    content: sectionTemplateContentSchema
+  }).strict(),
+  z.object({
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(300).optional(),
+    type: z.literal("PAGE"),
+    content: pageTemplateContentSchema
+  }).strict()
+]);
+
+export const updateCmsTemplateSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(300).nullable().optional(),
+  content: z.union([sectionTemplateContentSchema, pageTemplateContentSchema]).optional()
+}).strict();
 
 export const createCmsPageSchema = z.object({
   title: z.string().trim().min(1).max(180),

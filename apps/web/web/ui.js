@@ -39,6 +39,10 @@ function adminRouteKey(route) {
   return `${route.view}:${route.slug || route.userId || ""}`;
 }
 
+function removePublicCustomStyles() {
+  document.querySelector?.("[data-site-custom-css]")?.remove?.();
+}
+
 export function setShellMode(mode) {
   document.body.classList.toggle("auth-enabled", mode === "auth");
   document.body.classList.toggle("dashboard-enabled", mode === "admin");
@@ -46,6 +50,7 @@ export function setShellMode(mode) {
 }
 
 export function renderAuthShell(content) {
+  removePublicCustomStyles();
   document.title = "Code Epsylon Admin";
   elements.brand.textContent = "Code Epsylon";
   elements.brand.href = "/cy-admin";
@@ -61,6 +66,7 @@ export function renderAuthShell(content) {
 }
 
 export function renderAdminShell(route, content) {
+  removePublicCustomStyles();
   const routeKey = adminRouteKey(route);
   if (state.adminSidebarRoute !== routeKey) {
     state.adminSidebarCollapsed = shouldCollapseAdminSidebar(route);

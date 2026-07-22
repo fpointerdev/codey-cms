@@ -58,6 +58,25 @@ type UpdatePageInput = Partial<Omit<CreatePageInput, "sections">> & {
 
 type UpdatePostInput = Partial<CreatePostInput>;
 
+type CmsTemplateType = "SECTION" | "PAGE";
+
+type CmsTemplateContent =
+  | { section: PageSectionInput }
+  | { excerpt?: string; content: Record<string, unknown>; sections: PageSectionInput[] };
+
+type CreateCmsTemplateInput = {
+  name: string;
+  description?: string;
+  type: CmsTemplateType;
+  content: CmsTemplateContent;
+};
+
+type UpdateCmsTemplateInput = {
+  name?: string;
+  description?: string | null;
+  content?: CmsTemplateContent;
+};
+
 type CreateTranslationInput = {
   targetLocale: string;
   title?: string;
@@ -344,6 +363,53 @@ function assertUniqueKeys(sections: PageSectionInput[]) {
       assertValidBlockValue(block);
     }
   }
+}
+
+function templateSectionInput(section: PageSectionInput): PageSectionInput {
+  return {
+    key: section.key,
+    label: section.label,
+    sortOrder: section.sortOrder,
+    settings: section.settings,
+    blocks: section.blocks.map((block) => {
+      const value = sanitizeContentBlockValue(block.type, block.value);
+      const sanitized = {
+        key: block.key,
+        type: block.type,
+        label: block.label,
+        value,
+        settings: block.settings,
+        sortOrder: block.sortOrder,
+        editable: block.editable,
+        mediaAssetId: block.mediaAssetId
+      };
+      assertValidBlockValue(sanitized);
+
+      return sanitized;
+    })
+  };
+}
+
+function templateContentInput(type: CmsTemplateType, value: CmsTemplateContent) {
+  if (type === "SECTION") {
+    if (!("section" in value)) {
+      throw new AppError(422, "invalid_template_content", "Section templates need one section.");
+    }
+
+    assertUniqueKeys([value.section]);
+    return { section: templateSectionInput(value.section) };
+  }
+
+  if (!("sections" in value) || !("content" in value)) {
+    throw new AppError(422, "invalid_template_content", "Page templates need page content and sections.");
+  }
+
+  assertUniqueKeys(value.sections);
+  return {
+    ...(value.excerpt ? { excerpt: value.excerpt } : {}),
+    content: sanitizeRichObject(value.content),
+    sections: value.sections.map(templateSectionInput)
+  };
 }
 
 function normalizePublishData(input: {
@@ -633,6 +699,73 @@ function visibleMenuItems(
 
 export class CmsService {
   constructor(private readonly prisma: PrismaClient) {}
+
+  private async defaultSiteId() {
+    const site = await this.prisma.site.findUnique({
+      where: { slug: "default" },
+      select: { id: true }
+    });
+
+    if (!site) {
+      throw new AppError(503, "site_not_initialized", "Initialize the site before managing reusable templates.");
+    }
+
+    return site.id;
+  }
+
+  async listTemplates(type?: CmsTemplateType) {
+    const siteId = await this.defaultSiteId();
+
+    return this.prisma.cmsTemplate.findMany({
+      where: {
+        siteId,
+        ...(type ? { type } : {})
+      },
+      orderBy: [{ type: "asc" }, { updatedAt: "desc" }]
+    });
+  }
+
+  async createTemplate(input: CreateCmsTemplateInput) {
+    const siteId = await this.defaultSiteId();
+
+    return this.prisma.cmsTemplate.create({
+      data: {
+        siteId,
+        name: input.name,
+        description: input.description,
+        type: input.type,
+        content: toJson(templateContentInput(input.type, input.content))
+      }
+    });
+  }
+
+  async updateTemplate(templateId: string, input: UpdateCmsTemplateInput) {
+    const siteId = await this.defaultSiteId();
+    const existing = await this.prisma.cmsTemplate.findFirst({
+      where: { id: templateId, siteId }
+    });
+    if (!existing) throw new AppError(404, "cms_template_not_found", "Reusable template not found.");
+
+    return this.prisma.cmsTemplate.update({
+      where: { id: existing.id },
+      data: {
+        name: input.name,
+        description: input.description,
+        content: input.content === undefined
+          ? undefined
+          : toJson(templateContentInput(existing.type, input.content))
+      }
+    });
+  }
+
+  async deleteTemplate(templateId: string) {
+    const siteId = await this.defaultSiteId();
+    const deleted = await this.prisma.cmsTemplate.deleteMany({
+      where: { id: templateId, siteId }
+    });
+
+    if (!deleted.count) throw new AppError(404, "cms_template_not_found", "Reusable template not found.");
+  }
 
   async listPages(input: { locale?: string } = {}) {
     return this.prisma.cmsPage.findMany({

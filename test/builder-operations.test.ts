@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   duplicateBuilderBlockInSections,
   duplicateBuilderSectionInSections,
+  instantiateBuilderSectionTemplate,
   moveBuilderBlockInSections,
-  moveBuilderSectionInSections
+  moveBuilderSectionInSections,
+  normalizeBuilderSectionsForSave
 } from "../apps/web/web/builder-operations.js";
 
 const sections = [
@@ -50,4 +52,25 @@ test("builder sections and elements move one position with boundary protection",
   const movedBlock = moveBuilderBlockInSections(sections, "block-a", "down");
   assert.deepEqual(movedBlock?.sections[0].blocks.map((block) => block.key), ["block-b", "block-a"]);
   assert.equal(moveBuilderBlockInSections(sections, "block-b", "down"), null);
+});
+
+test("reusable sections insert with unique keys and persistence-safe ordering", () => {
+  const reusable = instantiateBuilderSectionTemplate({
+    id: "template-id",
+    key: "section-a",
+    label: "Saved section",
+    sortOrder: 9,
+    settings: {},
+    blocks: [{ id: "template-block", key: "block-a", type: "TEXT", value: "Saved", sortOrder: 4 }]
+  }, sections);
+
+  assert.ok(reusable);
+  assert.equal(reusable.key, "section-a-copy");
+  assert.equal(reusable.blocks[0].key, "block-a-copy");
+  assert.equal("id" in reusable, false);
+  assert.equal("id" in reusable.blocks[0], false);
+
+  const normalized = normalizeBuilderSectionsForSave([...sections, reusable]);
+  assert.deepEqual(normalized.map((section) => section.sortOrder), [0, 1, 2]);
+  assert.deepEqual(normalized[0].blocks.map((block) => block.sortOrder), [0, 1]);
 });

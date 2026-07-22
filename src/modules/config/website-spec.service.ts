@@ -18,6 +18,7 @@ import {
   sectionPresetRegistry
 } from "../builder/element-registry.js";
 import { websiteSpecSchema, type WebsiteSpec, type WebsiteSpecMedia, type WebsiteSpecSection } from "./website-spec.schemas.js";
+import { normalizeDesignSystemSettings } from "./site-design.js";
 
 type RequestUser = {
   id: string;
@@ -308,6 +309,21 @@ async function syncGeneratedSiteSettings(
   const stored = existing?.value && typeof existing.value === "object" && !Array.isArray(existing.value)
     ? existing.value as Record<string, unknown>
     : {};
+  const storedDesign = normalizeDesignSystemSettings(stored.design);
+  const design = normalizeDesignSystemSettings({
+    ...storedDesign,
+    preset: "custom",
+    colors: {
+      ...storedDesign.colors,
+      text: plan.style.colorPalette.primary,
+      primary: plan.style.colorPalette.accent || plan.style.colorPalette.primary
+    },
+    typography: {
+      ...storedDesign.typography,
+      headingFont: plan.style.typography.heading || storedDesign.typography.headingFont,
+      bodyFont: plan.style.typography.body || storedDesign.typography.bodyFont
+    }
+  });
   const value = {
     ...stored,
     title: plan.site.name,
@@ -317,6 +333,7 @@ async function syncGeneratedSiteSettings(
     siteUrl: typeof stored.siteUrl === "string" ? stored.siteUrl : "",
     searchIndexing: stored.searchIndexing !== false,
     sitemapEnabled: stored.sitemapEnabled !== false,
+    design,
     customCss: plan.style.customCss || (typeof stored.customCss === "string" ? stored.customCss : ""),
     ...(plan.branding
       ? {

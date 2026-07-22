@@ -48,6 +48,30 @@ test("public page markup renders meaningful sanitized content without editor con
   assert.match(renderPageContent(page, { canEdit: true }), /data-edit-block/);
 });
 
+test("visual editing keeps structural controls available for locked content", () => {
+  const html = renderPageContent({
+    title: "Locked content",
+    content: {},
+    sections: [{
+      id: "locked-section",
+      key: "locked-section",
+      settings: {},
+      blocks: [{
+        key: "locked-copy",
+        type: "RICH_TEXT",
+        value: "<p>Managed copy</p>",
+        settings: {},
+        editable: false
+      }]
+    }]
+  }, { canEdit: true });
+
+  assert.match(html, /data-visual-move-block="up"/);
+  assert.match(html, /data-visual-duplicate-block/);
+  assert.match(html, /data-visual-delete-block/);
+  assert.doesNotMatch(html, /data-visual-start-inline|data-edit-block/);
+});
+
 test("generated public pages preserve section keys and avoid duplicate hero titles", () => {
   const html = renderPageContent({
     title: "Home",
@@ -111,7 +135,8 @@ test("public post markup and shell injection preserve the application shell", ()
   const rendered = injectPublicShellContent(shell, {
     brand: "CodeY $&",
     body: `${body}<p>$& stays literal</p>`,
-    footer: "Copyright $1"
+    footer: "Copyright $1",
+    head: '<style data-site-design-system>:root{--accent:#123456}</style>'
   });
 
   assert.match(rendered, /data-server-rendered="true"/);
@@ -119,6 +144,8 @@ test("public post markup and shell injection preserve the application shell", ()
   assert.match(rendered, />CodeY \$&<\/a>/);
   assert.match(rendered, /\$& stays literal/);
   assert.match(rendered, />Copyright \$1<\/footer>/);
+  assert.match(rendered, /data-site-design-system/);
+  assert.match(rendered, /--accent:#123456/);
   assert.match(rendered, /<script src="\/app\.js"><\/script>/);
 });
 

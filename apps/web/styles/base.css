@@ -7,6 +7,12 @@
   --surface: #ffffff;
   --accent: #0d7c68;
   --accent-strong: #075f51;
+  --ink: var(--text);
+  --page: var(--surface);
+  --site-content-width: 1120px;
+  --site-section-spacing: 32px;
+  --site-radius: 8px;
+  --site-shadow: 0 14px 36px rgba(18, 27, 36, 0.1);
   --danger: #b42318;
   --admin-bg: #f3f5f6;
   --admin-ink: #161b22;
@@ -167,7 +173,7 @@ button:disabled {
 }
 
 .page-shell {
-  width: min(100%, 1120px);
+  width: min(100%, var(--site-content-width));
   margin: 0 auto;
   padding: 48px 32px 96px;
 }
@@ -355,7 +361,7 @@ body:not(.auth-enabled):not(.dashboard-enabled) [data-page]:empty {
   --codey-animation-delay: 0ms;
   position: relative;
   isolation: isolate;
-  padding: 32px 0;
+  padding: var(--site-section-spacing) 0;
   border-top: 1px solid var(--line);
   min-height: var(--section-min-height);
   color: var(--section-text);

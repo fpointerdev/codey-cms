@@ -3,6 +3,7 @@ import {
   availableComponentTemplates,
   elements,
   escapeHtml,
+  hasPermission,
   layoutOptionHtml,
   normalizePageLayout,
   setStatus,
@@ -11,6 +12,7 @@ import {
 import { adminHref, publicPageHref } from "./routes.js";
 import { renderBlock, renderFooter, renderMenuItems, renderPageContent, renderRichText } from "./public-renderer.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
+import { designSystemCss } from "./design-system.js";
 import { hydrateRichEditors } from "./rich-editor.js";
 import { sanitizeStylesheet, styleAttribute } from "./custom-css.js";
 
@@ -168,9 +170,10 @@ function templateCategory(templateId) {
   return categories[templateId] || "content";
 }
 
-function renderBuilderLibraryFilters(includeSections) {
+function renderBuilderLibraryFilters(includeSections, includeReusable = false) {
   const filters = [
     ["all", "All"],
+    ...(includeReusable ? [["saved", "Saved"]] : []),
     ...(includeSections ? [["sections", "Sections"]] : []),
     ["content", "Content"],
     ["media", "Media"],
@@ -269,12 +272,47 @@ function renderBuilderLibrary({ action = "builder", selectedTemplateId = "", pag
         : "data-builder-template";
   const collapsed = state.builderRailCollapsed;
   const sectionPatterns = action === "builder" ? availableSectionPatterns() : [];
+  const reusableSections = action === "builder"
+    ? (state.cmsTemplates || []).filter((template) => template.type === "SECTION")
+    : [];
   const templates = availableComponentTemplates();
   const railView = page && state.builderRailView === "structure" ? "structure" : "library";
 
   const libraryPanel = `
     <div class="builder-rail-panel" data-builder-rail-panel="library"${railView === "library" ? "" : " hidden"}>
-      ${renderBuilderLibraryFilters(sectionPatterns.length > 0)}
+      ${renderBuilderLibraryFilters(sectionPatterns.length > 0, reusableSections.length > 0)}
+      ${
+        reusableSections.length
+          ? `<div class="builder-library-group" data-builder-library-group>
+              <p class="builder-library-label">Reusable sections</p>
+              <div class="builder-template-list builder-reusable-list">
+                ${reusableSections
+                  .map((template) => `
+                    <div
+                      class="builder-template builder-reusable-template"
+                      draggable="true"
+                      data-builder-reusable-drag="${escapeHtml(template.id)}"
+                      data-builder-library-item
+                      data-builder-library-category="saved"
+                      data-builder-library-search-text="${escapeHtml(`${template.name} ${template.description || "reusable section"}`.toLowerCase())}"
+                    >
+                      <button type="button" class="builder-reusable-insert" data-builder-reusable-template="${escapeHtml(template.id)}">
+                        <span class="builder-template-icon" aria-hidden="true">&#9638;</span>
+                        <strong>${escapeHtml(template.name)}</strong>
+                        <span>${escapeHtml(template.description || "Reusable section")}</span>
+                      </button>
+                      <span class="builder-reusable-actions">
+                        ${hasPermission("update", "cms") ? `<button type="button" class="secondary-button compact" data-edit-reusable-template="${escapeHtml(template.id)}" aria-label="Rename ${escapeHtml(template.name)}">Rename</button>` : ""}
+                        <button type="button" class="secondary-button compact" data-replace-reusable-template="${escapeHtml(template.id)}" aria-label="Replace ${escapeHtml(template.name)} from selected container" title="Replace from selected container">Replace</button>
+                        ${hasPermission("delete", "cms") ? `<button type="button" class="secondary-button compact danger" data-delete-reusable-template="${escapeHtml(template.id)}" aria-label="Delete ${escapeHtml(template.name)}">Delete</button>` : ""}
+                      </span>
+                    </div>
+                  `)
+                  .join("")}
+              </div>
+            </div>`
+          : ""
+      }
       ${
         sectionPatterns.length
           ? `<div class="builder-library-group" data-builder-library-group>
@@ -418,7 +456,35 @@ export function renderRichTextEditor(name, value = "", label = "Rich text") {
   `;
 }
 
+function renderPageTemplateManager(templates) {
+  if (!templates.length) return "";
+
+  return `
+    <div class="builder-page-template-manager" data-page-template-manager>
+      <div class="builder-page-template-heading">
+        <strong>Saved page templates</strong>
+        <span>Reusable structures available in the Start from menu.</span>
+      </div>
+      <div class="builder-page-template-list">
+        ${templates.map((template) => `
+          <div class="builder-page-template-row" data-page-template-row="${escapeHtml(template.id)}">
+            <span class="builder-page-template-copy">
+              <strong data-page-template-name>${escapeHtml(template.name)}</strong>
+              <span data-page-template-description>${escapeHtml(template.description || "Reusable page structure")}</span>
+            </span>
+            <span class="builder-page-template-actions">
+              ${hasPermission("update", "cms") ? `<button type="button" class="secondary-button compact" data-edit-reusable-template="${escapeHtml(template.id)}" aria-label="Rename ${escapeHtml(template.name)}">Rename</button>` : ""}
+              ${hasPermission("delete", "cms") ? `<button type="button" class="secondary-button compact danger" data-delete-reusable-template="${escapeHtml(template.id)}" aria-label="Delete ${escapeHtml(template.name)}">Delete</button>` : ""}
+            </span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 export function renderCreatePagePage() {
+  const pageTemplates = (state.cmsTemplates || []).filter((template) => template.type === "PAGE");
   renderAdminShell(
     { view: "pages" },
     `
@@ -440,6 +506,7 @@ export function renderCreatePagePage() {
               <label><span>Title</span><input name="title" value="New page" required /></label>
               <label><span>Status</span><select name="status">${statusOptionHtml("DRAFT")}</select></label>
               <label><span>Page layout</span><select name="layout">${layoutOptionHtml("full-width")}</select></label>
+              <label><span>Start from</span><select name="templateId" data-page-template-select data-page-template-default-layout="full-width" data-page-template-default-excerpt=""><option value="">Blank page</option>${pageTemplates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`).join("")}</select></label>
             </div>
             <p class="field-help slug-create-help">The slug is generated automatically from the title after the page is created.</p>
             <label><span>Excerpt</span><textarea name="excerpt" rows="3"></textarea></label>
@@ -448,6 +515,7 @@ export function renderCreatePagePage() {
               <label><span>Navigation label</span><input name="menuLabel" value="New page" /></label>
             </div>
             ${renderFormMessage()}
+            ${renderPageTemplateManager(pageTemplates)}
           </section>
         </main>
       </form>
@@ -567,6 +635,7 @@ function renderBuilderSections(page) {
                 </span>
               </button>
               <button type="button" class="secondary-button" data-add-element-to-section="${escapeHtml(section.id)}">Add element</button>
+              ${hasPermission("create", "cms") ? '<button type="button" class="secondary-button" data-save-builder-section-template>Save reusable</button>' : ""}
               <button type="button" class="secondary-button" data-duplicate-builder-section>Duplicate</button>
               <button type="button" class="secondary-button" data-edit-builder-section>Settings</button>
               <button type="button" class="secondary-button danger" data-delete-builder-section aria-label="Delete ${escapeHtml(section.label || section.key)}">Delete</button>
@@ -694,7 +763,8 @@ function renderBuilderStickyHeader(page, layout) {
       </div>
       <div class="builder-sticky-actions">
         <a class="secondary-button" href="/dashboard/pages" data-dashboard-link>Pages</a>
-        <a class="secondary-button" href="${escapeHtml(localizedPublicPageHref(page))}">Frontend editor</a>
+        <a class="secondary-button" href="${escapeHtml(`${localizedPublicPageHref(page)}${localizedPublicPageHref(page).includes("?") ? "&" : "?"}edit=1`)}">Visual editor</a>
+        ${hasPermission("create", "cms") ? '<button type="button" class="secondary-button" data-save-builder-page-template>Save as template</button>' : ""}
         <button type="submit" form="builder-page-settings-form">Save</button>
         <details class="builder-sticky-details">
           <summary class="secondary-button builder-details-toggle">Details</summary>
@@ -710,6 +780,7 @@ function renderBuilderStickyHeader(page, layout) {
 
 function renderBuilderPreviewDocument(page) {
   const customCss = sanitizeStylesheet(state.config?.siteSettings?.customCss || "");
+  const designCss = designSystemCss(state.config?.siteSettings?.design);
   const language = currentLocaleForContent(page);
 
   return `<!doctype html>
@@ -720,6 +791,7 @@ function renderBuilderPreviewDocument(page) {
     <base href="/" />
     <title>${escapeHtml(page.title || "Page preview")}</title>
     <link rel="stylesheet" href="/styles.css" />
+    <style data-site-design-system>${designCss}</style>
     ${customCss ? `<style data-site-custom-css>${customCss}</style>` : ""}
   </head>
   <body>

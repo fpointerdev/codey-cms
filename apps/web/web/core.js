@@ -38,6 +38,15 @@ export const state = {
   builderRedoStack: [],
   builderCanvasView: "edit",
   builderPreviewDevice: "desktop",
+  cmsTemplates: [],
+  visualEditorActive: false,
+  visualEditorSelection: null,
+  visualEditorEditingBlockKey: "",
+  visualEditorHistoryKey: "",
+  visualEditorUndoStack: [],
+  visualEditorRedoStack: [],
+  visualEditorDevice: "desktop",
+  visualEditorLibraryOpen: false,
   adminSidebarCollapsed: false,
   adminSidebarRoute: ""
 };
@@ -785,6 +794,15 @@ export function resetState() {
   state.builderRedoStack = [];
   state.builderCanvasView = "edit";
   state.builderPreviewDevice = "desktop";
+  state.cmsTemplates = [];
+  state.visualEditorActive = false;
+  state.visualEditorSelection = null;
+  state.visualEditorEditingBlockKey = "";
+  state.visualEditorHistoryKey = "";
+  state.visualEditorUndoStack = [];
+  state.visualEditorRedoStack = [];
+  state.visualEditorDevice = "desktop";
+  state.visualEditorLibraryOpen = false;
   state.adminSidebarCollapsed = false;
   state.adminSidebarRoute = "";
 }
@@ -814,6 +832,15 @@ function clearStoredSession() {
   state.token = "";
   state.hasSession = false;
   state.user = null;
+  state.cmsTemplates = [];
+  state.visualEditorActive = false;
+  state.visualEditorSelection = null;
+  state.visualEditorEditingBlockKey = "";
+  state.visualEditorHistoryKey = "";
+  state.visualEditorUndoStack = [];
+  state.visualEditorRedoStack = [];
+  state.visualEditorDevice = "desktop";
+  state.visualEditorLibraryOpen = false;
   if (typeof localStorage !== "undefined") {
     localStorage.removeItem("cms_session_hint");
     localStorage.removeItem("cms_access_token");
@@ -866,6 +893,11 @@ async function refreshSession() {
   } finally {
     if (refreshSessionPromise === pendingRefresh) refreshSessionPromise = null;
   }
+}
+
+export async function restoreSession() {
+  if (state.token) return true;
+  return refreshSession();
 }
 
 function canRefreshRequest(path) {

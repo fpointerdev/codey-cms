@@ -32,6 +32,65 @@ function builderBlockKeys(sections) {
   return new Set(sections.flatMap((section) => (section.blocks || []).map((block) => block.key)));
 }
 
+export function sectionToBuilderInput(section = {}) {
+  return {
+    key: section.key,
+    label: section.label || undefined,
+    sortOrder: section.sortOrder || 0,
+    settings: section.settings || {},
+    blocks: (section.blocks || []).map((block) => ({
+      key: block.key,
+      type: block.type,
+      label: block.label || undefined,
+      value: block.value,
+      settings: block.settings || {},
+      sortOrder: block.sortOrder || 0,
+      editable: block.editable !== false,
+      ...(block.mediaAssetId ? { mediaAssetId: block.mediaAssetId } : {})
+    }))
+  };
+}
+
+export function normalizeBuilderSectionsForSave(sections = []) {
+  return sections.map((section, sectionIndex) =>
+    sectionToBuilderInput({
+      ...section,
+      sortOrder: sectionIndex,
+      blocks: (section.blocks || []).map((block, blockIndex) => ({
+        ...block,
+        sortOrder: blockIndex
+      }))
+    })
+  );
+}
+
+function availableTemplateKey(value, usedKeys) {
+  const key = String(value || "item").slice(0, maxKeyLength);
+  if (!usedKeys.has(key)) {
+    usedKeys.add(key);
+    return key;
+  }
+
+  return uniqueCopyKey(key, usedKeys);
+}
+
+export function instantiateBuilderSectionTemplate(templateSection, sections = []) {
+  if (!templateSection || typeof templateSection !== "object") return null;
+
+  const sectionKeys = new Set(sections.map((section) => section.key));
+  const blockKeys = builderBlockKeys(sections);
+  const section = copyBuilderSections([templateSection])[0];
+  delete section.id;
+  section.key = availableTemplateKey(section.key, sectionKeys);
+  section.blocks = (section.blocks || []).map((block) => {
+    delete block.id;
+    block.key = availableTemplateKey(block.key, blockKeys);
+    return block;
+  });
+
+  return sectionToBuilderInput(section);
+}
+
 export function duplicateBuilderSectionInSections(sections = [], sectionId = "") {
   const nextSections = copyBuilderSections(sections);
   const sectionIndex = nextSections.findIndex((section) => section.id === sectionId);

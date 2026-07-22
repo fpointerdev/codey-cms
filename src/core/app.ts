@@ -41,6 +41,7 @@ import {
   orderProductsByIds
 } from "../modules/products/product-attribute-filter.js";
 import { readShopSettings } from "../modules/products/shop-settings.js";
+import { publicSiteStyleTag } from "../modules/config/site-design.js";
 
 function normalizeOrigin(origin: string | undefined) {
   if (!origin) return undefined;
@@ -84,7 +85,12 @@ function createApiLimiter() {
 }
 
 function createAuthLimiter() {
-  return createRateLimiter("auth_rate_limit_exceeded", "Too many authentication attempts.", config.rateLimits.platform.authMax);
+  return createRateLimiter(
+    "auth_rate_limit_exceeded",
+    "Too many authentication attempts.",
+    config.rateLimits.platform.authMax,
+    { writeOnly: true }
+  );
 }
 
 function createAiLimiter() {
@@ -458,7 +464,9 @@ async function readSiteSeoDefaults() {
   if (!site) {
     return {
       title: config.app.name,
-      description: ""
+      description: "",
+      design: undefined,
+      customCss: ""
     };
   }
 
@@ -487,7 +495,9 @@ async function readSiteSeoDefaults() {
     publicBaseUrl: typeof storedSettings.siteUrl === "string" && storedSettings.siteUrl.trim()
       ? normalizeOrigin(storedSettings.siteUrl)
       : undefined,
-    noindex: storedSettings.searchIndexing === false
+    noindex: storedSettings.searchIndexing === false,
+    design: storedSettings.design,
+    customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }
 
@@ -697,6 +707,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
     ]);
     const route = publicContentRouteFromRequest(req, localization);
     const siteTitle = site.title || config.app.name;
+    const head = publicSiteStyleTag(site.design, site.customCss);
     const requiredModule = route.type === "product" || route.type === "shop" ? "products" : "cms";
     if (!publicModuleEnabled(moduleStates, requiredModule)) {
       return { found: false, content: null, siteTitle };
@@ -724,6 +735,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         found: true,
         siteTitle,
         content: {
+          head,
           brand: escapeHtml(siteTitle),
           body: renderer.renderPostContent({
             ...post,
@@ -754,6 +766,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         found: true,
         siteTitle,
         content: {
+          head,
           brand: escapeHtml(siteTitle),
           body: renderer.renderProductDetailContent(product, {
             locale: route.locale,
@@ -783,6 +796,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         found: true,
         siteTitle,
         content: {
+          head,
           brand: escapeHtml(siteTitle),
           body: renderer.renderShopListingContent({
             products: productPage.products,
@@ -823,6 +837,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
       found: true,
       siteTitle,
       content: {
+        head,
         brand: escapeHtml(siteTitle),
         body: renderer.renderPageContent({
           ...page,

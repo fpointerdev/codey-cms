@@ -4,6 +4,7 @@ import {
   elements,
   escapeHtml,
   formatMoney,
+  hasPermission,
   moduleEnabled,
   normalizePageLayout,
   setStatus,
@@ -23,6 +24,7 @@ import {
   sanitizeInlineCss,
   sanitizeStylesheet
 } from "./custom-css.js";
+import { applyDesignSystem } from "./design-system.js";
 
 export { defaultPage };
 
@@ -207,6 +209,113 @@ function updateHeaderLanguageSwitcher(page) {
 
 export function renderEditorButton(label, attribute, value = "") {
   return `<button type="button" class="front-edit-button" ${attribute}${value ? `="${escapeHtml(value)}"` : ""}>${escapeHtml(label)}</button>`;
+}
+
+function visualIconButton(icon, label, attribute, disabled = false, className = "") {
+  return `<button type="button" class="visual-icon-button${className ? ` ${className}` : ""}" ${attribute} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"${disabled ? " disabled" : ""}><span aria-hidden="true">${icon}</span></button>`;
+}
+
+function renderVisualSectionControls(section, index, sections) {
+  const label = section.label || section.key || `Section ${index + 1}`;
+
+  return `
+    <div class="visual-item-toolbar visual-section-toolbar" role="toolbar" aria-label="Edit ${escapeHtml(label)}" data-editor-ui>
+      <span class="visual-toolbar-label">${escapeHtml(label)}</span>
+      ${visualIconButton("&uarr;", `Move ${label} up`, 'data-visual-move-section="up"', index === 0)}
+      ${visualIconButton("&darr;", `Move ${label} down`, 'data-visual-move-section="down"', index === sections.length - 1)}
+      ${visualIconButton("&#9638;", `Duplicate ${label}`, "data-visual-duplicate-section")}
+      ${hasPermission("create", "cms") ? visualIconButton("+", `Save ${label} as reusable`, "data-visual-save-section") : ""}
+      ${visualIconButton("&#9881;", `Settings for ${label}`, "data-visual-edit-section")}
+      ${visualIconButton("&times;", `Delete ${label}`, "data-visual-delete-section", false, "danger")}
+    </div>
+  `;
+}
+
+function renderVisualBlockControls(block, index, blocks) {
+  const label = block.label || block.key || `Element ${index + 1}`;
+  const editable = block.editable !== false;
+  const directTextEdit = editable && ["TEXT", "RICH_TEXT"].includes(block.type);
+
+  return `
+    <div class="visual-item-toolbar visual-block-toolbar" role="toolbar" aria-label="Edit ${escapeHtml(label)}" data-editor-ui>
+      <span class="visual-toolbar-label">${escapeHtml(label)}</span>
+      <span data-visual-inline-default>
+        ${directTextEdit ? visualIconButton("&#9998;", `Edit ${label} directly`, "data-visual-start-inline") : ""}
+        ${editable ? visualIconButton("&hellip;", `More options for ${label}`, "data-edit-block") : ""}
+        ${visualIconButton("&uarr;", `Move ${label} up`, 'data-visual-move-block="up"', index === 0)}
+        ${visualIconButton("&darr;", `Move ${label} down`, 'data-visual-move-block="down"', index === blocks.length - 1)}
+        ${visualIconButton("&#9638;", `Duplicate ${label}`, "data-visual-duplicate-block")}
+        ${visualIconButton("&times;", `Delete ${label}`, "data-visual-delete-block", false, "danger")}
+      </span>
+      <span class="visual-inline-actions" data-visual-inline-actions hidden>
+        <button type="button" class="visual-inline-save" data-visual-save-inline>Save</button>
+        <button type="button" class="visual-inline-cancel" data-visual-cancel-inline>Cancel</button>
+      </span>
+    </div>
+  `;
+}
+
+function renderVisualEditorToolbar(page) {
+  const reusableSections = (state.cmsTemplates || []).filter((template) => template.type === "SECTION");
+  const availableElements = availableComponentTemplates();
+  const canCreateTemplates = hasPermission("create", "cms");
+  const canDeleteTemplates = hasPermission("delete", "cms");
+  const isPublished = String(page.status || "").toUpperCase() === "PUBLISHED";
+  const locale = page.locale && page.locale !== state.config?.localization?.defaultLocale
+    ? `?locale=${encodeURIComponent(page.locale)}`
+    : "";
+  const builderHref = `/dashboard/pages/${encodeURIComponent(page.slug)}/builder${locale}`;
+
+  return `
+    <div class="visual-editor-bar" role="toolbar" aria-label="Visual page editor" data-editor-ui>
+      <div class="visual-editor-summary">
+        <span class="visual-editor-mark" aria-hidden="true">&#9998;</span>
+        <span><strong>${escapeHtml(page.title)}</strong><small>${escapeHtml(page.status || "DRAFT")}</small></span>
+      </div>
+      <div class="visual-editor-actions">
+        <span class="visual-editor-history" role="group" aria-label="Edit history">
+          ${visualIconButton("&#8630;", "Undo visual change", "data-visual-undo", !(state.visualEditorUndoStack || []).length)}
+          ${visualIconButton("&#8631;", "Redo visual change", "data-visual-redo", !(state.visualEditorRedoStack || []).length)}
+        </span>
+        <details class="visual-command-menu visual-library-menu"${state.visualEditorLibraryOpen ? " open" : ""}>
+          <summary class="visual-command-button" aria-label="Add page content">+ Add${reusableSections.length ? ` (${reusableSections.length})` : ""}</summary>
+          <div class="visual-command-panel visual-library-panel">
+            <div class="visual-add-options">
+              <button type="button" class="visual-add-option" data-add-section-inline><strong>Section</strong></button>
+              <button type="button" class="visual-add-option" data-add-element-inline${availableElements.length ? "" : ' disabled title="No elements are available"'}><strong>Element</strong></button>
+            </div>
+            <div class="visual-library-heading"><strong>Reusable sections</strong></div>
+            ${reusableSections.length
+              ? reusableSections.map((template) => `
+                  <div class="visual-library-item">
+                    <button type="button" data-visual-insert-template="${escapeHtml(template.id)}"><strong>${escapeHtml(template.name)}</strong><span>${escapeHtml(template.description || "Reusable section")}</span></button>
+                    ${canDeleteTemplates ? visualIconButton("&times;", `Delete ${template.name}`, `data-visual-delete-template="${escapeHtml(template.id)}"`, false, "danger") : ""}
+                  </div>
+                `).join("")
+              : '<p class="visual-library-empty">No reusable sections saved.</p>'}
+          </div>
+        </details>
+        ${isPublished
+          ? '<span class="visual-publish-status" role="status" aria-label="Page is published"><span aria-hidden="true">&#10003;</span> Live</span>'
+          : '<button type="button" class="visual-command-button visual-publish-button" data-publish-inline>Publish</button>'}
+        <details class="visual-command-menu visual-more-menu">
+          <summary class="visual-command-button" aria-label="More page editing options">More</summary>
+          <div class="visual-command-panel visual-more-panel">
+            <div class="visual-more-preview">
+              <span>Preview</span>
+              <span class="visual-device-switch" role="group" aria-label="Preview device">
+                ${[["desktop", "Desktop"], ["tablet", "Tablet"], ["mobile", "Mobile"]].map(([device, label]) => `<button type="button" class="visual-device-button${state.visualEditorDevice === device ? " active" : ""}" data-visual-device="${device}" aria-label="${label}" title="${label}" aria-pressed="${state.visualEditorDevice === device ? "true" : "false"}">${label.slice(0, 1)}</button>`).join("")}
+              </span>
+            </div>
+            <button type="button" class="visual-more-action" data-edit-page-inline>Page settings</button>
+            ${canCreateTemplates ? '<button type="button" class="visual-more-action" data-visual-save-page-template>Save as page template</button>' : ""}
+            <a class="visual-more-action" href="${escapeHtml(builderHref)}">Advanced builder</a>
+          </div>
+        </details>
+        <button type="button" class="visual-command-button visual-editor-done" data-exit-visual-editor>Done</button>
+      </div>
+    </div>
+  `;
 }
 
 export function renderMenuItems(items, canEdit = false) {
@@ -943,12 +1052,12 @@ export function renderBlock(block) {
             (slug) => `
               <div class="product-list-item">
                 <a href="${pageHref(`product/${slug}`)}">${escapeHtml(slug)}</a>
-                ${state.user && moduleEnabled("products") ? renderEditorButton("Edit Product", "data-edit-product", slug) : ""}
+                ${state.visualEditorActive && state.user && moduleEnabled("products") && hasPermission("update", "products") ? renderEditorButton("Edit Product", "data-edit-product", slug) : ""}
               </div>
             `
           )
           .join("")}
-        ${state.user && moduleEnabled("products") ? renderEditorButton("+ Product", "data-add-product-inline") : ""}
+        ${state.visualEditorActive && state.user && moduleEnabled("products") && hasPermission("create", "products") ? renderEditorButton("+ Product", "data-add-product-inline") : ""}
       </div>
     `;
   }
@@ -968,16 +1077,17 @@ export function renderSections(page, options = {}) {
     <div class="page-sections page-layout-${escapeHtml(layout)}">
       ${page.sections
         .map(
-          (section) => `
-            <section class="${escapeHtml(sectionClassName(section))}" data-section-id="${escapeHtml(section.id)}" data-section-key="${escapeHtml(section.key || section.id)}"${advancedIdAttribute(section.settings || {})}${sectionStyleAttribute(section)}>
+          (section, sectionIndex, sections) => `
+            <section class="${escapeHtml(sectionClassName(section))}${canEdit && state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? " visual-selected" : ""}" data-section-id="${escapeHtml(section.id)}" data-section-key="${escapeHtml(section.key || section.id)}"${canEdit ? ` data-visual-section tabindex="0" role="group" aria-label="${escapeHtml(section.label || section.key || `Section ${sectionIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? "true" : "false"}"` : ""}${advancedIdAttribute(section.settings || {})}${sectionStyleAttribute(section)}>
+              ${canEdit ? renderVisualSectionControls(section, sectionIndex, sections) : ""}
               ${renderSectionDecoration(section)}
               ${section.label ? `<h2 class="section-label">${escapeHtml(section.label)}</h2>` : ""}
               ${section.blocks
                 .map(
-                  (block) => `
-                    <div class="${escapeHtml(blockClassName(block))}" data-block-key="${escapeHtml(block.key)}" data-editable="${block.editable}"${advancedIdAttribute(block.settings || {})}${advancedStyleAttribute(block.settings || {})}>
-                      ${canEdit && block.editable ? '<button type="button" class="block-edit" data-edit-block>Edit</button>' : ""}
-                      ${renderBlock(block)}
+                  (block, blockIndex, blocks) => `
+                    <div class="${escapeHtml(blockClassName(block))}${canEdit && state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? " visual-selected" : ""}" data-block-key="${escapeHtml(block.key)}" data-editable="${block.editable}"${canEdit ? ` data-visual-block tabindex="0" role="group" aria-label="${escapeHtml(block.label || block.key || `Element ${blockIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? "true" : "false"}"` : ""}${advancedIdAttribute(block.settings || {})}${advancedStyleAttribute(block.settings || {})}>
+                      ${canEdit ? renderVisualBlockControls(block, blockIndex, blocks) : ""}
+                      ${canEdit ? `<div data-visual-edit-surface>${renderBlock(block)}</div>` : renderBlock(block)}
                     </div>
                   `
                 )
@@ -1242,9 +1352,27 @@ export function renderComponentPalette() {
 }
 
 export function renderPage(page) {
-  const canEditCms = Boolean(state.user) && moduleEnabled("cms");
-  const canEditProducts = Boolean(state.user) && moduleEnabled("products");
+  const visualEditorActive = Boolean(state.visualEditorActive && state.user && hasPermission("update", "cms"));
+  const canEditCms = visualEditorActive && moduleEnabled("cms");
+  const canEditProducts = visualEditorActive && moduleEnabled("products") && hasPermission("update", "products");
+  const currentLibrary = elements.page?.querySelector?.(".visual-library-menu");
+  const historyKey = `${page.locale || currentLocale()}:${page.slug || ""}`;
 
+  if (currentLibrary && state.visualEditorHistoryKey === historyKey) {
+    state.visualEditorLibraryOpen = currentLibrary.open;
+  }
+
+  if (state.visualEditorHistoryKey !== historyKey) {
+    state.visualEditorHistoryKey = historyKey;
+    state.visualEditorUndoStack = [];
+    state.visualEditorRedoStack = [];
+    state.visualEditorSelection = null;
+    state.visualEditorEditingBlockKey = "";
+    state.visualEditorLibraryOpen = false;
+  }
+  if (!visualEditorActive) state.visualEditorLibraryOpen = false;
+
+  applyDesignSystem(state.config?.siteSettings?.design);
   applySiteCustomCss();
   updatePageSeoLinks(page);
   document.title = page.metaTitle || page.title;
@@ -1253,25 +1381,18 @@ export function renderPage(page) {
   elements.brand.href = "/";
   updateHeaderLanguageSwitcher(page);
   elements.page.innerHTML = `
-    ${canEditCms || canEditProducts
-      ? `<div class="front-editor-panel">
-          ${canEditCms ? renderEditorButton("Edit Page", "data-edit-page-inline") : ""}
-          ${canEditCms ? renderEditorButton("+ Text Section", "data-add-section-inline") : ""}
-          ${canEditCms ? renderEditorButton("+ Element", "data-add-element-inline") : ""}
-          ${canEditCms ? renderEditorButton("+ Article", "data-add-article-inline") : ""}
-          ${canEditProducts ? renderEditorButton("+ Product", "data-add-product-inline") : ""}
-          ${canEditCms ? renderEditorButton("Publish", "data-publish-inline") : ""}
-        </div>`
-      : ""}
+    ${canEditCms || canEditProducts ? renderVisualEditorToolbar(page) : ""}
+    ${state.user && moduleEnabled("cms") && hasPermission("update", "cms") && !visualEditorActive ? '<button type="button" class="visual-editor-entry" data-enter-visual-editor><span aria-hidden="true">&#9998;</span> Edit page</button>' : ""}
     ${renderPageContent(page, { canEdit: canEditCms })}
   `;
   elements.page.removeAttribute("data-server-rendered");
   enhanceStructuredTabs(elements.page);
-  elements.footer.innerHTML = renderFooter(page, Boolean(state.user));
+  elements.footer.innerHTML = renderFooter(page, canEditCms);
 
   document.body.classList.remove("auth-enabled", "dashboard-enabled");
-  document.body.classList.toggle("editor-enabled", Boolean(state.user));
-  setStatus(state.user ? `${page.status} preview as ${state.user.email}` : "");
+  document.body.classList.toggle("editor-enabled", visualEditorActive);
+  document.body.dataset.visualDevice = visualEditorActive ? state.visualEditorDevice : "desktop";
+  setStatus(visualEditorActive ? `Editing ${page.title}` : "");
 }
 
 export function renderPostContent(post) {
@@ -1286,6 +1407,7 @@ export function renderPostContent(post) {
 }
 
 export function renderPost(post) {
+  applyDesignSystem(state.config?.siteSettings?.design);
   applySiteCustomCss();
   document.title = post.metaTitle || post.title;
   if (document.documentElement) document.documentElement.lang = post.locale || currentLocale();
@@ -1293,10 +1415,10 @@ export function renderPost(post) {
   elements.brand.href = "/";
   elements.page.innerHTML = renderPostContent(post);
   elements.page.removeAttribute("data-server-rendered");
-  elements.footer.innerHTML = renderFooter({ title: post.title }, Boolean(state.user));
+  elements.footer.innerHTML = renderFooter({ title: post.title }, false);
 
   document.body.classList.remove("auth-enabled", "dashboard-enabled");
-  document.body.classList.toggle("editor-enabled", Boolean(state.user));
+  document.body.classList.remove("editor-enabled");
   setStatus(state.user ? `${post.status} post preview as ${state.user.email}` : "");
 }
 

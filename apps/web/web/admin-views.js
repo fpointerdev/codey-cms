@@ -19,6 +19,11 @@ import {
   normalizeShopSettings,
   shopLayoutOptions
 } from "./shop-config.js";
+import {
+  designSystemDeclarations,
+  designSystemPresets,
+  normalizeDesignSystem
+} from "./design-system.js";
 
 function moduleAvailableInRuntime(config, moduleId) {
   if (moduleId === "localization") return config.features?.cms !== false;
@@ -1446,6 +1451,148 @@ function renderLocaleLanguageOptions() {
   `;
 }
 
+function designSelectOptions(options, selected) {
+  return options
+    .map(([value, label]) => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+}
+
+function renderDesignColor(name, label, value) {
+  const inputId = `design-color-${name.replace(/[^a-z0-9]+/gi, "-")}`;
+
+  return `
+    <div class="design-color-control">
+      <label for="${escapeHtml(inputId)}"><span>${escapeHtml(label)}</span></label>
+      <span class="design-color-input">
+        <input id="${escapeHtml(inputId)}" type="color" name="${escapeHtml(name)}" value="${escapeHtml(value)}" aria-label="${escapeHtml(label)} color picker" />
+        <input type="text" value="${escapeHtml(value.toUpperCase())}" data-design-color-text-for="${escapeHtml(name)}" aria-label="${escapeHtml(label)} hex value" pattern="#?[0-9A-Fa-f]{6}" maxlength="7" autocomplete="off" spellcheck="false" />
+      </span>
+    </div>
+  `;
+}
+
+function renderDesignRange(name, label, value, min, max, step, unit) {
+  return `
+    <label class="design-range-control">
+      <span>${escapeHtml(label)} <output data-design-value-for="${escapeHtml(name)}" data-design-unit="${escapeHtml(unit)}">${escapeHtml(value)}${escapeHtml(unit)}</output></span>
+      <input type="range" name="${escapeHtml(name)}" value="${escapeHtml(value)}" min="${min}" max="${max}" step="${step}" />
+    </label>
+  `;
+}
+
+function renderDesignSystemEditor(settings) {
+  const design = normalizeDesignSystem(settings.design);
+  const fonts = ["Inter", "Arial", "Georgia", "Verdana", "Trebuchet MS"].map((font) => [font, font]);
+  const presetLabels = { clean: "Clean", editorial: "Editorial", bold: "Bold", soft: "Soft" };
+  const customCssStatus = String(settings.customCss || "").trim() ? "Custom styles" : "Not set";
+
+  return `
+    <div class="design-system-workspace" data-design-workspace>
+      <form class="admin-card settings-form design-system-form" data-site-settings-form data-design-system-form>
+        <input type="hidden" name="design.preset" value="${escapeHtml(design.preset)}" />
+
+        <fieldset class="design-control-group design-preset-group">
+          <legend>Starting style</legend>
+          <div class="design-preset-list" role="group" aria-label="Design presets">
+            ${Object.keys(designSystemPresets)
+              .map((preset) => `
+                <button type="button" class="design-preset${design.preset === preset ? " active" : ""}" data-design-preset="${escapeHtml(preset)}" aria-pressed="${design.preset === preset ? "true" : "false"}">
+                  <span class="design-preset-swatch design-preset-${escapeHtml(preset)}" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <strong>${escapeHtml(presetLabels[preset])}</strong>
+                </button>
+              `)
+              .join("")}
+          </div>
+        </fieldset>
+
+        <fieldset class="design-control-group">
+          <legend>Color roles</legend>
+          <div class="design-color-grid">
+            ${renderDesignColor("design.colors.primary", "Primary", design.colors.primary)}
+            ${renderDesignColor("design.colors.primaryContrast", "On primary", design.colors.primaryContrast)}
+            ${renderDesignColor("design.colors.background", "Page", design.colors.background)}
+            ${renderDesignColor("design.colors.surface", "Surface", design.colors.surface)}
+            ${renderDesignColor("design.colors.text", "Text", design.colors.text)}
+            ${renderDesignColor("design.colors.muted", "Muted text", design.colors.muted)}
+            ${renderDesignColor("design.colors.border", "Borders", design.colors.border)}
+          </div>
+        </fieldset>
+
+        <details class="design-disclosure" data-design-summary="typography">
+          <summary><span>Typography</span><small data-design-summary-value>${escapeHtml(design.typography.headingFont)} + ${escapeHtml(design.typography.bodyFont)}</small></summary>
+          <fieldset class="design-control-group">
+            <legend class="visually-hidden">Typography</legend>
+            <div class="builder-form-grid">
+              <label><span>Heading font</span><select name="design.typography.headingFont">${designSelectOptions(fonts, design.typography.headingFont)}</select></label>
+              <label><span>Body font</span><select name="design.typography.bodyFont">${designSelectOptions(fonts, design.typography.bodyFont)}</select></label>
+              <label><span>Heading weight</span><select name="design.typography.headingWeight">${designSelectOptions([["600", "Semibold"], ["700", "Bold"], ["800", "Extra bold"]], design.typography.headingWeight)}</select></label>
+              <label><span>Type scale</span><select name="design.typography.scale">${designSelectOptions([["compact", "Compact"], ["standard", "Standard"], ["expressive", "Expressive"]], design.typography.scale)}</select></label>
+            </div>
+            ${renderDesignRange("design.typography.baseSize", "Base text size", design.typography.baseSize, 14, 20, 1, "px")}
+          </fieldset>
+        </details>
+
+        <details class="design-disclosure" data-design-summary="layout">
+          <summary><span>Layout and shape</span><small data-design-summary-value>${escapeHtml(design.layout.contentWidth)}px</small></summary>
+          <fieldset class="design-control-group">
+            <legend class="visually-hidden">Layout and shape</legend>
+            ${renderDesignRange("design.layout.contentWidth", "Content width", design.layout.contentWidth, 880, 1440, 20, "px")}
+            ${renderDesignRange("design.layout.sectionSpacing", "Section spacing", design.layout.sectionSpacing, 24, 128, 4, "px")}
+            ${renderDesignRange("design.layout.radius", "Surface radius", design.layout.radius, 0, 24, 1, "px")}
+            <div class="builder-form-grid">
+              <label><span>Surface shadow</span><select name="design.layout.shadow">${designSelectOptions([["none", "None"], ["soft", "Soft"], ["strong", "Strong"]], design.layout.shadow)}</select></label>
+              <label><span>Button style</span><select name="design.buttons.style">${designSelectOptions([["solid", "Solid"], ["outline", "Outline"]], design.buttons.style)}</select></label>
+            </div>
+            ${renderDesignRange("design.buttons.radius", "Button radius", design.buttons.radius, 0, 32, 1, "px")}
+          </fieldset>
+        </details>
+
+        <details class="design-disclosure" data-design-summary="header">
+          <summary><span>Header and footer</span><small data-design-summary-value>${design.header.sticky ? "Sticky header" : "Static header"}</small></summary>
+          <fieldset class="design-control-group">
+            <legend class="visually-hidden">Header and footer</legend>
+            <div class="design-color-grid compact">
+              ${renderDesignColor("design.header.background", "Header", design.header.background)}
+              ${renderDesignColor("design.header.text", "Header text", design.header.text)}
+              ${renderDesignColor("design.footer.background", "Footer", design.footer.background)}
+              ${renderDesignColor("design.footer.text", "Footer text", design.footer.text)}
+            </div>
+            <label class="inline-check"><input type="checkbox" name="design.header.sticky"${design.header.sticky ? " checked" : ""} /><span>Sticky public header</span></label>
+          </fieldset>
+        </details>
+
+        <details class="design-disclosure design-advanced-css" data-design-summary="css">
+          <summary><span>Advanced CSS</span><small data-design-summary-value>${escapeHtml(customCssStatus)}</small></summary>
+          <fieldset class="design-control-group">
+            <legend class="visually-hidden">Advanced CSS</legend>
+            <label>
+              <span>Global CSS</span>
+              <textarea name="customCss" rows="10" spellcheck="false" placeholder=".page-section { scroll-margin-top: 96px; }">${escapeHtml(settings.customCss || "")}</textarea>
+            </label>
+          </fieldset>
+        </details>
+        ${renderFormMessage()}
+        <div class="form-actions"><button type="submit">Save design system</button></div>
+      </form>
+
+      <aside class="design-preview-panel" aria-label="Live design preview">
+        <div class="design-preview-heading"><span>Live preview</span><strong>Public site</strong></div>
+        <div class="design-preview" data-design-preview data-button-style="${escapeHtml(design.buttons.style)}" style="${escapeHtml(designSystemDeclarations(design))}">
+          <header><strong>Northstar</strong><nav><span>Work</span><span>About</span><span>Contact</span></nav></header>
+          <main>
+            <p>Independent studio</p>
+            <h2>Clear ideas, carefully made.</h2>
+            <span class="design-preview-copy">Selected work across identity, digital products, and editorial systems.</span>
+            <button type="button" tabindex="-1">View projects</button>
+            <div class="design-preview-cards"><article><i></i><strong>Field Notes</strong><span>Editorial</span></article><article><i></i><strong>Common Ground</strong><span>Identity</span></article></div>
+          </main>
+          <footer><strong>Northstar Studio</strong><span>2026</span></footer>
+        </div>
+      </aside>
+    </div>
+  `;
+}
+
 export function renderSettingsPage(config) {
   const settings = config.siteSettings || {};
   const email = config.email || {};
@@ -1515,28 +1662,12 @@ export function renderSettingsPage(config) {
                   </select>
                 </label>
               </div>
-              <input type="hidden" name="customCss" value="${escapeHtml(settings.customCss || "")}" />
               ${renderFormMessage()}
               <div class="form-actions"><button type="submit">Save general settings</button></div>
             </form>
           </section>
           <section class="settings-tab-panel settings-tab-panel-style" data-settings-panel="style">
-            <form class="admin-card settings-form" data-site-settings-form>
-              <input type="hidden" name="title" value="${escapeHtml(settings.title || config.app?.name || "Code Epsylon")}" />
-              <input type="hidden" name="description" value="${escapeHtml(settings.description || "")}" />
-              <input type="hidden" name="metaTitle" value="${escapeHtml(settings.metaTitle || settings.title || config.app?.name || "")}" />
-              <input type="hidden" name="metaDescription" value="${escapeHtml(settings.metaDescription || "")}" />
-              <input type="hidden" name="siteUrl" value="${escapeHtml(settings.siteUrl || "")}" />
-              <input type="hidden" name="searchIndexing" value="${settings.searchIndexing === false ? "false" : "true"}" />
-              <input type="hidden" name="sitemapEnabled" value="${settings.sitemapEnabled === false ? "false" : "true"}" />
-              <label>
-                <span>Global CSS</span>
-                <textarea name="customCss" rows="12" spellcheck="false" placeholder=".page-section { scroll-margin-top: 96px; }">${escapeHtml(settings.customCss || "")}</textarea>
-                <small class="field-help">Applies to the public website. Use this for theme-level CSS, not one-off content edits.</small>
-              </label>
-              ${renderFormMessage()}
-              <div class="form-actions"><button type="submit">Save style</button></div>
-            </form>
+            ${renderDesignSystemEditor({ ...settings, title: settings.title || config.app?.name || "Code Epsylon" })}
             <div class="admin-card settings-info-card">
               <div>
                 <p class="section-label">Media Storage</p>

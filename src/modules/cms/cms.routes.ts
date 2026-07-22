@@ -18,6 +18,7 @@ import {
   createCmsCategorySchema,
   createCmsPageSchema,
   createCmsPostSchema,
+  createCmsTemplateSchema,
   createMediaAssetSchema,
   createMenuItemSchema,
   createMenuSchema,
@@ -36,9 +37,12 @@ import {
   revisionParams,
   sectionParams,
   slugParams,
+  templateParams,
+  templateQuerySchema,
   updateCmsCategorySchema,
   updateCmsPageSchema,
   updateCmsPostSchema,
+  updateCmsTemplateSchema,
   updateContentBlockSchema,
   updateMenuItemSchema,
   updateRedirectSchema
@@ -154,6 +158,50 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
       });
 
       return sendSuccess(res, { pages });
+    })
+  );
+
+  router.get(
+    "/templates",
+    requirePermission(context, "read", "cms"),
+    validateRequest({ query: templateQuerySchema }),
+    asyncHandler(async (req, res) => {
+      const templates = await cmsService.listTemplates(req.query.type as "SECTION" | "PAGE" | undefined);
+
+      return sendSuccess(res, { templates });
+    })
+  );
+
+  router.post(
+    "/templates",
+    requirePermission(context, "create", "cms"),
+    validateRequest({ body: createCmsTemplateSchema }),
+    asyncHandler(async (req, res) => {
+      const template = await cmsService.createTemplate(req.body);
+
+      return sendCreated(res, { template });
+    })
+  );
+
+  router.patch(
+    "/templates/:templateId",
+    requirePermission(context, "update", "cms"),
+    validateRequest({ params: templateParams, body: updateCmsTemplateSchema }),
+    asyncHandler(async (req, res) => {
+      const template = await cmsService.updateTemplate(req.params.templateId, req.body);
+
+      return sendSuccess(res, { template });
+    })
+  );
+
+  router.delete(
+    "/templates/:templateId",
+    requirePermission(context, "delete", "cms"),
+    validateRequest({ params: templateParams }),
+    asyncHandler(async (req, res) => {
+      await cmsService.deleteTemplate(req.params.templateId);
+
+      return sendSuccess(res, { deleted: true });
     })
   );
 

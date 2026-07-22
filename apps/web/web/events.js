@@ -1,4 +1,4 @@
-import { availableComponentTemplates, elements, escapeHtml, slugFromTitle, state } from "./core.js";
+import { availableComponentTemplates, elements, escapeHtml, normalizePageLayout, slugFromTitle, state } from "./core.js";
 import { bootstrap } from "./controller.js";
 import {
   addArticle,
@@ -21,6 +21,7 @@ import {
 } from "./content-actions.js";
 import {
   addBuilderContainer,
+  addReusableTemplateToBuilder,
   addSectionPatternToBuilder,
   addTemplateToBuilder,
   addTemplateToBuilderSection,
@@ -32,10 +33,12 @@ import {
   createPostTranslation,
   deleteBuilderBlock,
   deleteBuilderSection,
+  deleteReusableTemplate,
   duplicateBuilderBlock,
   duplicateBuilderSection,
   editBuilderBlock,
   editBuilderSection,
+  editReusableTemplate,
   insertTemplateIntoPost,
   linkExistingPageTranslation,
   linkExistingPostTranslation,
@@ -46,8 +49,11 @@ import {
   openOrCreatePostTranslation,
   reorderBuilderBlock,
   reorderBuilderSection,
+  replaceReusableTemplateFromBuilder,
   redoBuilderChange,
   restorePageRevision,
+  saveBuilderPageTemplate,
+  saveBuilderSectionTemplate,
   savePageBuilderSettings,
   savePostEditor,
   undoBuilderChange
@@ -100,8 +106,40 @@ import {
   handleStructuredTabKeydown
 } from "./structured-tabs.js";
 import { handleSliderClick } from "./slider-runtime.js";
+import { applyDesignPreset, syncDesignColorTextInput, updateDesignSystemPreview } from "./design-system.js";
+import {
+  cancelVisualInlineEdit,
+  deleteVisualBlock,
+  deleteVisualReusableTemplate,
+  deleteVisualSection,
+  duplicateVisualBlock,
+  duplicateVisualSection,
+  editVisualSection,
+  handleVisualEditorKeydown,
+  insertVisualReusableTemplate,
+  moveVisualBlock,
+  moveVisualSection,
+  redoVisualEditorChange,
+  saveVisualInlineEdit,
+  saveVisualPageTemplate,
+  saveVisualSectionTemplate,
+  selectVisualEditorItem,
+  setVisualEditorDevice,
+  startVisualInlineEdit,
+  undoVisualEditorChange
+} from "./visual-editor.js";
 
 const builderDragType = "application/x-codey-builder";
+
+function closeVisualCommandMenus(target) {
+  const activeMenu = target?.closest?.(".visual-command-menu");
+  const activeSummary = target?.closest?.("summary");
+
+  document.querySelectorAll?.(".visual-command-menu[open]").forEach((menu) => {
+    const keepOpen = menu === activeMenu && activeSummary?.parentElement === menu;
+    if (!keepOpen) menu.removeAttribute("open");
+  });
+}
 
 function isAdminPath(pathname) {
   return pathname === "/cy-admin" || pathname.startsWith("/dashboard") || pathname.startsWith("/auth/");
@@ -129,6 +167,7 @@ function handlePublicPageLink(event) {
 
   const currentHref = window.location.href || `${window.location.origin || "http://localhost"}${window.location.pathname || "/"}${window.location.search || ""}`;
   const url = new URL(link.getAttribute("href"), currentHref);
+  if (state.visualEditorActive && !isAdminPath(url.pathname)) url.searchParams.set("edit", "1");
   event.preventDefault();
   window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
   void bootstrap();
@@ -269,6 +308,15 @@ function bindDashboardClick(event) {
 
 function bindSliderClick(event) {
   return handleSliderClick(event);
+}
+
+function bindDesignSystemClick(event) {
+  const preset = event.target.closest("[data-design-preset]");
+  if (!preset?.dataset.designPreset) return false;
+
+  const form = preset.closest("[data-design-system-form]");
+  applyDesignPreset(form, preset.dataset.designPreset, state.config?.siteSettings?.design);
+  return true;
 }
 
 function applyBuilderLibraryFilters(rail) {
@@ -493,6 +541,40 @@ function bindBuilderClick(event) {
     return true;
   }
 
+  const reusableTemplateButton = event.target.closest("[data-builder-reusable-template]");
+  if (reusableTemplateButton?.dataset.builderReusableTemplate) {
+    event.preventDefault();
+    void addReusableTemplateToBuilder(reusableTemplateButton.dataset.builderReusableTemplate);
+    return true;
+  }
+
+  const replaceReusableButton = event.target.closest("[data-replace-reusable-template]");
+  if (replaceReusableButton?.dataset.replaceReusableTemplate) {
+    event.preventDefault();
+    void replaceReusableTemplateFromBuilder(replaceReusableButton.dataset.replaceReusableTemplate);
+    return true;
+  }
+
+  const editReusableButton = event.target.closest("[data-edit-reusable-template]");
+  if (editReusableButton?.dataset.editReusableTemplate) {
+    event.preventDefault();
+    void editReusableTemplate(editReusableButton.dataset.editReusableTemplate);
+    return true;
+  }
+
+  const deleteReusableButton = event.target.closest("[data-delete-reusable-template]");
+  if (deleteReusableButton?.dataset.deleteReusableTemplate) {
+    event.preventDefault();
+    void deleteReusableTemplate(deleteReusableButton.dataset.deleteReusableTemplate);
+    return true;
+  }
+
+  if (event.target.closest("[data-save-builder-page-template]")) {
+    event.preventDefault();
+    void saveBuilderPageTemplate();
+    return true;
+  }
+
   const sectionPatternButton = event.target.closest("[data-builder-section-pattern]");
   if (sectionPatternButton?.dataset.builderSectionPattern) {
     event.preventDefault();
@@ -571,6 +653,14 @@ function bindBuilderClick(event) {
   if (editableSection?.dataset.builderSection) {
     event.preventDefault();
     void editBuilderSection(editableSection.dataset.builderSection);
+    return true;
+  }
+
+  const saveSectionTemplateButton = event.target.closest("[data-save-builder-section-template]");
+  const reusableSection = saveSectionTemplateButton?.closest("[data-builder-section]");
+  if (reusableSection?.dataset.builderSection) {
+    event.preventDefault();
+    void saveBuilderSectionTemplate(reusableSection.dataset.builderSection);
     return true;
   }
 
@@ -861,6 +951,103 @@ function bindAdminClick(event) {
 }
 
 function bindInlineEditorClick(event) {
+  if (event.target.closest("[data-enter-visual-editor]")) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("edit", "1");
+    state.visualEditorActive = true;
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    void bootstrap();
+    return true;
+  }
+
+  if (event.target.closest("[data-exit-visual-editor]")) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("edit");
+    state.visualEditorActive = false;
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    void bootstrap();
+    return true;
+  }
+
+  const visualSection = event.target.closest("[data-visual-section]");
+  const visualBlock = event.target.closest("[data-visual-block]");
+  const sectionId = visualSection?.dataset.sectionId;
+  const blockKey = visualBlock?.dataset.blockKey;
+
+  if (event.target.closest("[data-visual-start-inline]") && blockKey) {
+    startVisualInlineEdit(blockKey);
+    return true;
+  }
+  if (event.target.closest("[data-visual-save-inline]")) {
+    void saveVisualInlineEdit(blockKey);
+    return true;
+  }
+  if (event.target.closest("[data-visual-cancel-inline]")) {
+    cancelVisualInlineEdit();
+    return true;
+  }
+  const moveSectionButton = event.target.closest("[data-visual-move-section]");
+  if (moveSectionButton && sectionId) {
+    void moveVisualSection(sectionId, moveSectionButton.dataset.visualMoveSection);
+    return true;
+  }
+  if (event.target.closest("[data-visual-duplicate-section]") && sectionId) {
+    void duplicateVisualSection(sectionId);
+    return true;
+  }
+  if (event.target.closest("[data-visual-edit-section]") && sectionId) {
+    void editVisualSection(sectionId);
+    return true;
+  }
+  if (event.target.closest("[data-visual-save-section]") && sectionId) {
+    void saveVisualSectionTemplate(sectionId);
+    return true;
+  }
+  if (event.target.closest("[data-visual-delete-section]") && sectionId) {
+    void deleteVisualSection(sectionId);
+    return true;
+  }
+  const moveBlockButton = event.target.closest("[data-visual-move-block]");
+  if (moveBlockButton && blockKey) {
+    void moveVisualBlock(blockKey, moveBlockButton.dataset.visualMoveBlock);
+    return true;
+  }
+  if (event.target.closest("[data-visual-duplicate-block]") && blockKey) {
+    void duplicateVisualBlock(blockKey);
+    return true;
+  }
+  if (event.target.closest("[data-visual-delete-block]") && blockKey) {
+    void deleteVisualBlock(blockKey);
+    return true;
+  }
+  if (event.target.closest("[data-visual-undo]")) {
+    void undoVisualEditorChange();
+    return true;
+  }
+  if (event.target.closest("[data-visual-redo]")) {
+    void redoVisualEditorChange();
+    return true;
+  }
+  const deviceButton = event.target.closest("button[data-visual-device]");
+  if (deviceButton?.dataset.visualDevice) {
+    setVisualEditorDevice(deviceButton.dataset.visualDevice);
+    return true;
+  }
+  const insertTemplateButton = event.target.closest("[data-visual-insert-template]");
+  if (insertTemplateButton?.dataset.visualInsertTemplate) {
+    void insertVisualReusableTemplate(insertTemplateButton.dataset.visualInsertTemplate);
+    return true;
+  }
+  const deleteTemplateButton = event.target.closest("[data-visual-delete-template]");
+  if (deleteTemplateButton?.dataset.visualDeleteTemplate) {
+    void deleteVisualReusableTemplate(deleteTemplateButton.dataset.visualDeleteTemplate);
+    return true;
+  }
+  if (event.target.closest("[data-visual-save-page-template]")) {
+    void saveVisualPageTemplate();
+    return true;
+  }
+
   const block = event.target.closest("[data-edit-block]")?.closest("[data-block-key]");
   if (block?.dataset.blockKey) {
     void editBlock(block.dataset.blockKey);
@@ -879,20 +1066,25 @@ function bindInlineEditorClick(event) {
 
   if (event.target.closest("[data-add-element-inline]")) {
     const templates = availableComponentTemplates();
+    const defaultTemplate = templates.find((template) => template.id === "text-layout") || templates[0];
+    if (!defaultTemplate) {
+      setStatus("No elements are available for this site.", true);
+      return true;
+    }
 
     void getModalFormHandler()({
-      label: "Page builder",
-      title: "Choose element",
+      label: "Add element",
+      title: "Add an element",
       fields: [
         {
           name: "templateId",
-          label: "Element type",
+          label: "Element",
           type: "select",
-          value: templates[0]?.id || "",
+          value: defaultTemplate.id,
           options: templates.map((template) => ({ value: template.id, label: template.label }))
         }
       ],
-      submitLabel: "Continue"
+      submitLabel: "Add element"
     }).then((values) => {
       if (values?.templateId) void addElementTemplate(values.templateId);
     });
@@ -926,6 +1118,12 @@ function bindInlineEditorClick(event) {
     return true;
   }
 
+  const visualItem = event.target.closest("[data-visual-block], [data-visual-section]");
+  if (visualItem && !event.target.closest("a, button, input, textarea, select, [contenteditable='true']")) {
+    selectVisualEditorItem(visualItem);
+    return true;
+  }
+
   return false;
 }
 
@@ -938,6 +1136,7 @@ function bindClickEvents() {
 
     if (bindDashboardClick(event)) return;
     if (bindSliderClick(event)) return;
+    if (bindDesignSystemClick(event)) return;
     if (bindBuilderClick(event)) return;
     if (bindAdminClick(event)) return;
     if (bindInlineEditorClick(event)) return;
@@ -1027,6 +1226,23 @@ function bindFilePreviewEvents() {
 
 function bindBuilderControlEvents() {
   elements.page.addEventListener("change", (event) => {
+    const pageTemplateSelect = event.target.closest("[data-page-template-select]");
+    if (pageTemplateSelect) {
+      const template = (state.cmsTemplates || []).find((item) => item.id === pageTemplateSelect.value && item.type === "PAGE");
+      const form = pageTemplateSelect.closest("form");
+      const layout = form?.elements?.namedItem?.("layout");
+      const excerpt = form?.elements?.namedItem?.("excerpt");
+      if (!template) {
+        if (layout) layout.value = normalizePageLayout(pageTemplateSelect.dataset.pageTemplateDefaultLayout || "full-width");
+        if (excerpt) excerpt.value = pageTemplateSelect.dataset.pageTemplateDefaultExcerpt || "";
+        return;
+      }
+
+      if (layout) layout.value = normalizePageLayout(template.content?.content?.layout);
+      if (excerpt) excerpt.value = template.content?.excerpt || "";
+      return;
+    }
+
     const containerSelect = event.target.closest("[data-move-builder-block-section]");
     if (!containerSelect?.value || !containerSelect.dataset.moveBuilderBlockSection) return;
 
@@ -1058,10 +1274,32 @@ function bindShopControlEvents() {
   });
 }
 
+function bindDesignSystemEvents() {
+  const update = (event) => {
+    const form = event.target.closest?.("[data-design-system-form]");
+    if (!form) return;
+
+    const colorTextInput = event.target.closest?.("[data-design-color-text-for]");
+    if (colorTextInput && !syncDesignColorTextInput(form, colorTextInput, { restoreInvalid: event.type === "change" })) return;
+    updateDesignSystemPreview(form, state.config?.siteSettings?.design);
+  };
+
+  elements.page.addEventListener("input", update);
+  elements.page.addEventListener("change", update);
+  elements.page.addEventListener("focusout", (event) => {
+    const input = event.target.closest?.("[data-design-color-text-for]");
+    const form = input?.closest?.("[data-design-system-form]");
+    if (form && input?.getAttribute("aria-invalid") === "true") {
+      syncDesignColorTextInput(form, input, { restoreInvalid: true });
+    }
+  });
+}
+
 function bindBuilderKeyboardEvents() {
   if (typeof window.addEventListener !== "function") return;
 
   window.addEventListener("keydown", (event) => {
+    if (handleVisualEditorKeydown(event)) return;
     if (!document.querySelector("[data-page-builder]")) return;
     if (!event.metaKey && !event.ctrlKey) return;
 
@@ -1077,6 +1315,13 @@ function bindBuilderKeyboardEvents() {
       event.preventDefault();
       void redoBuilderChange();
     }
+  });
+}
+
+function bindVisualEditorFocusEvents() {
+  elements.page.addEventListener("focusin", (event) => {
+    const item = event.target.closest?.("[data-visual-block], [data-visual-section]");
+    if (item && !event.target.closest?.("[data-editor-ui]")) selectVisualEditorItem(item);
   });
 }
 
@@ -1107,6 +1352,17 @@ function bindDragEvents() {
       event.dataTransfer.setData("text/plain", builderTemplate.dataset.builderTemplate);
       event.dataTransfer.effectAllowed = "copy";
       builderTemplate.classList.add("dragging");
+      return;
+    }
+
+    const reusableTemplate = event.target.closest("[data-builder-reusable-drag]");
+    if (reusableTemplate?.dataset.builderReusableDrag && event.dataTransfer) {
+      event.dataTransfer.setData(builderDragType, JSON.stringify({
+        type: "reusable-template",
+        templateId: reusableTemplate.dataset.builderReusableDrag
+      }));
+      event.dataTransfer.effectAllowed = "copy";
+      reusableTemplate.classList.add("dragging");
       return;
     }
 
@@ -1185,6 +1441,14 @@ function bindDragEvents() {
         }
       }
 
+      if (payload?.type === "reusable-template") {
+        const canvas = event.target.closest("[data-builder-canvas-dropzone]");
+        if (canvas) {
+          event.preventDefault();
+          void addReusableTemplateToBuilder(payload.templateId);
+        }
+      }
+
       document.querySelectorAll?.(".drag-over, .dragging").forEach((element) => {
         element.classList.remove("drag-over", "dragging");
       });
@@ -1253,9 +1517,15 @@ export function bindEvents() {
   bindStructuredTabEvents();
   bindBuilderControlEvents();
   bindShopControlEvents();
+  bindDesignSystemEvents();
+  bindVisualEditorFocusEvents();
   bindBuilderKeyboardEvents();
   bindDragEvents();
   bindMenuAndFooterEvents();
+
+  document.addEventListener?.("click", (event) => {
+    closeVisualCommandMenus(event.target);
+  });
 
   if (typeof window.addEventListener === "function") {
     window.addEventListener("popstate", () => {

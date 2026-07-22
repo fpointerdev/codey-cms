@@ -362,13 +362,21 @@ test("browser sessions restore through cookies without persisting credentials", 
     }
   });
   const { api, state } = await import("../apps/web/web/core.js");
+  const { loadUser } = await import("../apps/web/web/session-actions.js");
 
   assert.equal(values.has("cms_access_token"), false);
   assert.equal(values.has("cms_refresh_token"), false);
+  assert.equal((await loadUser())?.id, "user-1");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.url.endsWith("/auth/refresh"), true);
+  assert.equal(requests[0]?.body, "{}");
+
+  state.token = "expired-access";
   assert.equal((await api("/auth/me")).user.id, "user-1");
-  assert.equal(requests.length, 3);
-  assert.equal(requests[1]?.body, "{}");
-  assert.equal(requests[2]?.authorization, "Bearer memory-access");
+  assert.equal(requests.length, 4);
+  assert.equal(requests[1]?.authorization, "Bearer expired-access");
+  assert.equal(requests[2]?.body, "{}");
+  assert.equal(requests[3]?.authorization, "Bearer memory-access");
   assert.equal(state.token, "memory-access");
   assert.equal(values.has("cms_access_token"), false);
   assert.equal(values.has("cms_refresh_token"), false);

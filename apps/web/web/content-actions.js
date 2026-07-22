@@ -27,6 +27,7 @@ import {
   animationEffectOptions,
   sanitizeAnimationSettings
 } from "./custom-css.js";
+import { designSystemFromForm } from "./design-system.js";
 
 export function optionalFormValue(formData, key) {
   const value = String(formData.get(key) || "").trim();
@@ -37,9 +38,10 @@ export async function loadMenu() {
   try {
     const { menu } = await api(`/cms/menus/main?locale=${encodeURIComponent(currentLocale())}`);
     state.menu = menu;
+    const canEditMenu = Boolean(state.user && state.visualEditorActive);
     elements.menu.innerHTML = `
-      ${renderMenuItems(menu.items || [], Boolean(state.user))}
-      ${state.user ? '<button type="button" class="front-edit-button" data-add-menu-item>+ Menu</button>' : ""}
+      ${renderMenuItems(menu.items || [], canEditMenu)}
+      ${canEditMenu ? '<button type="button" class="front-edit-button" data-add-menu-item>+ Menu</button>' : ""}
     `;
   } catch {
     state.menu = null;
@@ -701,18 +703,6 @@ const containerLayoutOptions = [
   { value: "full-bleed", label: "Full width", description: "Wide media, hero, or immersive sections." }
 ];
 
-const sectionGapOptions = [
-  { value: "sm", label: "Tight", description: "Compact editorial rhythm." },
-  { value: "md", label: "Standard", description: "Balanced default spacing." },
-  { value: "lg", label: "Wide", description: "Premium section breathing room." },
-  { value: "xl", label: "Extra wide", description: "Hero and gallery scale." }
-];
-
-const mobileLayoutOptions = [
-  { value: "one-column", label: "1 column", description: "Best for content and forms." },
-  { value: "two-column", label: "2 columns", description: "Use only for short cards." }
-];
-
 export async function saveSiteSettings(form) {
   const formData = new FormData(form);
   const current = state.config?.siteSettings || {};
@@ -741,6 +731,7 @@ export async function saveSiteSettings(form) {
         siteUrl: settingValue("siteUrl"),
         searchIndexing: settingBoolean("searchIndexing"),
         sitemapEnabled: settingBoolean("sitemapEnabled"),
+        design: designSystemFromForm(form, current.design),
         customCss: settingValue("customCss")
       })
     });
@@ -1065,47 +1056,34 @@ export async function addSection() {
 
   try {
     const values = await getModalFormHandler()({
-      label: "Page builder",
-      title: "Choose container layout",
-      description: "Pick the grid first. After it appears on the page, add elements into it.",
+      label: "Add section",
+      title: "Choose a section layout",
       fields: [
-        { name: "label", label: "Container label", value: `Section ${state.page.sections.length + 1}` },
-        { name: "layout", label: "Desktop grid", type: "choice", value: "one-column", options: containerLayoutOptions },
-        { name: "gap", label: "Column gap", type: "choice", value: "md", options: sectionGapOptions, compact: true },
-        { name: "mobileLayout", label: "Mobile grid", type: "choice", value: "one-column", options: mobileLayoutOptions, compact: true },
-        {
-          name: "customCss",
-          label: "Container CSS",
-          type: "textarea",
-          rows: 3,
-          value: "",
-          required: false,
-          help: "Optional CSS declarations for this section."
-        }
+        { name: "layout", label: "Layout", type: "choice", value: "one-column", options: containerLayoutOptions }
       ],
-      submitLabel: "Add container"
+      submitLabel: "Add section"
     });
     if (!values) return;
 
     const key = `section-${Date.now()}`;
+    const label = `Section ${state.page.sections.length + 1}`;
 
-    const { page } = await api(`/cms/pages/${state.page.slug}/sections?${localeQuery()}`, {
+    const { page } = await api(`/cms/pages/${encodeURIComponent(state.page.slug)}/sections?${localeQuery()}`, {
       method: "POST",
       body: JSON.stringify({
         key,
-        label: values.label,
+        label,
         sortOrder: state.page.sections.length,
         settings: {
           layout: values.layout,
-          gap: values.gap || "md",
+          gap: "md",
           responsive: {
             mobile: {
-              layout: values.mobileLayout || "one-column",
+              layout: "one-column",
               spacing: "sm"
             }
           },
-          template: "content",
-          customCss: String(values.customCss || "").trim()
+          template: "content"
         },
         blocks: []
       })
@@ -1113,9 +1091,9 @@ export async function addSection() {
 
     state.page = page;
     renderPage(page);
-    setStatus("Container added.");
+    setStatus("Section added.");
   } catch (error) {
-    setStatus(error.message || "Unable to add container.", true);
+    setStatus(error.message || "Unable to add section.", true);
   }
 }
 
@@ -1185,10 +1163,16 @@ export async function addElementTemplate(templateId) {
 export async function publishPage() {
   if (!state.page) return;
 
-  const { page } = await api(`/cms/pages/${state.page.slug}/publish?${localeQuery()}`, {
-    method: "POST",
-    body: JSON.stringify({})
-  });
-  state.page = page;
-  renderPage(page);
+  try {
+    setStatus("Publishing page...");
+    const { page } = await api(`/cms/pages/${encodeURIComponent(state.page.slug)}/publish?${localeQuery()}`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    state.page = page;
+    renderPage(page);
+    setStatus("Page published.");
+  } catch (error) {
+    setStatus(error.message || "Unable to publish the page.", true);
+  }
 }

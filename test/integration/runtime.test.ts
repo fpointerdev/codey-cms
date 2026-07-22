@@ -36,6 +36,11 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
   const adminPassword = process.env.INTEGRATION_ADMIN_PASSWORD || "IntegrationOwner123!";
   let uploadedAssetId: string | undefined;
   let managedUserId: string | undefined;
+  let reusableTemplateId: string | undefined;
+  const existingSiteSetting = await prisma.moduleSetting.findFirst({
+    where: { moduleId: "config", key: "site", site: { slug: "default" } },
+    select: { id: true, value: true }
+  });
 
   async function request(pathname: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers);
@@ -214,11 +219,83 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     });
     assert.equal(createPage.status, 201, JSON.stringify(await responseJson(createPage)));
 
+    const createTemplate = await request("/api/v1/cms/templates", {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({
+        name: `Integration hero ${runId}`,
+        description: "Shared by integration coverage.",
+        type: "SECTION",
+        content: {
+          section: {
+            key: "integration-reusable-hero",
+            label: "Reusable hero",
+            blocks: [{
+              key: "integration-reusable-heading",
+              type: "RICH_TEXT",
+              value: "<h2>Reusable integration heading</h2>"
+            }]
+          }
+        }
+      })
+    });
+    const createTemplateBody = await responseJson(createTemplate);
+    assert.equal(createTemplate.status, 201, JSON.stringify(createTemplateBody));
+    reusableTemplateId = createTemplateBody.data?.template.id;
+    assert.equal(typeof reusableTemplateId, "string");
+
+    const unauthorizedTemplates = await request("/api/v1/cms/templates");
+    assert.equal(unauthorizedTemplates.status, 401, JSON.stringify(await responseJson(unauthorizedTemplates)));
+
+    const updateTemplate = await request(`/api/v1/cms/templates/${reusableTemplateId}`, {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({ description: "Updated reusable section." })
+    });
+    const updateTemplateBody = await responseJson(updateTemplate);
+    assert.equal(updateTemplate.status, 200, JSON.stringify(updateTemplateBody));
+    assert.equal(updateTemplateBody.data?.template.description, "Updated reusable section.");
+
+    const templates = await request("/api/v1/cms/templates?type=SECTION", { headers: authorization });
+    const templatesBody = await responseJson(templates);
+    assert.equal(templates.status, 200);
+    assert.ok(templatesBody.data?.templates.some((template: { id: string }) => template.id === reusableTemplateId));
+
+    const configResponse = await request("/api/v1/config");
+    const configBody = await responseJson(configResponse);
+    const currentSiteSettings = configBody.data?.siteSettings;
+    const updateSiteDesign = await request("/api/v1/config/site-settings", {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({
+        ...currentSiteSettings,
+        design: {
+          ...currentSiteSettings.design,
+          preset: "custom",
+          colors: {
+            ...currentSiteSettings.design.colors,
+            primary: "#c0264f"
+          }
+        }
+      })
+    });
+    assert.equal(updateSiteDesign.status, 200, JSON.stringify(await responseJson(updateSiteDesign)));
+
     const publicPage = await request(`/${pageSlug}`);
     const publicHtml = await publicPage.text();
     assert.equal(publicPage.status, 200);
     assert.match(publicHtml, /Server-rendered integration content/);
     assert.doesNotMatch(publicHtml, /window\.compromised|<script>window\.compromised/);
+    assert.match(publicHtml, /data-site-design-system/);
+    assert.match(publicHtml, /--accent: #c0264f/);
+
+    const deleteTemplate = await request(`/api/v1/cms/templates/${reusableTemplateId}`, {
+      method: "DELETE",
+      headers: authorization,
+      body: "{}"
+    });
+    assert.equal(deleteTemplate.status, 200, JSON.stringify(await responseJson(deleteTemplate)));
+    reusableTemplateId = undefined;
 
     const updateShopSettings = await request("/api/v1/products/settings", {
       method: "PATCH",
@@ -301,6 +378,19 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     }
     if (managedUserId) {
       await prisma.user.delete({ where: { id: managedUserId } }).catch(() => undefined);
+    }
+    if (reusableTemplateId) {
+      await prisma.cmsTemplate.deleteMany({ where: { id: reusableTemplateId } });
+    }
+    if (existingSiteSetting) {
+      await prisma.moduleSetting.update({
+        where: { id: existingSiteSetting.id },
+        data: { value: existingSiteSetting.value }
+      });
+    } else {
+      await prisma.moduleSetting.deleteMany({
+        where: { moduleId: "config", key: "site", site: { slug: "default" } }
+      });
     }
     await prisma.userInvite.deleteMany({ where: { email: managedUserEmail } });
     await prisma.cmsRedirect.deleteMany({ where: { sourcePath: redirectPath } });

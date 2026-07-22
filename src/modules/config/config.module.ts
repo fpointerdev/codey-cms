@@ -44,6 +44,7 @@ import {
   builderStylePresetRegistry,
   sectionPresetRegistry
 } from "../builder/element-registry.js";
+import { normalizeDesignSystemSettings } from "./site-design.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -112,6 +113,7 @@ async function readSiteSettings(context: ModuleContext) {
     siteUrl: typeof storedSettings.siteUrl === "string" ? storedSettings.siteUrl : "",
     searchIndexing: storedSettings.searchIndexing !== false,
     sitemapEnabled: storedSettings.sitemapEnabled !== false,
+    design: normalizeDesignSystemSettings(storedSettings.design),
     customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }

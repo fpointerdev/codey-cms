@@ -761,6 +761,106 @@
   font-weight: 800;
 }
 
+.builder-reusable-template {
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+}
+
+.builder-reusable-template::after {
+  content: none;
+}
+
+.builder-reusable-insert {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+}
+
+.builder-reusable-insert:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+.builder-reusable-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  width: 100%;
+  border-top: 1px solid #edf0f2;
+  padding-top: 8px;
+}
+
+.builder-reusable-actions .compact {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.builder-page-template-manager {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+  border-top: 1px solid #dfe5e8;
+  padding-top: 18px;
+}
+
+.builder-page-template-heading,
+.builder-page-template-row,
+.builder-page-template-actions {
+  display: flex;
+  align-items: center;
+}
+
+.builder-page-template-heading,
+.builder-page-template-row {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.builder-page-template-heading > span,
+.builder-page-template-copy > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.builder-page-template-list {
+  display: grid;
+  border-top: 1px solid #edf0f2;
+}
+
+.builder-page-template-row {
+  min-width: 0;
+  border-bottom: 1px solid #edf0f2;
+  padding: 10px 0;
+}
+
+.builder-page-template-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.builder-page-template-copy > strong,
+.builder-page-template-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.builder-page-template-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .builder-pattern {
   min-height: 108px;
   border-color: #cbd8df;
@@ -1666,6 +1766,16 @@
 }
 
 @media (max-width: 640px) {
+  .builder-page-template-heading,
+  .builder-page-template-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .builder-page-template-actions {
+    justify-content: flex-start;
+  }
+
   .builder-block-list.mobile-layout-one-column {
     grid-template-columns: 1fr;
   }

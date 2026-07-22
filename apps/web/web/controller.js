@@ -48,6 +48,17 @@ function publicLocaleUrl(path, extra = {}) {
   return `${path}?${query}`;
 }
 
+async function loadCmsTemplates() {
+  try {
+    const { templates } = await api("/cms/templates");
+    state.cmsTemplates = templates || [];
+  } catch {
+    state.cmsTemplates = [];
+  }
+
+  return state.cmsTemplates;
+}
+
 export async function loadAdminRoute(route) {
   if (route.view === "password-reset") {
     renderPasswordReset(route.token);
@@ -248,6 +259,7 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "page-create") {
     const { renderCreatePagePage } = await builderViews();
+    await loadCmsTemplates();
     renderCreatePagePage();
     return;
   }
@@ -257,7 +269,8 @@ export async function loadAdminRoute(route) {
     try {
       const [{ page }, menuResponse] = await Promise.all([
         api(adminLocaleUrl(`/cms/pages/${encodeURIComponent(route.slug)}`, { preview: "true" })),
-        api(adminLocaleUrl("/cms/menus/main")).catch(() => ({ menu: null }))
+        api(adminLocaleUrl("/cms/menus/main")).catch(() => ({ menu: null })),
+        loadCmsTemplates()
       ]);
       state.menu = menuResponse.menu;
       renderPageBuilderPage(page);
@@ -557,6 +570,17 @@ export async function bootstrap() {
     document.body.classList.remove("auth-enabled", "dashboard-enabled");
     state.user = await loadUser();
     await loadRuntimeConfig();
+    state.visualEditorActive = Boolean(
+      state.user &&
+      moduleEnabled("cms") &&
+      hasPermission("update", "cms") &&
+      new URLSearchParams(window.location.search || "").get("edit") === "1"
+    );
+    if (state.visualEditorActive) await loadCmsTemplates();
+    else {
+      state.visualEditorSelection = null;
+      state.visualEditorEditingBlockKey = "";
+    }
     await loadMenu();
     await loadPage();
   } catch (error) {

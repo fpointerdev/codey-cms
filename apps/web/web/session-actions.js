@@ -1,4 +1,4 @@
-import { api, state, translateString } from "./core.js";
+import { api, restoreSession, state, translateString } from "./core.js";
 import { pageSlug } from "./routes.js";
 import { getModalFormHandler } from "./modal.js";
 import { renderAdminLogin } from "./ui.js";
@@ -18,6 +18,15 @@ function clearBrowserSession() {
   state.token = "";
   state.hasSession = false;
   state.user = null;
+  state.cmsTemplates = [];
+  state.visualEditorActive = false;
+  state.visualEditorSelection = null;
+  state.visualEditorEditingBlockKey = "";
+  state.visualEditorHistoryKey = "";
+  state.visualEditorUndoStack = [];
+  state.visualEditorRedoStack = [];
+  state.visualEditorDevice = "desktop";
+  state.visualEditorLibraryOpen = false;
   localStorage.removeItem("cms_session_hint");
   localStorage.removeItem("cms_access_token");
   localStorage.removeItem("cms_refresh_token");
@@ -25,6 +34,11 @@ function clearBrowserSession() {
 
 export async function loadUser() {
   if (!state.token && !state.hasSession) return null;
+
+  if (!state.token) {
+    if (!await restoreSession()) return null;
+    if (state.user) return state.user;
+  }
 
   try {
     const { user } = await api("/auth/me");

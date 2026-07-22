@@ -37,8 +37,11 @@ import {
   copyBuilderSections,
   duplicateBuilderBlockInSections,
   duplicateBuilderSectionInSections,
+  instantiateBuilderSectionTemplate,
   moveBuilderBlockInSections,
-  moveBuilderSectionInSections
+  moveBuilderSectionInSections,
+  normalizeBuilderSectionsForSave,
+  sectionToBuilderInput
 } from "./builder-operations.js";
 
 const builderHistoryLimit = 30;
@@ -672,8 +675,14 @@ function settingsFromSectionControls(values, currentSettings = {}) {
   };
 }
 
-export function createPageFromDashboard() {
+export async function createPageFromDashboard() {
   window.history.pushState({}, "", "/dashboard/pages/new");
+  try {
+    const { templates } = await api("/cms/templates");
+    state.cmsTemplates = templates || [];
+  } catch {
+    state.cmsTemplates = [];
+  }
   renderCreatePagePage();
 }
 
@@ -687,6 +696,11 @@ export async function createPageFromBuilder(form) {
   const title = String(formData.get("title") || "").trim();
   const slug = slugFromTitle(title);
   const locale = activePageLocale();
+  const selectedTemplate = (state.cmsTemplates || []).find((template) =>
+    template.id === String(formData.get("templateId") || "") && template.type === "PAGE"
+  );
+  const templateContent = selectedTemplate?.content || {};
+  const excerpt = optionalFormValue(formData, "excerpt");
 
   setFormDisabled(form, true);
   setFormMessage(form, "Creating page...");
@@ -698,15 +712,18 @@ export async function createPageFromBuilder(form) {
         title,
         slug,
         locale,
-        excerpt: optionalFormValue(formData, "excerpt"),
+        excerpt,
         content: {
+          ...(templateContent.content || {}),
           layout: normalizePageLayout(formData.get("layout"))
         },
         status: String(formData.get("status") || "DRAFT"),
-        sections: []
+        sections: normalizeBuilderSectionsForSave(templateContent.sections || [])
       })
     });
-    let message = "Page created. Add a container, then add elements.";
+    let message = selectedTemplate
+      ? `Page created from ${selectedTemplate.name}.`
+      : "Page created. Add a container, then add elements.";
 
     if (formData.get("addToMenu") === "on") {
       try {
@@ -732,6 +749,207 @@ export async function createPageFromBuilder(form) {
     setFormMessage(form, error.message || "Unable to create page.", true);
     setStatus(error.message || "Unable to create page.", true);
     setFormDisabled(form, false);
+  }
+}
+
+async function reusableTemplateDetails(type, fallbackName, content) {
+  const values = await getModalFormHandler()({
+    label: type === "PAGE" ? "Reusable page" : "Reusable section",
+    title: type === "PAGE" ? "Save page as template" : "Save section to library",
+    description: type === "PAGE"
+      ? "Keep this page structure available when creating future pages."
+      : "Keep this container and its elements available across pages.",
+    fields: [
+      { name: "name", label: "Template name", value: fallbackName },
+      { name: "description", label: "Description", type: "textarea", rows: 2, value: "", required: false }
+    ],
+    submitLabel: "Save template"
+  });
+  if (!values) return null;
+
+  const { template } = await api("/cms/templates", {
+    method: "POST",
+    body: JSON.stringify({
+      name: values.name,
+      description: values.description || undefined,
+      type,
+      content
+    })
+  });
+  state.cmsTemplates = [template, ...(state.cmsTemplates || []).filter((item) => item.id !== template.id)];
+  return template;
+}
+
+export async function saveBuilderSectionTemplate(sectionId) {
+  if (!state.builderPage || !sectionId) return;
+  const section = (state.builderPage.sections || []).find((item) => item.id === sectionId);
+  if (!section) return;
+
+  try {
+    const template = await reusableTemplateDetails(
+      "SECTION",
+      section.label || "Reusable section",
+      { section: sectionToBuilderInput(section) }
+    );
+    if (template) renderPageBuilderPage(state.builderPage, `Saved ${template.name} to reusable sections.`);
+  } catch (error) {
+    setStatus(error.message || "Unable to save reusable section.", true);
+  }
+}
+
+export async function saveBuilderPageTemplate() {
+  if (!state.builderPage) return;
+
+  try {
+    const template = await reusableTemplateDetails(
+      "PAGE",
+      `${state.builderPage.title || "Page"} template`,
+      {
+        excerpt: state.builderPage.excerpt || undefined,
+        content: state.builderPage.content || {},
+        sections: normalizeBuilderSectionsForSave(state.builderPage.sections || [])
+      }
+    );
+    if (template) renderPageBuilderPage(state.builderPage, `Saved ${template.name} as a page template.`);
+  } catch (error) {
+    setStatus(error.message || "Unable to save page template.", true);
+  }
+}
+
+export async function addReusableTemplateToBuilder(templateId) {
+  if (!state.builderPage) return;
+  const template = (state.cmsTemplates || []).find((item) => item.id === templateId && item.type === "SECTION");
+  const section = instantiateBuilderSectionTemplate(template?.content?.section, state.builderPage.sections || []);
+  if (!template || !section) return;
+
+  try {
+    await saveBuilderSections(
+      [...(state.builderPage.sections || []), section],
+      `${template.name} added from reusable sections.`,
+      section.key
+    );
+  } catch (error) {
+    setStatus(error.message || "Unable to insert reusable section.", true);
+  }
+}
+
+export async function replaceReusableTemplateFromBuilder(templateId) {
+  if (!state.builderPage) return;
+  const template = (state.cmsTemplates || []).find((item) => item.id === templateId && item.type === "SECTION");
+  const section = (state.builderPage.sections || []).find((item) => item.id === state.activeBuilderSectionId);
+  if (!template || !section) {
+    setStatus("Select a container before replacing a reusable section.", true);
+    return;
+  }
+
+  const confirmation = await getModalFormHandler()({
+    label: "Reusable section",
+    title: `Replace ${template.name}?`,
+    description: `Update this reusable section from ${section.label || section.key}. Pages that already used it will not change.`,
+    fields: [],
+    submitLabel: "Replace template"
+  });
+  if (!confirmation) return;
+
+  try {
+    const { template: updated } = await api(`/cms/templates/${encodeURIComponent(template.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content: { section: sectionToBuilderInput(section) } })
+    });
+    state.cmsTemplates = (state.cmsTemplates || []).map((item) => item.id === updated.id ? updated : item);
+    renderPageBuilderPage(state.builderPage, `${updated.name} updated from the selected container.`);
+  } catch (error) {
+    setStatus(error.message || "Unable to replace reusable section.", true);
+  }
+}
+
+function updatePageTemplateManager(template, remove = false) {
+  const form = document.querySelector?.("[data-page-create-form]");
+  if (!form) return false;
+
+  const option = Array.from(form.querySelectorAll?.("[data-page-template-select] option") || [])
+    .find((item) => item.value === template.id);
+  const row = Array.from(form.querySelectorAll?.("[data-page-template-row]") || [])
+    .find((item) => item.dataset.pageTemplateRow === template.id);
+
+  if (remove) {
+    option?.remove();
+    row?.remove();
+    if (!form.querySelector?.("[data-page-template-row]")) {
+      form.querySelector?.("[data-page-template-manager]")?.remove();
+    }
+    return true;
+  }
+
+  if (option) option.textContent = template.name;
+  const name = row?.querySelector?.("[data-page-template-name]");
+  const description = row?.querySelector?.("[data-page-template-description]");
+  const renameButton = row?.querySelector?.("[data-edit-reusable-template]");
+  const deleteButton = row?.querySelector?.("[data-delete-reusable-template]");
+  if (name) name.textContent = template.name;
+  if (description) description.textContent = template.description || "Reusable page structure";
+  if (renameButton) renameButton.setAttribute("aria-label", `Rename ${template.name}`);
+  if (deleteButton) deleteButton.setAttribute("aria-label", `Delete ${template.name}`);
+  return true;
+}
+
+export async function editReusableTemplate(templateId) {
+  const template = (state.cmsTemplates || []).find((item) => item.id === templateId);
+  if (!template) return;
+
+  const values = await getModalFormHandler()({
+    label: "Reusable template",
+    title: `Rename ${template.name}`,
+    fields: [
+      { name: "name", label: "Template name", value: template.name },
+      { name: "description", label: "Description", type: "textarea", rows: 2, value: template.description || "", required: false }
+    ],
+    submitLabel: "Save template"
+  });
+  if (!values) return;
+
+  try {
+    const { template: updated } = await api(`/cms/templates/${encodeURIComponent(template.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: values.name,
+        description: values.description || null
+      })
+    });
+    state.cmsTemplates = (state.cmsTemplates || []).map((item) => item.id === updated.id ? updated : item);
+    if (state.builderPage) renderPageBuilderPage(state.builderPage, `${updated.name} template saved.`);
+    else {
+      if (!updatePageTemplateManager(updated)) renderCreatePagePage();
+      setStatus(`${updated.name} template saved.`);
+    }
+  } catch (error) {
+    setStatus(error.message || "Unable to update reusable template.", true);
+  }
+}
+
+export async function deleteReusableTemplate(templateId) {
+  const template = (state.cmsTemplates || []).find((item) => item.id === templateId);
+  if (!template) return;
+  const confirmation = await getModalFormHandler()({
+    label: "Reusable template",
+    title: `Delete ${template.name}?`,
+    description: "Existing pages will keep their content. This removes the template from the library.",
+    fields: [],
+    submitLabel: "Delete template",
+    destructive: true
+  });
+  if (!confirmation) return;
+
+  try {
+    await api(`/cms/templates/${encodeURIComponent(template.id)}`, { method: "DELETE" });
+    state.cmsTemplates = (state.cmsTemplates || []).filter((item) => item.id !== template.id);
+    if (state.builderPage) renderPageBuilderPage(state.builderPage, `${template.name} deleted from the library.`);
+    else {
+      if (!updatePageTemplateManager(template, true)) renderCreatePagePage();
+      setStatus(`${template.name} deleted from the library.`);
+    }
+  } catch (error) {
+    setStatus(error.message || "Unable to delete reusable template.", true);
   }
 }
 
@@ -831,38 +1049,6 @@ export async function addSectionPatternToBuilder(patternId) {
   }
 }
 
-function sectionToInput(section) {
-  return {
-    key: section.key,
-    label: section.label || undefined,
-    sortOrder: section.sortOrder || 0,
-    settings: section.settings || {},
-    blocks: (section.blocks || []).map((block) => ({
-      key: block.key,
-      type: block.type,
-      label: block.label || undefined,
-      value: block.value,
-      settings: block.settings || {},
-      sortOrder: block.sortOrder || 0,
-      editable: block.editable !== false,
-      ...(block.mediaAssetId ? { mediaAssetId: block.mediaAssetId } : {})
-    }))
-  };
-}
-
-function normalizedSectionsForSave(sections = []) {
-  return sections.map((section, sectionIndex) =>
-    sectionToInput({
-      ...section,
-      sortOrder: sectionIndex,
-      blocks: (section.blocks || []).map((block, blockIndex) => ({
-        ...block,
-        sortOrder: blockIndex
-      }))
-    })
-  );
-}
-
 function ensureBuilderHistory() {
   const slug = state.builderPage?.slug || "";
   if (state.builderHistorySlug === slug) return;
@@ -906,7 +1092,7 @@ async function saveBuilderSections(sections, message, activeSectionKey = "", opt
     : copyBuilderSections(state.builderPage?.sections || []);
   const { page } = await api(withLocale(`/cms/pages/${encodeURIComponent(state.builderPage.slug)}`, activePageLocale()), {
     method: "PATCH",
-    body: JSON.stringify({ sections: normalizedSectionsForSave(sections) })
+    body: JSON.stringify({ sections: normalizeBuilderSectionsForSave(sections) })
   });
 
   if (previousSections) recordBuilderHistory(previousSections);
@@ -1142,9 +1328,9 @@ export async function editBuilderSection(sectionId) {
 
   try {
     const sections = (state.builderPage.sections || []).map((item) => {
-      if (item.id !== sectionId) return sectionToInput(item);
+      if (item.id !== sectionId) return sectionToBuilderInput(item);
 
-      return sectionToInput({
+      return sectionToBuilderInput({
         ...item,
         label: values.label,
         settings: settingsFromSectionControls(values, item.settings || {})

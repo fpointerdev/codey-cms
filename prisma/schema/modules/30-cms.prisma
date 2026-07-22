@@ -35,6 +35,25 @@ enum ContactSubmissionStatus {
   SPAM
 }
 
+enum CmsTemplateType {
+  SECTION
+  PAGE
+}
+
+model CmsTemplate {
+  id          String          @id @default(cuid())
+  siteId      String
+  name        String
+  description String?
+  type        CmsTemplateType
+  content     Json
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([siteId, type, name])
+  @@index([siteId, type, updatedAt])
+}
+
 model CmsPage {
   id          String           @id @default(cuid())
   title       String

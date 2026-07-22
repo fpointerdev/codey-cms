@@ -102,6 +102,179 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   expect(browserErrors).toEqual([]);
 });
 
+test("visual editing, design tokens, and reusable sections work without hover", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+
+  await login(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByText("Style", { exact: true }).click();
+  const designForm = page.locator("[data-design-system-form]");
+  const designPreview = page.locator("[data-design-preview]");
+  await expect(designForm).toBeVisible();
+  await expect(designPreview).toBeVisible();
+  await designForm.locator("[data-design-preset='editorial']").click();
+  await expect(designForm.locator("[data-design-preset='editorial']")).toHaveAttribute("aria-pressed", "true");
+  const typographyDisclosure = designForm.locator("[data-design-summary='typography']");
+  await expect(typographyDisclosure).not.toHaveAttribute("open", "");
+  await expect(typographyDisclosure.locator("[data-design-summary-value]")).toHaveText("Georgia + Inter");
+  await typographyDisclosure.locator(":scope > summary").click();
+  await expect(designForm.getByLabel("Heading font")).toBeVisible();
+  await expect.poll(() => designPreview.evaluate((element) => element.style.getPropertyValue("--accent"))).toBe("#a33d2d");
+  const primaryHexInput = designForm.getByLabel("Primary hex value", { exact: true });
+  await primaryHexInput.fill("#2463eb");
+  await expect(primaryHexInput).toHaveValue("#2463EB");
+  await expect(designForm.locator('input[name="design.colors.primary"]')).toHaveValue("#2463eb");
+  await expect.poll(() => designPreview.evaluate((element) => element.style.getPropertyValue("--accent"))).toBe("#2463eb");
+  const cssDisclosure = designForm.locator("[data-design-summary='css']");
+  await expect(cssDisclosure).not.toHaveAttribute("open", "");
+  await expect(cssDisclosure.locator("[data-design-summary-value]")).toHaveText("Not set");
+  await designForm.getByRole("button", { name: "Save design system" }).click();
+  await expect(designForm.locator("[data-form-message]")).toHaveText("Settings saved.");
+
+  await page.getByRole("link", { name: "Pages", exact: true }).click();
+  const homeRow = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Home", exact: true })
+  });
+  await homeRow.getByRole("link", { name: "Backend builder" }).click();
+  await page.getByRole("link", { name: "Visual editor", exact: true }).click();
+  await expect(page).toHaveURL(/\?edit=1/);
+  await expect(page.locator("[data-editor-ui].visual-editor-bar")).toBeVisible();
+  await expect(page.locator("[data-visual-section]").first()).toBeVisible();
+  await expect(page.locator("[data-visual-block]").first()).toBeVisible();
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--accent").trim())).toBe("#2463eb");
+  await expect(page.getByRole("status", { name: "Page is published" })).toBeVisible();
+
+  const library = page.locator(".visual-library-menu");
+  await library.locator(":scope > summary").click();
+  await page.getByRole("button", { name: "Section", exact: true }).click();
+  const addSectionDialog = page.getByRole("dialog", { name: "Choose a section layout" });
+  await expect(addSectionDialog.getByRole("group", { name: "Layout" })).toBeVisible();
+  await expect(addSectionDialog.getByText("Container CSS", { exact: true })).toHaveCount(0);
+  await addSectionDialog.getByRole("button", { name: "Cancel" }).click();
+
+  await library.locator(":scope > summary").click();
+  await page.getByRole("button", { name: "Element", exact: true }).click();
+  const addElementDialog = page.getByRole("dialog", { name: "Add an element" });
+  await expect(addElementDialog.getByLabel("Element")).toHaveValue("text-layout");
+  await addElementDialog.getByRole("button", { name: "Cancel" }).click();
+
+  const visualBlock = page.locator("[data-visual-block]").first();
+  const originalText = (await visualBlock.locator("[data-visual-edit-surface]").innerText()).trim();
+  const directEdit = page.locator("[data-visual-start-inline]").first();
+  await visualBlock.click();
+  await expect(visualBlock).toHaveAttribute("aria-selected", "true");
+  await expect(directEdit).toBeVisible();
+  await directEdit.click();
+  await expect(page.locator("[data-visual-inline-editor]")).toBeVisible();
+  await expect(visualBlock.locator("[data-visual-inline-default]")).toBeHidden();
+  await page.locator("[data-visual-cancel-inline]").click();
+  await expect(page.locator("[data-visual-inline-editor]")).toHaveCount(0);
+  await expect(visualBlock.locator("[data-visual-inline-actions]")).toBeHidden();
+
+  const updatedText = `Visual editor save ${Date.now()}`;
+  await page.locator("[data-visual-start-inline]").first().click();
+  await page.locator("[data-visual-inline-editor]").fill(updatedText);
+  await page.locator("[data-visual-save-inline]").click();
+  await expect(page.locator("[data-visual-edit-surface]").first()).toContainText(updatedText);
+  await page.locator("[data-visual-undo]").click();
+  await expect(page.locator("[data-visual-edit-surface]").first()).toContainText(originalText);
+
+  const templateName = `E2E reusable ${Date.now()}`;
+  const visualSection = page.locator("[data-visual-section]").first();
+  const sectionCount = await page.locator("[data-visual-section]").count();
+  await visualSection.focus();
+  await page.locator("[data-visual-save-section]").first().click();
+  const saveDialog = page.getByRole("dialog", { name: "Save section to library" });
+  await saveDialog.getByLabel("Template name").fill(templateName);
+  await saveDialog.getByRole("button", { name: "Save template" }).click();
+  await expect(page.locator("[data-status]")).toContainText(`${templateName} saved to reusable sections.`);
+  if (!(await library.evaluate((element: HTMLDetailsElement) => element.open))) {
+    await library.locator(":scope > summary").click();
+  }
+  const savedTemplate = page.locator(".visual-library-item").filter({ hasText: templateName });
+  await expect(savedTemplate).toBeVisible();
+  await savedTemplate.locator("[data-visual-insert-template]").click();
+  await expect(page.locator("[data-visual-section]")).toHaveCount(sectionCount + 1);
+  await page.locator("[data-visual-undo]").click();
+  await expect(page.locator("[data-visual-section]")).toHaveCount(sectionCount);
+  if (!(await library.evaluate((element: HTMLDetailsElement) => element.open))) {
+    await library.locator(":scope > summary").click();
+  }
+  await savedTemplate.getByRole("button", { name: `Delete ${templateName}` }).click();
+  const deleteDialog = page.getByRole("dialog", { name: `Delete ${templateName}?` });
+  await deleteDialog.getByRole("button", { name: "Delete template" }).click();
+  await expect(page.locator(".visual-library-item").filter({ hasText: templateName })).toHaveCount(0);
+
+  const pageTemplateName = `E2E page ${Date.now()}`;
+  const moreMenu = page.locator(".visual-more-menu");
+  await moreMenu.locator(":scope > summary").click();
+  await page.locator("[data-visual-save-page-template]").click();
+  const savePageDialog = page.getByRole("dialog", { name: "Save page as template" });
+  await savePageDialog.getByLabel("Template name").fill(pageTemplateName);
+  await savePageDialog.getByRole("button", { name: "Save template" }).click();
+  await expect(page.locator("[data-status]")).toContainText(`${pageTemplateName} saved as a page template.`);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".visual-more-menu > summary").click();
+  await page.getByRole("button", { name: "Mobile", exact: true }).click();
+  await library.locator(":scope > summary").click();
+  await expect(page.locator(".visual-library-panel")).toBeVisible();
+  const mobilePreview = await page.evaluate(() => {
+    const pageShell = document.querySelector<HTMLElement>(".page-shell");
+    const section = document.querySelector<HTMLElement>("[data-visual-section]");
+    const libraryPanel = document.querySelector<HTMLElement>(".visual-library-panel");
+    const panelBounds = libraryPanel?.getBoundingClientRect();
+    return {
+      pageWidth: pageShell?.getBoundingClientRect().width || 0,
+      sectionWidth: section?.getBoundingClientRect().width || 0,
+      sectionScrollWidth: section?.scrollWidth || 0,
+      libraryLeft: panelBounds?.left || 0,
+      libraryRight: panelBounds?.right || 0
+    };
+  });
+  expect(mobilePreview.pageWidth).toBeLessThanOrEqual(390);
+  expect(mobilePreview.sectionScrollWidth).toBeLessThanOrEqual(Math.ceil(mobilePreview.sectionWidth));
+  expect(mobilePreview.libraryLeft).toBeGreaterThanOrEqual(0);
+  expect(mobilePreview.libraryRight).toBeLessThanOrEqual(390);
+  await visualSection.focus();
+  const touchControlHeight = await page.locator("[data-visual-section] .visual-icon-button").first().evaluate((element) => element.getBoundingClientRect().height);
+  expect(touchControlHeight).toBeGreaterThanOrEqual(40);
+  await expect(page.locator("[data-visual-section] .visual-item-toolbar").first()).toBeVisible();
+
+  await page.goto("/dashboard/pages/new");
+  const createPageForm = page.locator("[data-page-create-form]");
+  await expect(createPageForm).toBeVisible();
+  const pageTemplateSelect = createPageForm.locator("[data-page-template-select]");
+  await pageTemplateSelect.selectOption({ label: pageTemplateName });
+  await createPageForm.getByLabel("Page layout").selectOption("grid");
+  await createPageForm.getByLabel("Excerpt").fill("Discard this template override");
+  await pageTemplateSelect.selectOption("");
+  await expect(createPageForm.getByLabel("Page layout")).toHaveValue("full-width");
+  await expect(createPageForm.getByLabel("Excerpt")).toHaveValue("");
+  await pageTemplateSelect.selectOption({ label: pageTemplateName });
+  await createPageForm.getByLabel("Title").fill("Preserve this draft title");
+  let pageTemplateRow = createPageForm.locator("[data-page-template-row]").filter({ hasText: pageTemplateName });
+  await pageTemplateRow.getByRole("button", { name: "Rename" }).click();
+  const renamedPageTemplate = `${pageTemplateName} renamed`;
+  const renameDialog = page.getByRole("dialog", { name: `Rename ${pageTemplateName}` });
+  await renameDialog.getByLabel("Template name").fill(renamedPageTemplate);
+  await renameDialog.getByRole("button", { name: "Save template" }).click();
+  await expect(createPageForm.getByLabel("Title")).toHaveValue("Preserve this draft title");
+  await expect(pageTemplateSelect.locator("option:checked")).toHaveText(renamedPageTemplate);
+  pageTemplateRow = createPageForm.locator("[data-page-template-row]").filter({ hasText: renamedPageTemplate });
+  await pageTemplateRow.getByRole("button", { name: `Delete ${renamedPageTemplate}` }).click();
+  const deletePageDialog = page.getByRole("dialog", { name: `Delete ${renamedPageTemplate}?` });
+  await deletePageDialog.getByRole("button", { name: "Delete template" }).click();
+  await expect(createPageForm.getByLabel("Title")).toHaveValue("Preserve this draft title");
+  await expect(createPageForm.locator("[data-page-template-row]").filter({ hasText: renamedPageTemplate })).toHaveCount(0);
+
+  expect(browserErrors).toEqual([]);
+});
+
 test("admin pages stay contained and use compact navigation on small screens", async ({ page }) => {
   await login(page);
 

@@ -2,10 +2,15 @@ export type PublicShellContent = {
   brand: string;
   body: string;
   footer: string;
+  head?: string;
 };
 
 export function injectPublicShellContent(html: string, content: PublicShellContent) {
   return html
+    .replace(
+      /<\/head>/i,
+      () => `${content.head ?? ""}</head>`
+    )
     .replace(
       /(<a\b[^>]*\bdata-brand\b[^>]*>)[\s\S]*?(<\/a>)/i,
       (_match, openingTag: string, closingTag: string) => `${openingTag}${content.brand}${closingTag}`

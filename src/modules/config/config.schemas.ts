@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { moduleCatalog, type ModuleLifecycleHook } from "../manifest.js";
 import type { ModuleId } from "../../core/types/module.js";
+import { defaultDesignSystemSettings } from "./site-design.js";
 
 const moduleIds = Object.keys(moduleCatalog);
 const hostnamePattern =
@@ -111,6 +112,48 @@ export const emailTestSchema = z.object({
   recipient: z.string().trim().email().max(320).optional()
 }).strict();
 
+const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color.");
+const designColorsSchema = z.object({
+  background: hexColorSchema.default(defaultDesignSystemSettings.colors.background),
+  surface: hexColorSchema.default(defaultDesignSystemSettings.colors.surface),
+  text: hexColorSchema.default(defaultDesignSystemSettings.colors.text),
+  muted: hexColorSchema.default(defaultDesignSystemSettings.colors.muted),
+  primary: hexColorSchema.default(defaultDesignSystemSettings.colors.primary),
+  primaryContrast: hexColorSchema.default(defaultDesignSystemSettings.colors.primaryContrast),
+  border: hexColorSchema.default(defaultDesignSystemSettings.colors.border)
+}).default(defaultDesignSystemSettings.colors);
+
+export const designSystemSettingsSchema = z.object({
+  preset: z.enum(["clean", "editorial", "bold", "soft", "custom"]).default(defaultDesignSystemSettings.preset),
+  colors: designColorsSchema,
+  typography: z.object({
+    headingFont: z.enum(["Inter", "Arial", "Georgia", "Verdana", "Trebuchet MS"]).default(defaultDesignSystemSettings.typography.headingFont),
+    bodyFont: z.enum(["Inter", "Arial", "Georgia", "Verdana", "Trebuchet MS"]).default(defaultDesignSystemSettings.typography.bodyFont),
+    headingWeight: z.enum(["600", "700", "800"]).default(defaultDesignSystemSettings.typography.headingWeight),
+    baseSize: z.number().int().min(14).max(20).default(defaultDesignSystemSettings.typography.baseSize),
+    scale: z.enum(["compact", "standard", "expressive"]).default(defaultDesignSystemSettings.typography.scale)
+  }).default(defaultDesignSystemSettings.typography),
+  layout: z.object({
+    contentWidth: z.number().int().min(880).max(1440).default(defaultDesignSystemSettings.layout.contentWidth),
+    sectionSpacing: z.number().int().min(24).max(128).default(defaultDesignSystemSettings.layout.sectionSpacing),
+    radius: z.number().int().min(0).max(24).default(defaultDesignSystemSettings.layout.radius),
+    shadow: z.enum(["none", "soft", "strong"]).default(defaultDesignSystemSettings.layout.shadow)
+  }).default(defaultDesignSystemSettings.layout),
+  buttons: z.object({
+    radius: z.number().int().min(0).max(32).default(defaultDesignSystemSettings.buttons.radius),
+    style: z.enum(["solid", "outline"]).default(defaultDesignSystemSettings.buttons.style)
+  }).default(defaultDesignSystemSettings.buttons),
+  header: z.object({
+    background: hexColorSchema.default(defaultDesignSystemSettings.header.background),
+    text: hexColorSchema.default(defaultDesignSystemSettings.header.text),
+    sticky: z.boolean().default(defaultDesignSystemSettings.header.sticky)
+  }).default(defaultDesignSystemSettings.header),
+  footer: z.object({
+    background: hexColorSchema.default(defaultDesignSystemSettings.footer.background),
+    text: hexColorSchema.default(defaultDesignSystemSettings.footer.text)
+  }).default(defaultDesignSystemSettings.footer)
+}).default(defaultDesignSystemSettings);
+
 export const siteSettingsSchema = z.object({
   title: z.string().trim().min(1).max(160),
   description: z.string().trim().max(500).optional().default(""),
@@ -119,5 +162,6 @@ export const siteSettingsSchema = z.object({
   siteUrl: z.string().trim().url().max(300).or(z.literal("")).optional().default(""),
   searchIndexing: z.boolean().optional().default(true),
   sitemapEnabled: z.boolean().optional().default(true),
+  design: designSystemSettingsSchema.optional().default(defaultDesignSystemSettings),
   customCss: z.string().trim().max(20000).optional().default("")
 });
