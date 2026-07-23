@@ -37,7 +37,8 @@ export function createInstallationRouter(context: InstallationContext) {
     asyncHandler(async (req, res) => {
       const result = await service.complete(req.body, {
         ipAddress: req.ip,
-        userAgent: req.header("user-agent")
+        userAgent: req.header("user-agent"),
+        requestId: req.requestId
       });
 
       return sendSuccess(res, result, undefined, 201);

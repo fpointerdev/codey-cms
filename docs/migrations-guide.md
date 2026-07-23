@@ -209,6 +209,28 @@ Rollback notes:
 - Rolling back the application leaves the added columns unused and does not require an immediate schema rollback.
 - Restore the pre-migration backup if the columns must be removed.
 
+### `20260723120000_security_p1`
+
+Purpose:
+
+- Adds refresh-token family lookup support for replay response.
+- Adds indexed audit key identifiers and predecessor hashes for linked integrity checks.
+
+Risk:
+
+- Low to medium. Existing audit rows remain available and are labeled `legacy`; new rows contain signed links to the latest hash visible to their transaction.
+
+Forward deploy notes:
+
+- Back up the database and the current audit key before deploying.
+- Deploy the migration before the updated API runtime.
+- When rotating `SECURITY_AUDIT_KEY`, retain the former value in `SECURITY_AUDIT_PREVIOUS_KEYS`.
+
+Rollback notes:
+
+- The added nullable audit columns and index are safe for the previous runtime to ignore.
+- Keep every audit key with retained backups so historical signatures remain verifiable.
+
 ## Clean Clone Migration Smoke
 
 For a copied runtime smoke test:

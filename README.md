@@ -17,7 +17,7 @@ CodeY CMS is a downloadable, self-hosted CMS. The supported nontechnical path in
 
 The launcher generates installation secrets once and keeps them in Docker volumes. Users never choose a CMS version: new installations use the latest certified stable release, while every installed runtime records its exact version for updates and rollback.
 
-Open:
+The launcher opens the setup automatically and prints the exact address. Default addresses are:
 
 - Public site: http://localhost:4000
 - CMS admin: http://localhost:4000/cy-admin

@@ -529,7 +529,7 @@ function buildMediaPlaceholders(spec: WebsiteSpec) {
         add(mediaFromKey(spec, mediaKey), `page:${page.slug}:section:${section.key}`);
       }
 
-      if (!section.mediaKey && ["hero", "image", "gallery"].includes(section.type)) {
+      if (!section.mediaKey && ["hero", "image"].includes(section.type)) {
         const media = generatedSectionMedia(page.slug, section);
         add(media, `page:${page.slug}:section:${section.key}`);
       }
@@ -559,9 +559,10 @@ function mapPage(
     slug: page.slug,
     locale: spec.project.locale,
     translationGroupId: page.slug,
-    excerpt: page.excerpt,
+    excerpt: page.excerpt ?? "",
     content: {
       source: "websiteSpec",
+      layout: "full-width",
       intent: spec.intent,
       project: spec.project,
       style: spec.style,
@@ -587,8 +588,14 @@ function mapSection(
   mediaPlaceholders: GeneratedMediaPlaceholder[]
 ): GeneratedPageSection {
   const blocks: GeneratedContentBlock[] = [];
-  const sectionMedia = section.mediaKey ?? generatedSectionMediaKey(pageSlug, section);
-  const media = mediaPlaceholders.find((item) => item.key === sectionMedia);
+  const sectionMedia = section.mediaKey ?? (
+    ["hero", "image"].includes(section.type)
+      ? generatedSectionMediaKey(pageSlug, section)
+      : undefined
+  );
+  const media = sectionMedia
+    ? mediaPlaceholders.find((item) => item.key === sectionMedia)
+    : undefined;
   const builderElement = builderElementForSectionType(section.type);
   const structuredSection = ["featureGrid", "pricing", "faq", "custom"].includes(section.type);
 
@@ -616,43 +623,71 @@ function mapSection(
   }
 
   if (section.type === "gallery") {
-    const galleryMedia = section.galleryMediaKeys.length
-      ? section.galleryMediaKeys
-          .map((mediaKey) => mediaPlaceholders.find((item) => item.key === mediaKey))
-          .filter((item): item is GeneratedMediaPlaceholder => Boolean(item))
-      : media
-        ? [media]
-        : [];
+    const galleryKeys = [...new Set([
+      ...section.items.map((item) => item.mediaKey).filter((key): key is string => Boolean(key)),
+      ...section.galleryMediaKeys,
+      ...(section.mediaKey ? [section.mediaKey] : [])
+    ])];
+    const galleryMedia = galleryKeys
+      .map((mediaKey) => mediaPlaceholders.find((item) => item.key === mediaKey))
+      .filter((item): item is GeneratedMediaPlaceholder => Boolean(item));
 
-    blocks.push({
-      key: `${section.key}-gallery`,
-      type: "GALLERY",
-      label: section.heading ?? "Gallery",
-      value: {
-        items: galleryMedia.map((item) => ({
-          url: item.url,
-          alt: item.altText,
-          mediaKey: item.key
-        })),
-        settings: {
-          displayMode: "gallery",
-          layoutMode: "grid",
-          columnsDesktop: 3,
-          columnsTablet: 2,
-          columnsMobile: 1,
-          gap: 16,
-          imageRatio: "4 / 3",
-          objectFit: "cover",
-          showCaptions: true,
-          lightbox: true
-        }
-      },
-      sortOrder: blocks.length,
-      editable: true
-    });
+    if (galleryMedia.length) {
+      blocks.push({
+        key: `${section.key}-gallery`,
+        type: "GALLERY",
+        label: section.heading ?? "Gallery",
+        value: {
+          items: galleryMedia.map((item) => {
+            const content = section.items.find((candidate) => candidate.mediaKey === item.key);
+            const caption = [
+              content?.title ? `<h3>${escapeGeneratedHtml(content.title)}</h3>` : "",
+              content?.body ? `<p>${escapeGeneratedHtml(content.body)}</p>` : ""
+            ].filter(Boolean).join("");
+
+            return {
+              url: item.url,
+              alt: item.altText,
+              mediaKey: item.key,
+              ...(caption ? { caption } : {}),
+              ...(content?.url ? { link: content.url } : {})
+            };
+          }),
+          settings: {
+            displayMode: "gallery",
+            layoutMode: "grid",
+            columnsDesktop: Math.min(3, galleryMedia.length),
+            columnsTablet: Math.min(2, galleryMedia.length),
+            columnsMobile: 1,
+            gap: 16,
+            imageRatio: "4 / 3",
+            objectFit: "cover",
+            showCaptions: true,
+            lightbox: true
+          }
+        },
+        sortOrder: blocks.length,
+        editable: true
+      });
+    }
+
+    const copyItems = section.items.filter((item) => !item.mediaKey);
+    if (copyItems.length) {
+      blocks.push({
+        key: `${section.key}-items`,
+        type: "CUSTOM",
+        label: `${section.heading ?? "Gallery"} items`,
+        value: {
+          variant: "feature-cards",
+          items: mapSectionItems(copyItems, mediaPlaceholders)
+        },
+        sortOrder: blocks.length,
+        editable: true
+      });
+    }
   }
 
-  if (section.cta) {
+  if (section.cta && !structuredSection) {
     blocks.push({
       key: `${section.key}-cta`,
       type: section.type === "cta" ? "CTA" : "BUTTON",
@@ -696,6 +731,20 @@ function mapSection(
     });
   }
 
+  if (section.type === "hero" && section.items.length) {
+    blocks.push({
+      key: `${section.key}-points`,
+      type: "CUSTOM",
+      label: "Hero points",
+      value: {
+        variant: "hero-points",
+        items: mapSectionItems(section.items, mediaPlaceholders)
+      },
+      sortOrder: blocks.length,
+      editable: true
+    });
+  }
+
   if (structuredSection || blocks.length === 0) {
     blocks.push({
       key: `${section.key}-content`,
@@ -707,6 +756,7 @@ function mapSection(
         heading: section.heading,
         body: section.body,
         items: mapSectionItems(section.items, mediaPlaceholders),
+        ...(section.cta ? { cta: section.cta } : {}),
         settings: section.settings
       },
       sortOrder: blocks.length,
@@ -717,16 +767,48 @@ function mapSection(
   return {
     key: section.key,
     sortOrder,
-    settings: {
-      template: sectionTemplateByType[section.type],
-      layout: defaultLayout(section.type),
-      container: section.type === "hero" ? "wide" : "default",
-      spacing: section.type === "hero" ? "xl" : "md",
-      ...section.settings,
-      elementId: builderElement?.id ?? "structured-content"
-    },
+    settings: generatedSectionSettings(section, builderElement?.id),
     blocks
   };
+}
+
+function generatedSectionSettings(
+  section: WebsiteSpecSection,
+  elementId: string | undefined
+) {
+  const settings = section.settings;
+  const requestedLayout = typeof settings.layout === "string" ? settings.layout : "";
+
+  return {
+    ...settings,
+    template: sectionTemplateByType[section.type],
+    layout: supportedSectionLayout(requestedLayout, section.type),
+    container: supportedSetting(settings.container, ["narrow", "default", "wide", "full"], "wide"),
+    spacing: supportedSetting(settings.spacing, ["none", "sm", "md", "lg", "xl"], section.type === "hero" ? "xl" : "md"),
+    websiteSpec: {
+      type: section.type,
+      composition: requestedLayout || defaultLayout(section.type),
+      collection: ["featureGrid", "gallery", "pricing", "productList", "faq"].includes(section.type) || section.items.length > 0
+    },
+    elementId: elementId ?? "structured-content"
+  };
+}
+
+function supportedSectionLayout(value: string, type: WebsiteSpecSection["type"]) {
+  return supportedSetting(value, [
+    "one-column",
+    "two-column",
+    "three-column",
+    "four-column",
+    "sidebar-left",
+    "sidebar-right",
+    "full-bleed",
+    "asymmetric"
+  ], defaultLayout(type));
+}
+
+function supportedSetting(value: unknown, allowed: string[], fallback: string) {
+  return typeof value === "string" && allowed.includes(value) ? value : fallback;
 }
 
 function headingBlock(
@@ -1297,8 +1379,6 @@ function generatedProductMediaKey(productSlug: string) {
 }
 
 function defaultLayout(type: WebsiteSpecSection["type"]) {
-  if (type === "hero") return "full-bleed";
-  if (type === "featureGrid" || type === "pricing") return "three-column";
-  if (type === "image" || type === "contactForm") return "two-column";
+  if (type === "hero" || type === "image" || type === "contactForm") return "two-column";
   return "one-column";
 }

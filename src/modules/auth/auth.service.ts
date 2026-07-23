@@ -1,23 +1,39 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { jwtVerify, SignJWT } from "jose";
-import { writeAuditLog } from "../../core/audit/audit-log.js";
+import { safeWriteAuditLog, writeAuditLog } from "../../core/audit/audit-log.js";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { hashPassword, verifyPassword } from "../../core/security/password.js";
+import { decryptSecretEnvelope, encryptSecretEnvelope } from "../../core/security/secret-envelope.js";
 import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { createEmailClient, isEmailDeliveryConfigured } from "../../infrastructure/email/http-email.js";
 import { assertRolesCanBeAssigned } from "../roles/role-assignment.js";
 import type { AuthenticatedUser, TokenPair } from "./auth.types.js";
+import { LoginProtectionService } from "./login-protection.service.js";
+import {
+  createMfaRecoveryCodes,
+  createMfaSecret,
+  createTotpUri,
+  hashMfaRecoveryCode,
+  verifyTotpCode
+} from "./mfa.js";
 
 const encoder = new TextEncoder();
 
 type RequestMeta = {
   userAgent?: string;
   ipAddress?: string;
+  requestId?: string;
 };
 
 type RefreshTokenWriter = Pick<PrismaClient, "refreshToken">;
+
+type SessionContext = {
+  familyId?: string;
+  authenticatedAt?: Date;
+  mfaVerifiedAt?: Date | null;
+};
 
 type AuditInput = RequestMeta & {
   actorUserId?: string;
@@ -117,6 +133,7 @@ function toAuthenticatedUser(user: {
       }>;
     };
   }>;
+  mfaCredential?: { enabledAt: Date | null } | null;
 }): AuthenticatedUser {
   const permissions = user.roles.flatMap((userRole) =>
     userRole.role.permissions.map((rolePermission) => ({
@@ -130,18 +147,21 @@ function toAuthenticatedUser(user: {
     email: user.email,
     name: user.name,
     roles: user.roles.map((userRole) => userRole.role.name),
-    permissions
+    permissions,
+    mfaEnabled: Boolean(user.mfaCredential?.enabledAt)
   };
 }
 
 export class AuthService {
   private readonly emailSettings: EmailSettingsService;
+  private readonly loginProtection: LoginProtectionService;
 
   constructor(
     private readonly prisma: PrismaClient,
     private readonly config: AppConfig
   ) {
     this.emailSettings = new EmailSettingsService(prisma, config);
+    this.loginProtection = new LoginProtectionService(prisma, config);
   }
 
   async register(input: { email: string; password: string; name?: string }, meta: RequestMeta) {
@@ -211,23 +231,44 @@ export class AuthService {
     };
   }
 
-  async login(input: { email: string; password: string }, meta: RequestMeta) {
+  async login(input: { email: string; password: string; mfaCode?: string }, meta: RequestMeta) {
+    const email = input.email.toLowerCase();
+    await this.loginProtection.assertAllowed(email, meta.ipAddress);
+
     const user = await this.prisma.user.findUnique({
-      where: { email: input.email.toLowerCase() },
+      where: { email },
       include: this.authUserInclude()
     });
 
     if (!user || user.status !== "ACTIVE") {
+      await this.recordLoginFailure(email, meta, "credentials");
       throw new AppError(401, "invalid_credentials", "Invalid email or password.");
     }
 
     const isValidPassword = await verifyPassword(input.password, user.passwordHash);
     if (!isValidPassword) {
+      await this.recordLoginFailure(email, meta, "credentials");
       throw new AppError(401, "invalid_credentials", "Invalid email or password.");
     }
 
     if (this.config.auth.requireEmailVerification && !user.emailVerifiedAt) {
       throw new AppError(403, "email_not_verified", "Email verification is required.");
+    }
+
+    let mfaVerifiedAt: Date | null = null;
+    if (user.mfaCredential?.enabledAt) {
+      if (!input.mfaCode) {
+        throw new AppError(401, "mfa_required", "Enter the verification code for this account.", {
+          mfaRequired: true
+        });
+      }
+      if (!await this.verifyMfaCode(user.id, input.mfaCode)) {
+        await this.recordLoginFailure(email, meta, "mfa");
+        throw new AppError(401, "invalid_mfa_code", "The verification code is invalid.", {
+          mfaRequired: true
+        });
+      }
+      mfaVerifiedAt = new Date();
     }
 
     await this.prisma.user.update({
@@ -239,19 +280,23 @@ export class AuthService {
       action: "login",
       subject: "user",
       subjectId: user.id,
-      meta
+      meta,
+      metadata: { mfa: Boolean(mfaVerifiedAt) }
     });
+    await this.loginProtection.recordSuccess(email);
 
     return {
       user: toAuthenticatedUser(user),
-      tokens: await this.issueTokens(user.id, user.authVersion, meta)
+      tokens: await this.issueTokens(user.id, user.authVersion, meta, this.prisma, {
+        mfaVerifiedAt
+      })
     };
   }
 
   async refresh(refreshToken: string, meta: RequestMeta) {
     const tokenHash = hashToken(refreshToken);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const storedToken = await tx.refreshToken.findUnique({
         where: { tokenHash },
         include: {
@@ -261,21 +306,56 @@ export class AuthService {
         }
       });
 
+      if (!storedToken) {
+        return { status: "invalid" as const };
+      }
+
+      if (storedToken.revokedAt) {
+        if (storedToken.replacedByTokenHash) {
+          const revoked = await tx.refreshToken.updateMany({
+            where: {
+              familyId: storedToken.familyId,
+              revokedAt: null
+            },
+            data: { revokedAt: new Date() }
+          });
+          await writeAuditLog(tx, {
+            actorUserId: storedToken.userId,
+            action: "refresh_token.replay_detected",
+            subject: "refresh_token",
+            subjectId: storedToken.id,
+            ipAddress: meta.ipAddress,
+            userAgent: meta.userAgent,
+            requestId: meta.requestId,
+            outcome: "DENIED",
+            severity: "HIGH",
+            metadata: {
+              familyId: storedToken.familyId,
+              revokedActiveTokens: revoked.count
+            }
+          });
+        }
+        return { status: "invalid" as const };
+      }
+
       if (
-        !storedToken ||
-        storedToken.revokedAt ||
         storedToken.expiresAt.getTime() <= Date.now() ||
         storedToken.user.status !== "ACTIVE" ||
         storedToken.authVersion !== storedToken.user.authVersion
       ) {
-        throw new AppError(401, "invalid_refresh_token", "Refresh token is invalid or expired.");
+        return { status: "invalid" as const };
       }
 
       const tokens = await this.issueTokens(
         storedToken.userId,
         storedToken.user.authVersion,
         meta,
-        tx
+        tx,
+        {
+          familyId: storedToken.familyId,
+          authenticatedAt: storedToken.authenticatedAt,
+          mfaVerifiedAt: storedToken.mfaVerifiedAt
+        }
       );
       const updatedToken = await tx.refreshToken.updateMany({
         where: {
@@ -302,10 +382,19 @@ export class AuthService {
       });
 
       return {
+        status: "valid" as const,
         user: toAuthenticatedUser(storedToken.user),
         tokens
       };
     }, { isolationLevel: "Serializable" });
+
+    if (result.status === "invalid") {
+      throw new AppError(401, "invalid_refresh_token", "Refresh token is invalid or expired.");
+    }
+    return {
+      user: result.user,
+      tokens: result.tokens
+    };
   }
 
   async logout(refreshToken: string, meta: RequestMeta = {}) {
@@ -430,6 +519,234 @@ export class AuthService {
       });
 
       return { revoked: true, refreshTokensRevoked: revoked.count };
+    }, { isolationLevel: "Serializable" });
+  }
+
+  async mfaStatus(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        roles: { select: { role: { select: { name: true } } } },
+        mfaCredential: {
+          select: {
+            enabledAt: true,
+            pendingExpiresAt: true,
+            recoveryCodeHashes: true,
+            lastUsedAt: true
+          }
+        }
+      }
+    });
+    if (!user) throw new AppError(401, "unauthorized", "Authentication required.");
+
+    const credential = user.mfaCredential;
+    const pending = Boolean(
+      !credential?.enabledAt &&
+      credential?.pendingExpiresAt &&
+      credential.pendingExpiresAt.getTime() > Date.now()
+    );
+
+    return {
+      enabled: Boolean(credential?.enabledAt),
+      enabledAt: credential?.enabledAt ?? null,
+      pending,
+      setupExpiresAt: pending ? credential?.pendingExpiresAt ?? null : null,
+      recoveryCodesRemaining: credential?.enabledAt ? credential.recoveryCodeHashes.length : 0,
+      lastUsedAt: credential?.lastUsedAt ?? null,
+      recommended: user.roles.some(({ role }) => ["owner", "admin"].includes(role.name))
+    };
+  }
+
+  async beginMfaSetup(userId: string, input: { currentPassword: string }, meta: RequestMeta) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        passwordHash: true,
+        status: true,
+        mfaCredential: { select: { enabledAt: true } }
+      }
+    });
+    if (!user || user.status !== "ACTIVE") {
+      throw new AppError(401, "unauthorized", "Authentication required.");
+    }
+    if (!await verifyPassword(input.currentPassword, user.passwordHash)) {
+      throw new AppError(400, "invalid_current_password", "Current password is incorrect.");
+    }
+    if (user.mfaCredential?.enabledAt) {
+      throw new AppError(409, "mfa_already_enabled", "Two-step verification is already enabled.");
+    }
+
+    const secret = createMfaSecret();
+    const pendingExpiresAt = addSeconds(10 * 60);
+    await this.prisma.userMfaCredential.upsert({
+      where: { userId },
+      create: {
+        userId,
+        secretEnvelope: encryptSecretEnvelope(this.config.security.credentialEncryptionKey, { secret }),
+        pendingExpiresAt
+      },
+      update: {
+        secretEnvelope: encryptSecretEnvelope(this.config.security.credentialEncryptionKey, { secret }),
+        recoveryCodeHashes: [],
+        enabledAt: null,
+        pendingExpiresAt,
+        lastUsedAt: null
+      }
+    });
+    await this.audit({
+      actorUserId: userId,
+      action: "mfa.setup_started",
+      subject: "user",
+      subjectId: userId,
+      meta
+    });
+
+    return {
+      secret,
+      otpauthUri: createTotpUri({
+        secret,
+        issuer: this.config.app.name,
+        account: user.email
+      }),
+      setupExpiresAt: pendingExpiresAt
+    };
+  }
+
+  async confirmMfaSetup(userId: string, input: { code: string }, meta: RequestMeta) {
+    const credential = await this.prisma.userMfaCredential.findUnique({
+      where: { userId }
+    });
+    if (
+      !credential ||
+      credential.enabledAt ||
+      !credential.pendingExpiresAt ||
+      credential.pendingExpiresAt.getTime() <= Date.now()
+    ) {
+      throw new AppError(409, "mfa_setup_expired", "Start two-step verification setup again.");
+    }
+    const mfaSecret = this.readMfaSecret(credential.secretEnvelope);
+    if (!verifyTotpCode(mfaSecret.secret, input.code)) {
+      throw new AppError(422, "invalid_mfa_code", "The verification code is invalid.");
+    }
+
+    const recoveryCodes = createMfaRecoveryCodes();
+    const recoveryCodeHashes = recoveryCodes.map((code) =>
+      hashMfaRecoveryCode(code, this.config.security.credentialEncryptionKey)
+    );
+    const mfaVerifiedAt = new Date();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const enabled = await tx.userMfaCredential.updateMany({
+        where: {
+          id: credential.id,
+          enabledAt: null,
+          pendingExpiresAt: { gt: new Date() }
+        },
+        data: {
+          enabledAt: mfaVerifiedAt,
+          pendingExpiresAt: null,
+          recoveryCodeHashes,
+          lastUsedAt: mfaVerifiedAt,
+          ...(mfaSecret.key === this.config.security.credentialEncryptionKey
+            ? {}
+            : {
+                secretEnvelope: encryptSecretEnvelope(
+                  this.config.security.credentialEncryptionKey,
+                  { secret: mfaSecret.secret }
+                )
+              })
+        }
+      });
+      if (enabled.count !== 1) {
+        throw new AppError(409, "mfa_setup_expired", "Start two-step verification setup again.");
+      }
+
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { authVersion: { increment: 1 } },
+        include: this.authUserInclude()
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+      const tokens = await this.issueTokens(user.id, user.authVersion, meta, tx, {
+        mfaVerifiedAt
+      });
+      await writeAuditLog(tx, {
+        actorUserId: userId,
+        action: "mfa.enabled",
+        subject: "user",
+        subjectId: userId,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+        requestId: meta.requestId,
+        severity: "HIGH"
+      });
+
+      return { user, tokens };
+    }, { isolationLevel: "Serializable" });
+
+    return {
+      enabled: true,
+      recoveryCodes,
+      user: toAuthenticatedUser(result.user),
+      tokens: result.tokens
+    };
+  }
+
+  async disableMfa(
+    userId: string,
+    input: { currentPassword: string; code: string },
+    meta: RequestMeta
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: this.authUserInclude()
+    });
+    if (!user || user.status !== "ACTIVE") {
+      throw new AppError(401, "unauthorized", "Authentication required.");
+    }
+    if (!user.mfaCredential?.enabledAt) {
+      throw new AppError(409, "mfa_not_enabled", "Two-step verification is not enabled.");
+    }
+    if (!await verifyPassword(input.currentPassword, user.passwordHash)) {
+      throw new AppError(400, "invalid_current_password", "Current password is incorrect.");
+    }
+    if (!await this.verifyMfaCode(userId, input.code)) {
+      throw new AppError(422, "invalid_mfa_code", "The verification code is invalid.");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.userMfaCredential.delete({ where: { userId } });
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: { authVersion: { increment: 1 } },
+        include: this.authUserInclude()
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+      const tokens = await this.issueTokens(updatedUser.id, updatedUser.authVersion, meta, tx);
+      await writeAuditLog(tx, {
+        actorUserId: userId,
+        action: "mfa.disabled",
+        subject: "user",
+        subjectId: userId,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+        requestId: meta.requestId,
+        severity: "HIGH"
+      });
+
+      return {
+        enabled: false,
+        user: toAuthenticatedUser(updatedUser),
+        tokens
+      };
     }, { isolationLevel: "Serializable" });
   }
 
@@ -993,13 +1310,21 @@ export class AuthService {
     userId: string,
     sessionVersion: number,
     meta: RequestMeta,
-    database: RefreshTokenWriter = this.prisma
+    database: RefreshTokenWriter = this.prisma,
+    session: SessionContext = {}
   ): Promise<TokenPair> {
     const accessExpiresIn = parseDurationToSeconds(this.config.auth.accessTokenTtl);
     const refreshExpiresIn = parseDurationToSeconds(this.config.auth.refreshTokenTtl);
     const secret = encoder.encode(this.config.auth.accessTokenSecret);
+    const authenticatedAt = session.authenticatedAt ?? new Date();
+    const mfaVerifiedAt = session.mfaVerifiedAt ?? null;
+    const familyId = session.familyId ?? randomBytes(18).toString("base64url");
 
-    const accessToken = await new SignJWT({ sessionVersion })
+    const accessToken = await new SignJWT({
+      sessionVersion,
+      authTime: Math.floor(authenticatedAt.getTime() / 1000),
+      mfaVerifiedAt: mfaVerifiedAt?.toISOString() ?? null
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setSubject(userId)
       .setIssuedAt()
@@ -1015,6 +1340,9 @@ export class AuthService {
         authVersion: sessionVersion,
         userAgent: meta.userAgent,
         ipAddress: meta.ipAddress,
+        familyId,
+        authenticatedAt,
+        mfaVerifiedAt,
         expiresAt: addSeconds(refreshExpiresIn)
       }
     });
@@ -1191,12 +1519,179 @@ export class AuthService {
       subjectId: input.subjectId,
       ipAddress: input.meta.ipAddress,
       userAgent: input.meta.userAgent,
+      requestId: input.meta.requestId,
       metadata: input.metadata as Prisma.InputJsonValue | undefined
     });
   }
 
+  private async recordLoginFailure(email: string, meta: RequestMeta, reason: "credentials" | "mfa") {
+    const failure = await this.loginProtection.recordFailure(email, meta.ipAddress);
+    await safeWriteAuditLog(this.prisma, {
+      action: reason === "mfa" ? "login.mfa_failed" : "login.failed",
+      subject: "user",
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+      requestId: meta.requestId,
+      outcome: "DENIED",
+      severity: failure.blockedUntil ? "HIGH" : "WARN",
+      metadata: {
+        reason,
+        delayed: Boolean(failure.blockedUntil),
+        attempts: failure.attempts.map((attempt) => ({
+          scope: attempt.scope,
+          failureCount: attempt.failureCount
+        }))
+      }
+    });
+    if (failure.shouldAlert) {
+      void this.sendLoginSecurityAlert(email, meta).catch(async (error) => {
+        await safeWriteAuditLog(this.prisma, {
+          action: "security_alert.delivery_failed",
+          subject: "notification",
+          requestId: meta.requestId,
+          outcome: "FAILURE",
+          severity: "WARN",
+          metadata: {
+            type: "login_throttle",
+            error: error instanceof Error ? error.message : "unknown"
+          }
+        });
+      });
+    }
+  }
+
+  private async sendLoginSecurityAlert(email: string, meta: RequestMeta) {
+    const settings = await this.emailSettings.resolve();
+    if (!isEmailDeliveryConfigured(settings)) return;
+
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        status: "ACTIVE",
+        roles: {
+          some: {
+            role: { name: { in: ["owner", "admin"] } }
+          }
+        }
+      },
+      select: { email: true }
+    });
+    if (recipients.length === 0) return;
+
+    const client = createEmailClient(settings);
+    const attemptedAccount = email.toLowerCase();
+    const source = meta.ipAddress || "unknown source";
+    await Promise.all(recipients.map(({ email: recipient }) => client.send({
+      to: recipient,
+      from: settings.from!,
+      subject: `Security alert for ${this.config.app.name}`,
+      text: `Repeated failed sign-in attempts were delayed for ${attemptedAccount} from ${source}. Review Security activity in the dashboard.`,
+      html: `<p>Repeated failed sign-in attempts were delayed for <strong>${escapeHtml(attemptedAccount)}</strong> from ${escapeHtml(source)}.</p><p>Review Security activity in the dashboard.</p>`,
+      metadata: {
+        flow: "securityAlert",
+        type: "login_throttle",
+        app: this.config.app.name
+      }
+    })));
+  }
+
+  private async verifyMfaCode(userId: string, code: string) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const credential = await this.prisma.userMfaCredential.findUnique({
+        where: { userId }
+      });
+      if (!credential?.enabledAt) return false;
+
+      const mfaSecret = this.readMfaSecret(credential.secretEnvelope);
+      if (verifyTotpCode(mfaSecret.secret, code)) {
+        await this.prisma.userMfaCredential.update({
+          where: { id: credential.id },
+          data: {
+            lastUsedAt: new Date(),
+            ...(mfaSecret.key === this.config.security.credentialEncryptionKey
+              ? {}
+              : {
+                  secretEnvelope: encryptSecretEnvelope(
+                    this.config.security.credentialEncryptionKey,
+                    { secret: mfaSecret.secret }
+                  )
+                })
+          }
+        });
+        return true;
+      }
+
+      const recoveryCodeHash = this.mfaCredentialKeys()
+        .map((key) => hashMfaRecoveryCode(code, key))
+        .find((hash) => credential.recoveryCodeHashes.includes(hash));
+      if (!recoveryCodeHash) return false;
+
+      const consumed = await this.prisma.userMfaCredential.updateMany({
+        where: {
+          id: credential.id,
+          enabledAt: { not: null },
+          recoveryCodeHashes: { equals: credential.recoveryCodeHashes }
+        },
+        data: {
+          recoveryCodeHashes: {
+            set: credential.recoveryCodeHashes.filter((hash) => hash !== recoveryCodeHash)
+          },
+          lastUsedAt: new Date(),
+          ...(mfaSecret.key === this.config.security.credentialEncryptionKey
+            ? {}
+            : {
+                secretEnvelope: encryptSecretEnvelope(
+                  this.config.security.credentialEncryptionKey,
+                  { secret: mfaSecret.secret }
+                )
+              })
+        }
+      });
+      if (consumed.count === 1) return true;
+    }
+
+    return false;
+  }
+
+  private readMfaSecret(envelope: string) {
+    let cause = "unknown";
+    for (const key of this.mfaCredentialKeys()) {
+      try {
+        const value = decryptSecretEnvelope<unknown>(key, envelope);
+        if (
+          !value ||
+          typeof value !== "object" ||
+          typeof (value as { secret?: unknown }).secret !== "string"
+        ) {
+          throw new Error("MFA secret envelope is invalid.");
+        }
+        return { secret: (value as { secret: string }).secret, key };
+      } catch (error) {
+        cause = error instanceof Error ? error.message : "unknown";
+      }
+    }
+    throw new AppError(
+      500,
+      "mfa_configuration_unavailable",
+      "Two-step verification configuration could not be read.",
+      { cause }
+    );
+  }
+
+  private mfaCredentialKeys() {
+    return [...new Set([
+      this.config.security.credentialEncryptionKey,
+      this.config.security.auditIntegrityKey,
+      ...this.config.security.auditPreviousIntegrityKeys
+    ])];
+  }
+
   private authUserInclude() {
     return {
+      mfaCredential: {
+        select: {
+          enabledAt: true
+        }
+      },
       roles: {
         include: {
           role: {

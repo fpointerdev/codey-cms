@@ -12,7 +12,15 @@ run(process.execPath, [
   "deploy",
   "--schema",
   "prisma/generated/schema.prisma"
-]);
+], {
+  ...process.env,
+  DATABASE_URL: process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL
+});
+
+if (process.env.CODEY_MANAGE_RUNTIME_DB_ROLE === "true") {
+  run(process.execPath, ["scripts/configure-runtime-database-role.mjs"]);
+}
+delete process.env.MIGRATION_DATABASE_URL;
 
 const exportSpecPath = path.resolve(
   root,
@@ -36,10 +44,10 @@ if (!existsSync(serverEntry)) {
 
 await import(pathToFileURL(serverEntry).href);
 
-function run(command, args) {
+function run(command, args, environment = process.env) {
   const result = spawnSync(command, args, {
     cwd: root,
-    env: process.env,
+    env: environment,
     stdio: "inherit"
   });
 

@@ -933,6 +933,7 @@ async function apiRequest(path, options, allowRefresh, includeMeta = false) {
     const error = new Error(body?.error?.message || `Request failed with status ${response.status}.`);
     error.status = response.status;
     error.code = body?.error?.code;
+    error.details = body?.error?.details || null;
     throw error;
   }
 

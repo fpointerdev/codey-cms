@@ -30,6 +30,7 @@ import {
   orderProductsByIds
 } from "./product-attribute-filter.js";
 import { enrichPublicMedia } from "../cms/public-media.js";
+import { writeAuditLog } from "../../core/audit/audit-log.js";
 
 function productInclude(canReadInactiveVariants = false) {
   return {
@@ -75,8 +76,8 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         }
       });
 
-      await context.prisma.$transaction([
-        context.prisma.moduleSetting.upsert({
+      await context.prisma.$transaction(async (tx) => {
+        await tx.moduleSetting.upsert({
           where: {
             siteId_moduleId_key: {
               siteId: site.id,
@@ -93,19 +94,18 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
             key: "storefront",
             value: req.body as Prisma.InputJsonValue
           }
-        }),
-        context.prisma.auditLog.create({
-          data: {
-            actorUserId: req.user?.id,
-            action: "shop.settings.update",
-            subject: "site",
-            subjectId: site.id,
-            ipAddress: req.ip,
-            userAgent: req.header("user-agent"),
-            metadata: req.body as Prisma.InputJsonValue
-          }
-        })
-      ]);
+        });
+        await writeAuditLog(tx, {
+          actorUserId: req.user?.id,
+          action: "shop.settings.update",
+          subject: "site",
+          subjectId: site.id,
+          ipAddress: req.ip,
+          userAgent: req.header("user-agent"),
+          requestId: req.requestId,
+          metadata: req.body as Prisma.InputJsonValue
+        });
+      });
 
       return sendSuccess(res, { settings: await readShopSettings(context.prisma) });
     })

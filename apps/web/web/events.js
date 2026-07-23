@@ -63,11 +63,15 @@ import {
 import { hydrateBuilderPreview, insertIntoTextarea, refreshRichPreview } from "./builder-views.js";
 import {
   acceptUserInvite,
+  beginMfaSetup,
   changeOwnPassword,
+  confirmMfaSetup,
   confirmEmailVerification,
   confirmPasswordReset,
   loginAdmin,
   logoutAdmin,
+  copyMfaRecoveryCodes,
+  disableMfa,
   requestPasswordResetFromLogin,
   revokeAllSessions,
   submitContactForm
@@ -231,6 +235,27 @@ function bindSubmitEvents() {
     if (changePasswordForm) {
       event.preventDefault();
       void changeOwnPassword(changePasswordForm);
+      return;
+    }
+
+    const mfaSetupForm = event.target.closest("[data-mfa-setup-form]");
+    if (mfaSetupForm) {
+      event.preventDefault();
+      void beginMfaSetup(mfaSetupForm);
+      return;
+    }
+
+    const mfaConfirmForm = event.target.closest("[data-mfa-confirm-form]");
+    if (mfaConfirmForm) {
+      event.preventDefault();
+      void confirmMfaSetup(mfaConfirmForm);
+      return;
+    }
+
+    const mfaDisableForm = event.target.closest("[data-mfa-disable-form]");
+    if (mfaDisableForm) {
+      event.preventDefault();
+      void disableMfa(mfaDisableForm);
       return;
     }
 
@@ -789,6 +814,12 @@ function bindAdminClick(event) {
 
   if (event.target.closest("[data-revoke-all-sessions]")) {
     void revokeAllSessions();
+    return true;
+  }
+
+  const copyMfaRecoveryButton = event.target.closest("[data-copy-mfa-recovery]");
+  if (copyMfaRecoveryButton) {
+    void copyMfaRecoveryCodes(copyMfaRecoveryButton);
     return true;
   }
 

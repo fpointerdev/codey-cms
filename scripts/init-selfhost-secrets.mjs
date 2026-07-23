@@ -5,6 +5,7 @@ import path from "node:path";
 const secretDirectory = path.resolve(process.env.CODEY_SECRET_DIR || "/run/codey-secrets");
 const secrets = {
   postgres_password: 32,
+  postgres_runtime_password: 32,
   jwt_access_secret: 48,
   credential_encryption_key: 48,
   backup_encryption_key: 48,

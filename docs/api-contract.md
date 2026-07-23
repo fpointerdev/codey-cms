@@ -82,6 +82,9 @@ Auth uses JWT access tokens and rotating refresh tokens. Generated sites should 
 - Password reset and email verification tokens are delivered through the configured recovery delivery mode.
 - Production never returns password reset or email verification tokens in API responses.
 - Authenticated administrators can receive a manual invite URL when transactional email is unavailable.
+- Accounts without two-step verification keep the existing login request. Enabled accounts receive `mfa_required` until login is repeated with the optional `mfaCode` field.
+- `/auth/mfa`, `/auth/mfa/setup`, and `/auth/mfa/confirm` are additive account-security endpoints; enabling or disabling MFA revokes older sessions.
+- Repeated failures are delayed by persistent account and IP throttles. Clients should display `login_temporarily_delayed` without retry loops.
 
 ## RBAC
 

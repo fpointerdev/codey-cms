@@ -57,10 +57,15 @@ test("type scale affects public headings on desktop and mobile", () => {
 });
 
 test("server-rendered design and custom CSS use separate managed style tags", () => {
-  const html = publicSiteStyleTag(designSystemPresets.clean, ".page-title { color: #123456; }");
+  const html = publicSiteStyleTag(
+    designSystemPresets.clean,
+    ".page-title { color: #123456; } @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}"
+  );
 
   assert.match(html, /<style data-site-design-system>/);
   assert.match(html, /<style data-site-custom-css>\.page-title/);
+  assert.match(html, /scroll-behavior:auto/);
+  assert.doesNotMatch(publicSiteStyleTag({}, ".legacy{behavior:none}"), /data-site-custom-css/);
   assert.doesNotMatch(publicSiteStyleTag({}, "@import 'https:\/\/example.com\/bad.css';"), /data-site-custom-css/);
 });
 

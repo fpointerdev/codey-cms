@@ -12,6 +12,8 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { config } from "../config/index.js";
+import { createAdminMutationAudit } from "./audit/admin-mutation-audit.middleware.js";
+import { safeWriteAuditLog } from "./audit/audit-log.js";
 import { errorHandler } from "./http/error.middleware.js";
 import { createMaintenanceMiddleware } from "./http/maintenance.middleware.js";
 import { loadModules } from "./http/module-loader.js";
@@ -155,7 +157,29 @@ function createRateLimiter(
       if (!options.writeOnly) return false;
       return !["POST", "PUT", "PATCH", "DELETE"].includes(req.method.toUpperCase());
     },
-    handler: (_req: Request, res: Response) => {
+    handler: (req: Request, res: Response) => {
+      const rateLimitInfo = (req as Request & {
+        rateLimit?: { limit: number; used: number };
+      }).rateLimit;
+      if (!rateLimitInfo || rateLimitInfo.used === rateLimitInfo.limit + 1) {
+        void safeWriteAuditLog(prisma, {
+          actorUserId: req.user?.id,
+          action: "rate_limit.exceeded",
+          subject: "api",
+          ipAddress: req.ip,
+          userAgent: req.header("user-agent"),
+          requestId: req.requestId,
+          outcome: "DENIED",
+          severity: "HIGH",
+          metadata: {
+            code,
+            method: req.method,
+            path: req.originalUrl.split("?", 1)[0],
+            windowMs: config.rateLimits.platform.windowMs,
+            limit
+          }
+        });
+      }
       res.status(429).json({
         success: false,
         data: null,
@@ -1318,7 +1342,7 @@ export async function createApp() {
   const cmsService = new CmsService(prisma);
 
   app.disable("x-powered-by");
-  if (config.isProduction) app.set("trust proxy", 1);
+  app.set("trust proxy", config.api.trustProxy);
   app.use(requestContext);
   app.use(pinoHttp({
     logger,
@@ -1332,6 +1356,7 @@ export async function createApp() {
   app.use(cors(createCorsOptions()));
   app.use(compression());
   app.use(cookieParser());
+  app.use(createAdminMutationAudit({ config, prisma, logger }));
   app.use(config.api.prefix, createApiLimiter());
   app.use(`${config.api.prefix}/auth`, createAuthLimiter());
   app.use(`${config.api.prefix}/config`, createAdminWriteLimiter());

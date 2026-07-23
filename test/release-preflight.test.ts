@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import test from "node:test";
 
@@ -32,5 +33,21 @@ test("release preflight rejects a tag that differs from the package version", as
       }
     }),
     /does not match package version 0\.9\.0/
+  );
+});
+
+test("release workflow pins actions and scopes the signing key to signing steps", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const actionReferences = [...workflow.matchAll(/uses: [^@\s]+@([^\s]+)/g)]
+    .map((match) => match[1]);
+  assert.ok(actionReferences.length > 0);
+  assert.ok(actionReferences.every((reference) => /^[a-f0-9]{40}$/.test(reference)));
+
+  const publishJob = workflow.split("  publish-release:")[1] ?? "";
+  const jobConfiguration = publishJob.split("    steps:")[0] ?? "";
+  assert.doesNotMatch(jobConfiguration, /CODEY_RELEASE_PRIVATE_KEY/);
+  assert.equal(
+    (publishJob.match(/CODEY_RELEASE_PRIVATE_KEY:/g) ?? []).length,
+    2
   );
 });

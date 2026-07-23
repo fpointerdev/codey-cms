@@ -161,6 +161,7 @@ model User {
   sentInvites      UserInvite[]   @relation("InvitesSent")
   acceptedInvites  UserInvite[]   @relation("InvitesAccepted")
   auditLogs        AuditLog[]
+  mfaCredential    UserMfaCredential?
 
   @@index([status])
   @@index([createdAt])
@@ -222,11 +223,47 @@ model RefreshToken {
   expiresAt           DateTime
   revokedAt           DateTime?
   replacedByTokenHash String?
+  familyId            String    @default(cuid())
+  authenticatedAt     DateTime  @default(now())
+  mfaVerifiedAt       DateTime?
   createdAt           DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
   @@index([revokedAt])
+  @@index([familyId, revokedAt])
+}
+
+model UserMfaCredential {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secretEnvelope     String
+  recoveryCodeHashes String[]   @default([])
+  enabledAt          DateTime?
+  pendingExpiresAt   DateTime?
+  lastUsedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([enabledAt])
+}
+
+model AuthThrottle {
+  id           String    @id @default(cuid())
+  scope        String
+  keyHash      String
+  failureCount Int       @default(0)
+  firstFailedAt DateTime @default(now())
+  lastFailedAt DateTime  @default(now())
+  blockedUntil DateTime?
+  alertedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([scope, keyHash])
+  @@index([blockedUntil])
+  @@index([lastFailedAt])
 }
 
 model EmailVerificationToken {
@@ -279,19 +316,30 @@ model UserInvite {
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
-  actorUserId String?
-  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  action      String
-  subject     String
-  subjectId   String?
-  ipAddress   String?
-  userAgent   String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id                String   @id @default(cuid())
+  actorUserId       String?
+  actor             User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  action            String
+  subject           String
+  subjectId         String?
+  ipAddress         String?
+  userAgent         String?
+  requestId         String?
+  outcome           String   @default("SUCCESS")
+  severity          String   @default("INFO")
+  eventHash         String?
+  eventKeyId        String?
+  previousEventHash String?
+  metadata          Json?
+  createdAt         DateTime @default(now())
 
   @@index([actorUserId, createdAt])
   @@index([action, subject])
   @@index([subject, subjectId])
   @@index([createdAt])
+  @@index([severity, createdAt])
+  @@index([requestId])
+  @@index([eventHash])
+  @@index([eventKeyId])
+  @@index([previousEventHash])
 }

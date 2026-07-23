@@ -8,7 +8,20 @@ export const registerSchema = z.object({
 
 export const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  mfaCode: z.string().trim().min(6).max(32).optional()
+});
+
+export const mfaSetupSchema = z.object({
+  currentPassword: z.string().min(1)
+});
+
+export const mfaConfirmSchema = z.object({
+  code: z.string().trim().min(6).max(32)
+});
+
+export const mfaDisableSchema = mfaConfirmSchema.extend({
+  currentPassword: z.string().min(1)
 });
 
 export const refreshSchema = z.object({

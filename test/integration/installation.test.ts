@@ -41,6 +41,28 @@ test("an empty runtime can be claimed once and used immediately", { timeout: 60_
     assert.equal(invalidClaim.status, 403);
     assert.equal((await invalidClaim.json()).error.code, "installation_token_invalid");
 
+    const preparedSite = await prisma.site.upsert({
+      where: { slug: "default" },
+      update: {},
+      create: { slug: "default", name: "Generated site", deploymentProfile: "cms" }
+    });
+    await prisma.moduleSetting.upsert({
+      where: {
+        siteId_moduleId_key: { siteId: preparedSite.id, moduleId: "config", key: "site" }
+      },
+      update: {},
+      create: {
+        siteId: preparedSite.id,
+        moduleId: "config",
+        key: "site",
+        value: {
+          description: "Generated website description",
+          design: { preset: "custom" },
+          customCss: ".website-spec-page{--codey-dna:test-install;}"
+        }
+      }
+    });
+
     const install = await request("/api/v1/install/complete", {
       method: "POST",
       body: JSON.stringify(installationPayload(process.env.CODEY_INSTALL_TOKEN || ""))
@@ -69,6 +91,20 @@ test("an empty runtime can be claimed once and used immediately", { timeout: 60_
     assert.equal(installation?.ownerUserId, owner?.id);
     assert.deepEqual(owner?.roles.map(({ role }) => role.name), ["owner"]);
     assert.equal(await prisma.cmsPage.count({ where: { slug: "home", status: "PUBLISHED" } }), 1);
+    const siteSettings = await prisma.moduleSetting.findUnique({
+      where: {
+        siteId_moduleId_key: { siteId: preparedSite.id, moduleId: "config", key: "site" }
+      }
+    });
+    assert.deepEqual(siteSettings?.value, {
+      description: "Generated website description",
+      design: { preset: "custom" },
+      customCss: ".website-spec-page{--codey-dna:test-install;}",
+      title: "First CodeY Site",
+      metaTitle: "First CodeY Site",
+      siteUrl: process.env.APP_PUBLIC_URL,
+      searchIndexing: false
+    });
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await prisma.$disconnect();

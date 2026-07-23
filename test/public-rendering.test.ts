@@ -4,6 +4,7 @@ import { injectPublicShellContent } from "../src/core/public-shell.js";
 
 const {
   renderPageContent,
+  renderFooter,
   renderPostContent,
   renderProductDetailContent,
   renderShopListingContent,
@@ -94,6 +95,108 @@ test("generated public pages preserve section keys and avoid duplicate hero titl
   assert.doesNotMatch(html, /class="page-title"/);
   assert.match(html, /data-section-key="hero"/);
   assert.match(html, /<h1>Precision without compromise<\/h1>/);
+});
+
+test("WebsiteSpec pages keep preview-compatible layout hooks and editable hero points", () => {
+  const html = renderPageContent({
+    title: "Home",
+    excerpt: "",
+    content: {
+      source: "websiteSpec",
+      hideTitle: true,
+      layout: "full-width",
+      style: { theme: "Utility Pro" }
+    },
+    sections: [{
+      id: "hero-section",
+      key: "hero",
+      settings: {
+        layout: "two-column",
+        container: "wide",
+        spacing: "xl",
+        style: { preset: "refined-light" },
+        decoration: { type: "narrative-ribbon" },
+        websiteSpec: {
+          type: "hero",
+          composition: "eight-column-split",
+          collection: true
+        }
+      },
+      blocks: [
+        {
+          key: "hero-heading",
+          type: "RICH_TEXT",
+          value: "<h1>Premium vehicle care</h1>",
+          settings: {},
+          editable: true
+        },
+        {
+          key: "hero-image",
+          type: "IMAGE",
+          value: { url: "/uploads/hero.jpg", alt: "Vehicle wash" },
+          settings: {},
+          editable: true
+        },
+        {
+          key: "hero-points",
+          type: "CUSTOM",
+          value: {
+            variant: "hero-points",
+            items: [{ title: "Care", body: "A checked handover" }]
+          },
+          settings: {},
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.match(html, /class="website-spec-page"/);
+  assert.match(html, /website-spec-section/);
+  assert.match(html, /section-hero/);
+  assert.match(html, /layout-two-column/);
+  assert.match(html, /preset-refined-light/);
+  assert.match(html, /decoration-narrative-ribbon/);
+  assert.match(html, /<div class="section-inner">/);
+  assert.match(html, /class="hero-points"/);
+  assert.match(html, /website-spec-heading/);
+  assert.match(html, /section-media/);
+});
+
+test("WebsiteSpec collection headings and actions render in one semantic copy group", () => {
+  const html = renderPageContent({
+    title: "Services",
+    content: { source: "websiteSpec", hideTitle: true },
+    sections: [{
+      id: "services-section",
+      key: "services",
+      settings: { websiteSpec: { type: "featureGrid", collection: true } },
+      blocks: [{
+        key: "services-content",
+        type: "CUSTOM",
+        value: {
+          type: "featureGrid",
+          heading: "Choose your wash",
+          cta: { label: "Explore services", url: "/services" },
+          items: [{ title: "Express", body: "A quick exterior clean." }]
+        },
+        editable: true
+      }]
+    }]
+  });
+
+  assert.match(html, /<h2>Choose your wash<\/h2>/);
+  assert.ok(html.indexOf("Choose your wash") < html.indexOf("Explore services"));
+  assert.ok(html.indexOf("Explore services") < html.indexOf("Express"));
+});
+
+test("public footer keeps the configured site name on every page", () => {
+  const html = withPublicRenderContext({
+    config: { siteSettings: { title: "Washgo" } }
+  }, () => renderFooter({ title: "Home", content: {} }));
+
+  assert.match(html, /© \d{4} Washgo/);
+  assert.doesNotMatch(html, /© \d{4} Home/);
 });
 
 test("structured tabs render accessible controls without an item limit", () => {

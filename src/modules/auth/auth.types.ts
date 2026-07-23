@@ -9,6 +9,7 @@ export type AuthenticatedUser = {
   name: string | null;
   roles: string[];
   permissions: AuthenticatedPermission[];
+  mfaEnabled: boolean;
 };
 
 export type TokenPair = {

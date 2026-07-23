@@ -4,6 +4,7 @@ import { AppError } from "../../core/errors/app-error.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { AuthService } from "./auth.service.js";
 import type { AuthenticatedUser } from "./auth.types.js";
+import { safeWriteAuditLog } from "../../core/audit/audit-log.js";
 
 function readBearerToken(header?: string) {
   if (!header?.startsWith("Bearer ")) return null;
@@ -56,12 +57,27 @@ export function requirePermission(
 ): RequestHandler[] {
   return [
     requireAuth(context),
-    (req, _res, next) => {
+    asyncHandler(async (req, _res, next) => {
       if (!hasPermission(req.user, action, subject)) {
+        await safeWriteAuditLog(context.prisma, {
+          actorUserId: req.user?.id,
+          action: "authorization.denied",
+          subject,
+          ipAddress: req.ip,
+          userAgent: req.header("user-agent"),
+          requestId: req.requestId,
+          outcome: "DENIED",
+          severity: "HIGH",
+          metadata: {
+            requiredAction: action,
+            method: req.method,
+            path: req.originalUrl.split("?", 1)[0]
+          }
+        });
         throw new AppError(403, "forbidden", "You do not have permission to perform this action.");
       }
 
       next();
-    }
+    })
   ];
 }

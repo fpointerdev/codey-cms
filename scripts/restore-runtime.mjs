@@ -141,7 +141,10 @@ async function installRestoredMedia(mediaDirectory, stagingDirectory) {
   await rm(rollbackDirectory, { recursive: true, force: true });
 }
 
-const databaseConnection = postgresCliConnection(requireEnv("DATABASE_URL"));
+const databaseConnection = postgresCliConnection(
+  process.env.MIGRATION_DATABASE_URL || requireEnv("DATABASE_URL")
+);
+delete process.env.MIGRATION_DATABASE_URL;
 delete process.env.DATABASE_URL;
 const databaseEnvironment = databaseCommandEnvironment(databaseConnection.password);
 const inputArgument = process.argv[2] ?? process.env.BACKUP_FILE;

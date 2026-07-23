@@ -3,6 +3,7 @@ import { stdin as input, stdout as output } from "node:process";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
+import { writeScriptAuditLog } from "./audit-log.mjs";
 
 dotenv.config();
 
@@ -232,15 +233,14 @@ async function main() {
       data: { revokedAt: new Date() }
     });
 
-    await tx.auditLog.create({
-      data: {
-        action: "owner.bootstrap",
-        subject: "user",
-        subjectId: createdUser.id,
-        metadata: {
-          email: createdUser.email,
-          refreshTokensRevoked: revokedTokens.count
-        }
+    await writeScriptAuditLog(tx, {
+      action: "owner.bootstrap",
+      subject: "user",
+      subjectId: createdUser.id,
+      severity: "HIGH",
+      metadata: {
+        email: createdUser.email,
+        refreshTokensRevoked: revokedTokens.count
       }
     });
 

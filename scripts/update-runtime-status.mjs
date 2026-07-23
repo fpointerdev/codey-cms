@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { writeScriptAuditLog } from "./audit-log.mjs";
 
 const prisma = new PrismaClient();
 const [updateId, status] = process.argv.slice(2);
@@ -70,18 +71,18 @@ try {
       });
     }
 
-    await tx.auditLog.create({
-      data: {
-        actorUserId: update.requestedByUserId,
-        action: `runtime.update.${status.toLowerCase()}`,
-        subject: "runtime",
-        subjectId: updateId,
-        metadata: {
-          fromVersion: update.fromVersion,
-          toVersion: update.toVersion,
-          backupId: backupId || update.backupId,
-          error: error || null
-        }
+    await writeScriptAuditLog(tx, {
+      actorUserId: update.requestedByUserId,
+      action: `runtime.update.${status.toLowerCase()}`,
+      subject: "runtime",
+      subjectId: updateId,
+      outcome: ["FAILED", "ROLLED_BACK"].includes(status) ? "FAILURE" : "SUCCESS",
+      severity: ["FAILED", "ROLLED_BACK"].includes(status) ? "HIGH" : "INFO",
+      metadata: {
+        fromVersion: update.fromVersion,
+        toVersion: update.toVersion,
+        backupId: backupId || update.backupId,
+        error: error || null
       }
     });
   });

@@ -15,6 +15,9 @@ x-runtime-environment: &runtime-environment
   APP_MODE: ${APP_MODE:-cms}
   APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:4000}
   API_PREFIX: /api/v1
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  SECURITY_AUDIT_KEY: ${SECURITY_AUDIT_KEY:-}
+  SECURITY_AUDIT_PREVIOUS_KEYS: ${SECURITY_AUDIT_PREVIOUS_KEYS:-}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4000}
   POSTGRES_HOST: postgres
   POSTGRES_DB: codey_site
@@ -50,6 +53,16 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    command:
+      - postgres
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_statement=mod
+      - -c
+      - log_parameter_max_length=0
     environment:
       POSTGRES_DB: codey_site
       POSTGRES_USER: codey
@@ -66,6 +79,11 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 25m
+        max-file: "5"
 
   backend:
     <<: *codey-image
@@ -87,6 +105,15 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
 
   backup:
     <<: *codey-image
@@ -113,6 +140,15 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
 
 volumes:
   postgres_data:

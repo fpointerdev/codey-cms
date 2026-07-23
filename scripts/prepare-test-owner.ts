@@ -40,6 +40,8 @@ try {
   });
 
   await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+  await prisma.userMfaCredential.deleteMany({ where: { userId: user.id } });
+  await prisma.authThrottle.deleteMany();
   await prisma.userRole.upsert({
     where: {
       userId_roleId: {

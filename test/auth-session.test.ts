@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../src/config/index.js";
 import { AppError } from "../src/core/errors/app-error.js";
 import { hashPassword } from "../src/core/security/password.js";
+import { decryptSecretEnvelope, encryptSecretEnvelope } from "../src/core/security/secret-envelope.js";
 import {
   clearRefreshTokenCookie,
   exposeAccessToken,
@@ -12,6 +13,7 @@ import {
 } from "../src/modules/auth/auth-session-cookie.js";
 import { changePasswordSchema, refreshSchema } from "../src/modules/auth/auth.schemas.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
+import { hashMfaRecoveryCode } from "../src/modules/auth/mfa.js";
 
 const config = {
   isProduction: false,
@@ -24,6 +26,17 @@ const config = {
     allowRegistration: false,
     requireEmailVerification: false,
     recoveryTokenDelivery: "disabled"
+  },
+  security: {
+    credentialEncryptionKey: "test-credential-encryption-key-with-32-characters",
+    auditIntegrityKey: "test-security-integrity-key-with-32-characters",
+    auditPreviousIntegrityKeys: [],
+    loginProtection: {
+      windowMs: 15 * 60_000,
+      accountFreeAttempts: 5,
+      ipFreeAttempts: 20,
+      maxDelayMs: 15 * 60_000
+    }
   },
   email: { driver: "disabled" }
 } as AppConfig;
@@ -121,6 +134,10 @@ test("access tokens stop working after the user session version changes", async 
     refreshToken: {
       create: async ({ data }: { data: Record<string, unknown> }) => data
     },
+    authThrottle: {
+      findMany: async () => [],
+      deleteMany: async () => ({ count: 0 })
+    },
     auditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => data
     }
@@ -159,6 +176,111 @@ test("refresh tokens cannot cross a session-version boundary", async () => {
   await assert.rejects(
     () => service.refresh("r".repeat(64), {}),
     (error) => error instanceof AppError && error.code === "invalid_refresh_token"
+  );
+});
+
+test("reusing a rotated refresh token revokes its active token family", async () => {
+  const calls = {
+    transactionCompleted: false,
+    revokedWhere: undefined as unknown,
+    audit: undefined as Record<string, unknown> | undefined
+  };
+  const tx = {
+    refreshToken: {
+      findUnique: async () => ({
+        id: "refresh-1",
+        userId: "user-1",
+        familyId: "family-1",
+        authVersion: 1,
+        revokedAt: new Date(),
+        replacedByTokenHash: "replacement-hash",
+        expiresAt: new Date(Date.now() + 60_000),
+        user: authUser(1)
+      }),
+      updateMany: async ({ where }: { where: unknown }) => {
+        calls.revokedWhere = where;
+        return { count: 2 };
+      }
+    },
+    auditLog: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        calls.audit = data;
+        return data;
+      }
+    }
+  };
+  const service = new AuthService({
+    $transaction: async (callback: (database: typeof tx) => Promise<unknown>) => {
+      const result = await callback(tx);
+      calls.transactionCompleted = true;
+      return result;
+    }
+  } as unknown as PrismaClient, config);
+
+  await assert.rejects(
+    () => service.refresh("r".repeat(64), { requestId: "request-1" }),
+    (error) => error instanceof AppError && error.code === "invalid_refresh_token"
+  );
+
+  assert.equal(calls.transactionCompleted, true);
+  assert.deepEqual(calls.revokedWhere, { familyId: "family-1", revokedAt: null });
+  assert.equal(calls.audit?.action, "refresh_token.replay_detected");
+  assert.equal(calls.audit?.outcome, "DENIED");
+  assert.equal(calls.audit?.severity, "HIGH");
+});
+
+test("MFA secrets created with the former audit key survive key separation", () => {
+  const formerAuditKey = "former-audit-integrity-key-with-32-characters";
+  const service = new AuthService({} as PrismaClient, {
+    ...config,
+    security: {
+      ...config.security,
+      auditIntegrityKey: "rotated-audit-integrity-key-with-32-characters",
+      auditPreviousIntegrityKeys: [formerAuditKey]
+    }
+  });
+  const encrypted = encryptSecretEnvelope(formerAuditKey, { secret: "MFA-SECRET" });
+  const readMfaSecret = (service as unknown as {
+    readMfaSecret: (envelope: string) => { secret: string; key: string };
+  }).readMfaSecret.bind(service);
+
+  assert.deepEqual(readMfaSecret(encrypted), { secret: "MFA-SECRET", key: formerAuditKey });
+});
+
+test("using a legacy MFA recovery code migrates the secret envelope", async () => {
+  const formerAuditKey = "former-audit-integrity-key-with-32-characters";
+  const recoveryCode = "ABCDE-23456";
+  let updatedData: Record<string, any> | undefined;
+  const rotatedConfig = {
+    ...config,
+    security: {
+      ...config.security,
+      auditIntegrityKey: "rotated-audit-integrity-key-with-32-characters",
+      auditPreviousIntegrityKeys: [formerAuditKey]
+    }
+  };
+  const service = new AuthService({
+    userMfaCredential: {
+      findUnique: async () => ({
+        id: "mfa-1",
+        enabledAt: new Date(),
+        secretEnvelope: encryptSecretEnvelope(formerAuditKey, { secret: "MFA-SECRET" }),
+        recoveryCodeHashes: [hashMfaRecoveryCode(recoveryCode, formerAuditKey)]
+      }),
+      updateMany: async ({ data }: { data: Record<string, any> }) => {
+        updatedData = data;
+        return { count: 1 };
+      }
+    }
+  } as unknown as PrismaClient, rotatedConfig);
+  const verifyMfaCode = (service as unknown as {
+    verifyMfaCode: (userId: string, code: string) => Promise<boolean>;
+  }).verifyMfaCode.bind(service);
+
+  assert.equal(await verifyMfaCode("user-1", recoveryCode), true);
+  assert.deepEqual(
+    decryptSecretEnvelope(rotatedConfig.security.credentialEncryptionKey, updatedData?.secretEnvelope),
+    { secret: "MFA-SECRET" }
   );
 });
 

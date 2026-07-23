@@ -100,8 +100,11 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "profile") {
     const { renderProfilePage } = await adminViews();
-    const { user } = await api("/users/me");
-    renderProfilePage(user);
+    const [{ user }, { mfa }] = await Promise.all([
+      api("/users/me"),
+      api("/auth/mfa")
+    ]);
+    renderProfilePage(user, mfa);
     return;
   }
 
@@ -399,9 +402,12 @@ export async function loadAdminRoute(route) {
   if (route.view === "settings") {
     const { renderSettingsPage } = await adminViews();
     const config = await api("/config");
-    const [emailResult, updateResult] = await Promise.allSettled([
+    const [emailResult, updateResult, auditResult] = await Promise.allSettled([
       api("/config/email"),
-      api("/config/runtime-update")
+      api("/config/runtime-update"),
+      hasPermission("read", "audit")
+        ? api("/config/audit-logs?limit=20")
+        : Promise.resolve({ auditLogs: [] })
     ]);
     config.email = emailResult.status === "fulfilled"
       ? emailResult.value.email
@@ -409,6 +415,10 @@ export async function loadAdminRoute(route) {
     config.runtimeUpdate = updateResult.status === "fulfilled"
       ? updateResult.value.update
       : { enabled: false, error: updateResult.reason?.message || "Unable to load update status." };
+    config.auditLogs = auditResult.status === "fulfilled" ? auditResult.value.auditLogs || [] : [];
+    config.auditError = auditResult.status === "rejected"
+      ? auditResult.reason?.message || "Unable to load security activity."
+      : "";
     renderSettingsPage(config);
     return;
   }

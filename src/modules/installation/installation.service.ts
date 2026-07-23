@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
+import { writeAuditLog } from "../../core/audit/audit-log.js";
 import { hashPassword } from "../../core/security/password.js";
 import {
   runtimeReleaseChannel,
@@ -50,6 +51,7 @@ const rolePermissionKeys: Record<string, Array<[string, string]>> = {
 type RequestMeta = {
   ipAddress?: string;
   userAgent?: string;
+  requestId?: string;
 };
 
 export class InstallationService {
@@ -171,19 +173,19 @@ export class InstallationService {
             }
           }
         });
-        await tx.auditLog.create({
-          data: {
-            actorUserId: owner.id,
-            action: "runtime.install",
-            subject: "runtime",
-            subjectId: installationId,
-            ipAddress: meta.ipAddress,
-            userAgent: meta.userAgent,
-            metadata: {
-              runtimeVersion,
-              profile: profile.id,
-              siteId: site.id
-            }
+        await writeAuditLog(tx, {
+          actorUserId: owner.id,
+          action: "runtime.install",
+          subject: "runtime",
+          subjectId: installationId,
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+          requestId: meta.requestId,
+          severity: "HIGH",
+          metadata: {
+            runtimeVersion,
+            profile: profile.id,
+            siteId: site.id
           }
         });
 
@@ -341,33 +343,39 @@ export class InstallationService {
     }
   }
 
-  private initializeSiteSettings(
+  private async initializeSiteSettings(
     tx: Prisma.TransactionClient,
     siteId: string,
     input: CompleteInstallationInput
   ) {
+    const key = { siteId, moduleId: "config", key: "site" };
+    const existing = await tx.moduleSetting.findUnique({
+      where: { siteId_moduleId_key: key },
+      select: { value: true }
+    });
+    const stored = existing?.value && typeof existing.value === "object" && !Array.isArray(existing.value)
+      ? existing.value as Record<string, unknown>
+      : {};
+    const value = {
+      ...stored,
+      title: input.siteName,
+      metaTitle: input.siteName,
+      siteUrl: this.config.app.publicUrl,
+      searchIndexing: input.searchIndexing
+    };
+
     return tx.moduleSetting.upsert({
       where: {
-        siteId_moduleId_key: { siteId, moduleId: "config", key: "site" }
+        siteId_moduleId_key: key
       },
       update: {
-        value: {
-          title: input.siteName,
-          metaTitle: input.siteName,
-          siteUrl: this.config.app.publicUrl,
-          searchIndexing: input.searchIndexing
-        }
+        value: value as Prisma.InputJsonValue
       },
       create: {
         siteId,
         moduleId: "config",
         key: "site",
-        value: {
-          title: input.siteName,
-          metaTitle: input.siteName,
-          siteUrl: this.config.app.publicUrl,
-          searchIndexing: input.searchIndexing
-        }
+        value: value as Prisma.InputJsonValue
       }
     });
   }

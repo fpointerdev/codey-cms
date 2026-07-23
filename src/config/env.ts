@@ -27,6 +27,21 @@ const optionalSecretFromEnv = z.preprocess((value) => {
   return value;
 }, z.string().trim().min(32).optional());
 
+const trustProxyFromEnv = z.preprocess((value) => {
+  if (value === undefined || value === "") return undefined;
+  if (typeof value !== "string") return value;
+
+  const normalized = value.trim().toLowerCase();
+  if (["false", "no", "off"].includes(normalized)) return false;
+  if (["true", "yes", "on"].includes(normalized)) return true;
+  if (/^\d+$/.test(normalized)) return Number(normalized);
+  return value.trim();
+}, z.union([
+  z.boolean(),
+  z.number().int().min(0).max(10),
+  z.string().trim().min(1).max(200)
+]).optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   SELF_HOSTED: booleanFromEnv.default(false),
@@ -37,6 +52,7 @@ const envSchema = z.object({
   APP_PUBLIC_URL: optionalHttpUrlFromEnv,
   API_PREFIX: z.string().default("/api/v1"),
   PORT: z.coerce.number().int().positive().default(4000),
+  TRUST_PROXY: trustProxyFromEnv,
   DATABASE_URL: z.string().min(1),
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_ACCESS_TTL: z.string().default("15m"),
@@ -50,6 +66,8 @@ const envSchema = z.object({
   AUTH_REQUIRE_EMAIL_VERIFICATION: booleanFromEnv.default(false),
   AUTH_RECOVERY_TOKEN_DELIVERY: z.enum(["response", "email", "disabled"]).optional(),
   CMS_CREDENTIAL_ENCRYPTION_KEY: optionalSecretFromEnv,
+  SECURITY_AUDIT_KEY: optionalSecretFromEnv,
+  SECURITY_AUDIT_PREVIOUS_KEYS: z.string().trim().default(""),
   CODEY_INSTALL_TOKEN: optionalSecretFromEnv,
   CODEY_UPDATES_ENABLED: booleanFromEnv.default(true),
   CODEY_AUTO_UPDATE: booleanFromEnv.default(false),
@@ -127,6 +145,32 @@ const envSchema = z.object({
     });
   }
 
+  const previousAuditKeys = value.SECURITY_AUDIT_PREVIOUS_KEYS
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+  if (previousAuditKeys.some((key) => key.length < 32)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["SECURITY_AUDIT_PREVIOUS_KEYS"],
+      message: "Every previous audit key must contain at least 32 characters."
+    });
+  }
+  if (new Set(previousAuditKeys).size !== previousAuditKeys.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["SECURITY_AUDIT_PREVIOUS_KEYS"],
+      message: "Previous audit keys must be unique."
+    });
+  }
+  if (value.SECURITY_AUDIT_KEY && previousAuditKeys.includes(value.SECURITY_AUDIT_KEY)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["SECURITY_AUDIT_PREVIOUS_KEYS"],
+      message: "The current audit key must not also be listed as a previous key."
+    });
+  }
+
   if (value.NODE_ENV !== "production") return;
 
   const corsOrigins = value.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean);
@@ -138,6 +182,14 @@ const envSchema = z.object({
 
   if (corsOrigins.includes("*")) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["CORS_ORIGINS"], message: "Wildcard CORS origins are not allowed in production." });
+  }
+
+  if (value.TRUST_PROXY === true) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["TRUST_PROXY"],
+      message: "TRUST_PROXY=true is not allowed in production. Use the exact proxy hop count, such as TRUST_PROXY=1."
+    });
   }
 
   const localSetupUrl = value.SELF_HOSTED &&
@@ -198,11 +250,13 @@ const envSchema = z.object({
   }
 });
 
-const parsed = envSchema.safeParse(process.env);
-
-if (!parsed.success) {
-  const errors = parsed.error.flatten().fieldErrors;
-  throw new Error(`Invalid environment configuration: ${JSON.stringify(errors)}`);
+export function parseEnvironment(source: NodeJS.ProcessEnv | Record<string, string | undefined>) {
+  const parsed = envSchema.safeParse(source);
+  if (!parsed.success) {
+    const errors = parsed.error.flatten().fieldErrors;
+    throw new Error(`Invalid environment configuration: ${JSON.stringify(errors)}`);
+  }
+  return parsed.data;
 }
 
-export const env = parsed.data;
+export const env = parseEnvironment(process.env);

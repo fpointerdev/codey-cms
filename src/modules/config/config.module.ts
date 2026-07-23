@@ -46,6 +46,8 @@ import {
 } from "../builder/element-registry.js";
 import { normalizeDesignSystemSettings } from "./site-design.js";
 import { RuntimeUpdateService } from "../../runtime/runtime-update.service.js";
+import { runtimeVersion } from "../../runtime/release.js";
+import { verifyAuditLogIntegrity, writeAuditLog } from "../../core/audit/audit-log.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -221,7 +223,7 @@ export const configModule: AppModule = {
       requirePermission(context, "read", "modules"),
       asyncHandler(async (_req, res) => {
         return sendSuccess(res, {
-          baseVersion: "0.1.0",
+          baseVersion: runtimeVersion,
           matrix: compatibilityMatrix()
         });
       })
@@ -241,19 +243,18 @@ export const configModule: AppModule = {
       validateRequest({ body: emailSettingsSchema }),
       asyncHandler(async (req, res) => {
         const email = await emailSettingsService.update(req.body);
-        await context.prisma.auditLog.create({
-          data: {
-            actorUserId: req.user?.id,
-            action: "email.settings.update",
-            subject: "site",
-            ipAddress: req.ip,
-            userAgent: req.header("user-agent"),
-            metadata: {
-              enabled: email.enabled,
-              from: email.from,
-              httpEndpoint: email.httpEndpoint,
-              bearerTokenConfigured: email.bearerTokenConfigured
-            }
+        await writeAuditLog(context.prisma, {
+          actorUserId: req.user?.id,
+          action: "email.settings.update",
+          subject: "site",
+          ipAddress: req.ip,
+          userAgent: req.header("user-agent"),
+          requestId: req.requestId,
+          metadata: {
+            enabled: email.enabled,
+            from: email.from,
+            httpEndpoint: email.httpEndpoint,
+            bearerTokenConfigured: email.bearerTokenConfigured
           }
         });
 
@@ -284,33 +285,33 @@ export const configModule: AppModule = {
 
         try {
           const result = await emailSettingsService.test(recipient);
-          await context.prisma.auditLog.create({
-            data: {
-              actorUserId: req.user?.id,
-              action: "email.settings.test",
-              subject: "site",
-              ipAddress: req.ip,
-              userAgent: req.header("user-agent"),
-              metadata: {
-                recipient,
-                succeeded: true
-              }
+          await writeAuditLog(context.prisma, {
+            actorUserId: req.user?.id,
+            action: "email.settings.test",
+            subject: "site",
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            requestId: req.requestId,
+            metadata: {
+              recipient,
+              succeeded: true
             }
           });
 
           return sendSuccess(res, { result, email: await emailSettingsService.getAdminStatus() });
         } catch (error) {
-          await context.prisma.auditLog.create({
-            data: {
-              actorUserId: req.user?.id,
-              action: "email.settings.test",
-              subject: "site",
-              ipAddress: req.ip,
-              userAgent: req.header("user-agent"),
-              metadata: {
-                recipient,
-                succeeded: false
-              }
+          await writeAuditLog(context.prisma, {
+            actorUserId: req.user?.id,
+            action: "email.settings.test",
+            subject: "site",
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            requestId: req.requestId,
+            outcome: "FAILURE",
+            severity: "WARN",
+            metadata: {
+              recipient,
+              succeeded: false
             }
           });
           throw error;
@@ -353,16 +354,15 @@ export const configModule: AppModule = {
             value: maintenance as Prisma.InputJsonValue
           }
         });
-        await context.prisma.auditLog.create({
-          data: {
-            actorUserId: req.user?.id,
-            action: "maintenance.update",
-            subject: "site",
-            subjectId: site.id,
-            ipAddress: req.ip,
-            userAgent: req.header("user-agent"),
-            metadata: maintenance as Prisma.InputJsonValue
-          }
+        await writeAuditLog(context.prisma, {
+          actorUserId: req.user?.id,
+          action: "maintenance.update",
+          subject: "site",
+          subjectId: site.id,
+          ipAddress: req.ip,
+          userAgent: req.header("user-agent"),
+          requestId: req.requestId,
+          metadata: maintenance as Prisma.InputJsonValue
         });
         const effectiveMaintenance = await readMaintenanceSettings(context);
 
@@ -405,16 +405,15 @@ export const configModule: AppModule = {
               value: siteSettings as Prisma.InputJsonValue
             }
           });
-          await tx.auditLog.create({
-            data: {
-              actorUserId: req.user?.id,
-              action: "site.settings.update",
-              subject: "site",
-              subjectId: site.id,
-              ipAddress: req.ip,
-              userAgent: req.header("user-agent"),
-              metadata: siteSettings as Prisma.InputJsonValue
-            }
+          await writeAuditLog(tx, {
+            actorUserId: req.user?.id,
+            action: "site.settings.update",
+            subject: "site",
+            subjectId: site.id,
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            requestId: req.requestId,
+            metadata: siteSettings as Prisma.InputJsonValue
           });
         });
 
@@ -448,8 +447,26 @@ export const configModule: AppModule = {
           }),
           context.prisma.auditLog.count({ where })
         ]);
+        const previousEventHashes = [...new Set(auditLogs
+          .map((record) => record.previousEventHash)
+          .filter((hash): hash is string => Boolean(hash)))];
+        const knownPreviousEventHashes = new Set<string>();
+        if (previousEventHashes.length > 0) {
+          const predecessors = await context.prisma.auditLog.findMany({
+            where: { eventHash: { in: previousEventHashes } },
+            select: { eventHash: true }
+          });
+          for (const predecessor of predecessors) {
+            if (predecessor.eventHash) knownPreviousEventHashes.add(predecessor.eventHash);
+          }
+        }
 
-        return sendSuccess(res, { auditLogs }, { page: query.page, limit: query.limit, total });
+        return sendSuccess(res, {
+          auditLogs: auditLogs.map((record) => ({
+            ...record,
+            integrity: verifyAuditLogIntegrity(record, { knownPreviousEventHashes })
+          }))
+        }, { page: query.page, limit: query.limit, total });
       })
     );
 
@@ -493,18 +510,18 @@ export const configModule: AppModule = {
       asyncHandler(async (req, res) => {
         const update = await runtimeUpdateService.stageLatest(req.user?.id);
         if (update.staged) {
-          await context.prisma.auditLog.create({
-            data: {
-              actorUserId: req.user?.id,
-              action: "runtime.update.stage",
-              subject: "runtime",
-              subjectId: update.updateId,
-              ipAddress: req.ip,
-              userAgent: req.header("user-agent"),
-              metadata: {
-                fromVersion: update.currentVersion,
-                toVersion: update.latestVersion
-              }
+          await writeAuditLog(context.prisma, {
+            actorUserId: req.user?.id,
+            action: "runtime.update.stage",
+            subject: "runtime",
+            subjectId: update.updateId,
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            requestId: req.requestId,
+            severity: "HIGH",
+            metadata: {
+              fromVersion: update.currentVersion,
+              toVersion: update.latestVersion
             }
           });
         }

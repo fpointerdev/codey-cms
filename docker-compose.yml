@@ -13,11 +13,14 @@ services:
       APP_MODE: ${APP_MODE:-cms}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:4000}
       API_PREFIX: ${API_PREFIX:-/api/v1}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-codey}:${POSTGRES_PASSWORD:-codey}@postgres:5432/${POSTGRES_DB:-codey_site}?schema=public
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-replace-this-access-secret-32}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
       CMS_CREDENTIAL_ENCRYPTION_KEY: ${CMS_CREDENTIAL_ENCRYPTION_KEY:-dev-only-replace-this-credential-key-32}
+      SECURITY_AUDIT_KEY: ${SECURITY_AUDIT_KEY:-}
+      SECURITY_AUDIT_PREVIOUS_KEYS: ${SECURITY_AUDIT_PREVIOUS_KEYS:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}

@@ -3,6 +3,8 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { createApp } from "../../src/core/app.js";
 import { prisma } from "../../src/infrastructure/database/prisma.js";
+import { createTotpCode } from "../../src/modules/auth/mfa.js";
+import { runtimeVersion } from "../../src/runtime/release.js";
 
 type ApiEnvelope = {
   success: boolean;
@@ -55,6 +57,22 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(readinessBody.data?.status, "ready");
     assert.equal(readinessBody.data?.checks.backup.blocking, false);
 
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const failedLogin = await request("/api/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: adminEmail, password: "IncorrectPassword123!" })
+      });
+      assert.equal(failedLogin.status, 401);
+    }
+    const delayedLogin = await request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: adminEmail, password: adminPassword })
+    });
+    const delayedLoginBody = await responseJson(delayedLogin);
+    assert.equal(delayedLogin.status, 429);
+    assert.equal(delayedLoginBody.error?.code, "login_temporarily_delayed");
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+
     const login = await request("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({ email: adminEmail, password: adminPassword })
@@ -78,10 +96,32 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const accessToken = String(refreshBody.data?.tokens.accessToken);
     const authorization = { authorization: `Bearer ${accessToken}` };
 
+    const replayedRefresh = await request("/api/v1/auth/refresh", {
+      method: "POST",
+      headers: { cookie: loginCookie },
+      body: "{}"
+    });
+    assert.equal(replayedRefresh.status, 401, JSON.stringify(await responseJson(replayedRefresh)));
+    const revokedFamilyRefresh = await request("/api/v1/auth/refresh", {
+      method: "POST",
+      headers: { cookie: refreshCookie },
+      body: "{}"
+    });
+    assert.equal(revokedFamilyRefresh.status, 401, JSON.stringify(await responseJson(revokedFamilyRefresh)));
+
     const me = await request("/api/v1/auth/me", { headers: authorization });
     const meBody = await responseJson(me);
     assert.equal(me.status, 200);
     assert.equal(meBody.data?.user.email, adminEmail);
+
+    const replayAudit = await request(
+      "/api/v1/config/audit-logs?action=refresh_token.replay_detected",
+      { headers: authorization }
+    );
+    const replayAuditBody = await responseJson(replayAudit);
+    assert.equal(replayAudit.status, 200, JSON.stringify(replayAuditBody));
+    assert.equal(replayAuditBody.data?.auditLogs[0]?.outcome, "DENIED");
+    assert.equal(replayAuditBody.data?.auditLogs[0]?.integrity, "valid");
 
     const invite = await request("/api/v1/auth/invites", {
       method: "POST",
@@ -264,6 +304,10 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const configResponse = await request("/api/v1/config");
     const configBody = await responseJson(configResponse);
     const currentSiteSettings = configBody.data?.siteSettings;
+    const compatibility = await request("/api/v1/config/compatibility", { headers: authorization });
+    const compatibilityBody = await responseJson(compatibility);
+    assert.equal(compatibility.status, 200, JSON.stringify(compatibilityBody));
+    assert.equal(compatibilityBody.data?.baseVersion, runtimeVersion);
     const updateSiteDesign = await request("/api/v1/config/site-settings", {
       method: "PATCH",
       headers: authorization,
@@ -365,6 +409,51 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const malformedBody = await responseJson(malformed);
     assert.equal(malformed.status, 400);
     assert.equal(malformedBody.error?.code, "invalid_request_path");
+
+    const mfaSetup = await request("/api/v1/auth/mfa/setup", {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({ currentPassword: adminPassword })
+    });
+    const mfaSetupBody = await responseJson(mfaSetup);
+    assert.equal(mfaSetup.status, 200, JSON.stringify(mfaSetupBody));
+    const mfaSecret = String(mfaSetupBody.data?.setup.secret);
+    const mfaCode = createTotpCode(mfaSecret);
+    const mfaConfirm = await request("/api/v1/auth/mfa/confirm", {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({ code: mfaCode })
+    });
+    const mfaConfirmBody = await responseJson(mfaConfirm);
+    assert.equal(mfaConfirm.status, 200, JSON.stringify(mfaConfirmBody));
+    assert.equal(mfaConfirmBody.data?.recoveryCodes.length, 10);
+
+    const loginWithoutMfa = await request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: adminEmail, password: adminPassword })
+    });
+    assert.equal(loginWithoutMfa.status, 401);
+    assert.equal((await responseJson(loginWithoutMfa)).error?.code, "mfa_required");
+
+    const recoveryLogin = await request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: adminEmail,
+        password: adminPassword,
+        mfaCode: mfaConfirmBody.data?.recoveryCodes[0]
+      })
+    });
+    const recoveryLoginBody = await responseJson(recoveryLogin);
+    assert.equal(recoveryLogin.status, 200, JSON.stringify(recoveryLoginBody));
+    const mfaAuthorization = {
+      authorization: `Bearer ${String(recoveryLoginBody.data?.tokens.accessToken)}`
+    };
+    const disableMfa = await request("/api/v1/auth/mfa", {
+      method: "DELETE",
+      headers: mfaAuthorization,
+      body: JSON.stringify({ currentPassword: adminPassword, code: createTotpCode(mfaSecret) })
+    });
+    assert.equal(disableMfa.status, 200, JSON.stringify(await responseJson(disableMfa)));
 
     const logout = await request("/api/v1/auth/logout", {
       method: "POST",

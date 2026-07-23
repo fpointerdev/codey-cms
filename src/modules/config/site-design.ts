@@ -254,7 +254,7 @@ export function sanitizeSiteStylesheet(value: unknown) {
   const css = typeof value === "string"
     ? value.replace(/<\/?style[^>]*>/gi, "").replace(/\/\*[\s\S]*?\*\//g, "").slice(0, 20_000).trim()
     : "";
-  const dangerous = /(@import|expression\s*\(|javascript:|vbscript:|data:text\/html|behavior\s*:|-moz-binding|<|>)/i;
+  const dangerous = /(@import|expression\s*\(|javascript:|vbscript:|data:text\/html|(?:^|[;{])\s*behavior\s*:|-moz-binding|<|>)/i;
 
   return css && !dangerous.test(css) ? css : "";
 }

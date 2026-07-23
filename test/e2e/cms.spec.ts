@@ -63,6 +63,55 @@ test("admin settings and builder controls complete their primary workflows", asy
   expect(browserErrors).toEqual([]);
 });
 
+test("account protection stays discoverable without interrupting normal login", async ({ page }) => {
+  await login(page);
+
+  await page.getByRole("link", { name: "Profile" }).click();
+  await expect(page).toHaveURL(/\/dashboard\/profile$/);
+  await expect(page.getByText("Two-step verification", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-mfa-setup-form]")).toBeVisible();
+  await expect(page.getByText("Recommended", { exact: true })).toBeVisible();
+
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page).toHaveURL(/\/dashboard\/settings$/);
+  await page.locator('label[for="settings-tab-security"]').click();
+  await expect(page.getByRole("heading", { name: "Security activity" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Account security" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: "Account security" }).click();
+  await expect(page.locator("[data-mfa-panel]")).toBeVisible();
+  const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
+test("login asks for a verification code only when the API requires it", async ({ page }) => {
+  await page.route("**/api/v1/auth/login", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: false,
+        data: null,
+        error: {
+          code: "mfa_required",
+          message: "Enter the verification code for this account.",
+          details: { mfaRequired: true }
+        },
+        meta: { requestId: "test-request" }
+      })
+    });
+  });
+
+  await page.goto("/cy-admin");
+  await expect(page.getByLabel("Verification code")).toBeHidden();
+  await page.getByLabel("Email").fill(adminEmail);
+  await page.getByLabel("Password").fill(adminPassword);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByLabel("Verification code")).toBeVisible();
+  await expect(page.getByLabel("Verification code")).toBeFocused();
+});
+
 test("builder discovery, structure navigation, and responsive preview stay usable", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));

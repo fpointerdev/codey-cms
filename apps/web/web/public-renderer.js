@@ -583,7 +583,7 @@ function renderStructuredItems(items, variant = "cards", renderContext = {}) {
 
       if (!title && !body && !label && !value && !imageHtml) return "";
 
-      const cardClass = `structured-card structured-card-${escapeHtml(token)}${featured ? " structured-card-featured" : ""}${imageHtml ? " structured-card-has-media" : ""}`;
+      const cardClass = `structured-card content-card structured-card-${escapeHtml(token)}${featured ? " structured-card-featured" : ""}${imageHtml ? " structured-card-has-media" : ""}`;
       const wrapCardWithLink = Boolean(url && !["feature-cards", "pricing-cards"].includes(token));
       const action = url ? `<a class="action-link" href="${escapeHtml(url)}">${escapeHtml(firstText(item, ["buttonLabel", "actionLabel"]) || "Learn more")}</a>` : "";
 
@@ -636,7 +636,25 @@ function renderStructuredItems(items, variant = "cards", renderContext = {}) {
     })
     .join("");
 
-  return html ? `<div class="structured-items structured-items-${escapeHtml(token)}">${html}</div>` : "";
+  return html ? `<div class="structured-items card-grid structured-items-${escapeHtml(token)}">${html}</div>` : "";
+}
+
+function renderHeroPoints(items) {
+  if (!Array.isArray(items)) return "";
+
+  const html = items
+    .map((item) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name", "label"]);
+      const value = firstText(item, ["value", "number", "metric"]);
+      const body = firstText(item, ["body", "text", "copy", "description"]);
+      if (!title && !value && !body) return "";
+
+      return `<span>${value ? `<strong>${escapeHtml(value)}</strong>` : ""}${title ? escapeHtml(title) : ""}${body ? `<small>${escapeHtml(body)}</small>` : ""}</span>`;
+    })
+    .join("");
+
+  return html ? `<div class="hero-points">${html}</div>` : "";
 }
 
 function normalizePanelItems(items, renderContext = {}) {
@@ -751,6 +769,7 @@ function renderStructuredAccordion(items, variant, renderContext = {}) {
 function renderStructuredCollection(items, variant, blockKey, renderContext = {}) {
   const token = cssToken(variant, "cards");
 
+  if (token === "hero-points") return renderHeroPoints(items);
   if (token === "tabs") return renderStructuredTabs(items, token, blockKey, renderContext);
   if (token === "accordion" || token === "faq-accordion") return renderStructuredAccordion(items, token, renderContext);
 
@@ -777,6 +796,7 @@ function renderStructuredBlock(block, renderContext = {}) {
   const ctaHtml = cta?.label && cta?.url
     ? `<a class="action-link" href="${escapeHtml(safePublicHref(cta.url))}">${escapeHtml(cta.label)}</a>`
     : "";
+  const headingTag = ["featureGrid", "pricing", "faq", "custom"].includes(value.type) ? "h2" : "h3";
 
   if (!title && !body && !note && !imageHtml && !statsHtml && !itemsHtml && !ctaHtml) return "";
 
@@ -784,7 +804,7 @@ function renderStructuredBlock(block, renderContext = {}) {
     <article class="structured-block structured-block-${escapeHtml(cssToken(variant))}">
       <div class="structured-block-copy">
         ${note ? `<p class="structured-note">${escapeHtml(note)}</p>` : ""}
-        ${title ? `<h3>${escapeHtml(title)}</h3>` : ""}
+        ${title ? `<${headingTag}>${escapeHtml(title)}</${headingTag}>` : ""}
         ${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}
         ${statsHtml}
         ${ctaHtml}
@@ -815,6 +835,7 @@ function safeNumber(value, min, max) {
 
 function sectionClassName(section) {
   const settings = section.settings || {};
+  const websiteSpec = isRecord(settings.websiteSpec) ? settings.websiteSpec : null;
   const style = settings.style || {};
   const decoration = settings.decoration || {};
   const responsive = settings.responsive || {};
@@ -829,6 +850,8 @@ function sectionClassName(section) {
   const preset = oneOf(style.preset, ["default", "quiet", "carded", "contrast", "premium-dark", "editorial-light", "industrial-grid", "framed-card"], "default");
   const shadow = oneOf(style.shadow, ["none", "soft", "strong", "glow"], "none");
   const decorationType = oneOf(decoration.type, ["none", "glow", "orb", "pattern", "spotlight", "grid", "frame", "texture", "split"], "none");
+  const websiteSpecPreset = websiteSpec ? cssToken(style.preset, preset) : preset;
+  const websiteSpecDecoration = websiteSpec ? cssToken(decoration.type, decorationType) : decorationType;
   const decorationPosition = oneOf(decoration.position, ["top-left", "top-right", "center-left", "center-right", "bottom-left", "bottom-right"], "bottom-right");
   const tabletLayout = oneOf(tablet.layout, ["inherit", "one-column", "two-column", "three-column"], "inherit");
   const tabletSpacing = oneOf(tablet.spacing, ["inherit", "none", "sm", "md", "lg", "xl"], "inherit");
@@ -837,6 +860,18 @@ function sectionClassName(section) {
 
   return [
     "page-section",
+    websiteSpec ? "section website-spec-section" : "",
+    websiteSpec?.type ? `section-${cssToken(websiteSpec.type)}` : "",
+    websiteSpec?.collection === true ? "is-collection" : "",
+    websiteSpec ? `layout-${layout}` : "",
+    websiteSpec ? `container-${container}` : "",
+    websiteSpec ? `spacing-${spacing}` : "",
+    websiteSpec ? `gap-${gap}` : "",
+    websiteSpec ? `align-${align}` : "",
+    websiteSpec ? `valign-${verticalAlign}` : "",
+    websiteSpec ? `preset-${websiteSpecPreset}` : "",
+    websiteSpec ? `shadow-${shadow}` : "",
+    websiteSpec ? `decoration-${websiteSpecDecoration}` : "",
     `section-layout-${layout}`,
     `section-container-${container}`,
     `section-spacing-${spacing}`,
@@ -875,7 +910,27 @@ function sectionStyleAttribute(section) {
 }
 
 function blockClassName(block) {
-  return ["content-block", advancedClassList(block.settings || {})].filter(Boolean).join(" ");
+  const key = String(block.key || "");
+  const role = key.endsWith("-eyebrow")
+    ? "website-spec-eyebrow"
+    : key.endsWith("-heading")
+      ? "website-spec-heading"
+      : key.endsWith("-body")
+        ? "website-spec-body"
+        : key.endsWith("-cta")
+          ? "website-spec-cta"
+          : key.endsWith("-points")
+            ? "website-spec-points"
+            : "";
+
+  return [
+    "content-block",
+    `content-type-${cssToken(block.type || "content")}`,
+    block.type === "IMAGE" ? "section-media" : "",
+    block.type === "GALLERY" ? "gallery-content-block" : "",
+    role,
+    advancedClassList(block.settings || {})
+  ].filter(Boolean).join(" ");
 }
 
 function renderSectionDecoration(section) {
@@ -997,7 +1052,7 @@ export function renderBlock(block, renderContext = {}) {
 
       return `
         <div
-          class="gallery-block gallery-layout-${escapeHtml(settings.layoutMode)}${settings.showCaptions ? " gallery-show-captions" : ""}"
+          class="gallery-block gallery-grid gallery-layout-${escapeHtml(settings.layoutMode)}${settings.showCaptions ? " gallery-show-captions" : ""}"
           style="${escapeHtml(style)}"
         >
           ${items
@@ -1140,6 +1195,7 @@ export function renderSections(page, options = {}) {
               ${canEdit ? renderVisualSectionControls(section, sectionIndex, sections) : ""}
               ${renderSectionDecoration(section)}
               ${section.label ? `<h2 class="section-label">${escapeHtml(section.label)}</h2>` : ""}
+              ${isRecord(section.settings?.websiteSpec) ? '<div class="section-inner">' : ""}
               ${section.blocks
                 .map(
                   (block, blockIndex, blocks) => `
@@ -1150,6 +1206,7 @@ export function renderSections(page, options = {}) {
                   `
                 )
                 .join("")}
+              ${isRecord(section.settings?.websiteSpec) ? "</div>" : ""}
             </section>
           `
         )
@@ -1372,15 +1429,20 @@ export function renderProductDetailContent(product, options = {}) {
 }
 
 export function renderPageContent(page, options = {}) {
-  return `
+  const content = `
     ${page.content?.hideTitle === true ? "" : `<h1 class="page-title">${escapeHtml(page.title)}</h1>`}
     ${page.excerpt ? `<p class="page-excerpt">${escapeHtml(page.excerpt)}</p>` : ""}
     ${renderSections(page, options)}
   `;
+  if (page.content?.source !== "websiteSpec") return content;
+
+  const theme = isRecord(page.content.style) ? page.content.style.theme : "generated-site";
+  return `<div class="website-spec-page" data-design-theme="${escapeHtml(cssToken(theme, "generated-site"))}">${content}</div>`;
 }
 
 export function renderFooter(page, canEdit = false) {
-  const fallbackText = `© ${new Date().getFullYear()} ${page.title || "Website"}`;
+  const siteTitle = state.config?.siteSettings?.title || state.config?.app?.name || page.title || "Website";
+  const fallbackText = `© ${new Date().getFullYear()} ${siteTitle}`;
   const footerText = page.content?.footerText || translateString("footer.copyright", fallbackText);
   const editButton = canEdit ? renderEditorButton("Edit Footer", "data-edit-footer") : "";
 

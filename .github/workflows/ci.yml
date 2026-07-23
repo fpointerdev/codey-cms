@@ -47,11 +47,11 @@ jobs:
       LOG_LEVEL: silent
 
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.3.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: pnpm
@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload browser diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-diagnostics
           path: |
@@ -95,23 +95,27 @@ jobs:
     permissions:
       contents: write
     env:
-      CODEY_RELEASE_PRIVATE_KEY: ${{ secrets.CODEY_RELEASE_PRIVATE_KEY }}
       CODEY_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.3.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
       - name: Verify release metadata and signing key
+        env:
+          CODEY_RELEASE_PRIVATE_KEY: ${{ secrets.CODEY_RELEASE_PRIVATE_KEY }}
         run: pnpm run release:preflight
-      - run: pnpm run release:build
+      - name: Build signed release
+        env:
+          CODEY_RELEASE_PRIVATE_KEY: ${{ secrets.CODEY_RELEASE_PRIVATE_KEY }}
+        run: pnpm run release:build
       - run: pnpm run release:verify
       - name: Qualify downloadable self-host package
         run: pnpm run release:qualify

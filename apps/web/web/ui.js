@@ -168,6 +168,10 @@ export function renderAdminLogin(statusMessage = "Use the admin account created 
             <span>Password</span>
             <input name="password" type="password" autocomplete="current-password" required />
           </label>
+          <label data-mfa-login-field hidden>
+            <span>Verification code</span>
+            <input name="mfaCode" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="32" />
+          </label>
           ${renderFormMessage(statusMessage, isError)}
           <button type="submit">Sign in</button>
           <div class="login-card-actions">

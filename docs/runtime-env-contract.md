@@ -2,7 +2,7 @@
 
 This repo is copied per client site. The platform owns provisioning, writes the environment, runs bootstrap once, and then starts the runtime with migrations on startup.
 
-## Required Per Site
+## Site Runtime
 
 - `NODE_ENV=production`
 - `APP_ENV=production` or `staging`
@@ -12,8 +12,14 @@ This repo is copied per client site. The platform owns provisioning, writes the 
 - `API_PREFIX`: usually `/api/v1`
 - `PORT`: container port, usually `4000`
 - `DATABASE_URL`: PostgreSQL connection string for this copied site
+- `MIGRATION_DATABASE_URL`: optional elevated connection used only for startup migrations
 - `JWT_ACCESS_SECRET`: unique secret per site, at least 32 characters
 - `CORS_ORIGINS`: comma-separated public origins, no wildcard in production
+- `TRUST_PROXY`: defaults to `false`; production rejects `true`, so use the exact hop count such as `1` only behind a known reverse proxy
+- `SECURITY_AUDIT_KEY`: optional current key for hash-linked audit integrity; defaults to the generated credential-encryption key
+- `SECURITY_AUDIT_PREVIOUS_KEYS`: comma-separated previous audit keys retained while old records still need verification
+
+The self-host package generates the migration connection, restricted runtime role, and security keys automatically. End users do not configure or choose these values. Managed CodeY deployments should provide the same values from their secret manager.
 
 ## Domains
 
@@ -82,7 +88,7 @@ Before launch, verify upload, responsive variant delivery, signed download, and 
 
 ## Dashboard Credentials, Payments And Email
 
-Production runtimes need `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned credentials at rest. This key is deployment-owned infrastructure material, not a provider credential.
+Production runtimes need `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned credentials and MFA secrets at rest. It also keys recovery codes and persisted login-throttle identifiers. This is stable deployment-owned infrastructure material, not a provider credential.
 
 Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server.
 
@@ -100,7 +106,9 @@ Order received, paid, refunded, and status-change notifications are queued in th
 
 Stripe API keys, Stripe webhook signing secrets, PayPal client credentials, and PayPal webhook IDs are not runtime environment variables.
 
-`CMS_CREDENTIAL_ENCRYPTION_KEY` is deployment-owned infrastructure material, not a payment-provider credential. Use a unique high-entropy value, store it in the platform secret manager, back it up securely, and do not rotate it without re-encrypting or re-entering every saved provider secret.
+`CMS_CREDENTIAL_ENCRYPTION_KEY` is deployment-owned infrastructure material, not a payment-provider credential. Use a unique high-entropy value, store it in the platform secret manager, back it up securely, and do not rotate it without a credential migration.
+
+Audit keys can rotate independently. Move the old `SECURITY_AUDIT_KEY` into `SECURITY_AUDIT_PREVIOUS_KEYS`, set a new current key, deploy, and keep the previous key for as long as its history must verify. MFA secret envelopes created by the earlier security release migrate to the stable credential key after successful use. Existing recovery-code hashes still need the former key until the user disables and re-enables MFA to generate new codes.
 
 See [payment-providers.md](payment-providers.md) for setup, checkout, webhook, retry, and credential-rotation flows.
 
@@ -128,7 +136,7 @@ Email verification and password reset tokens are created server-side, delivered 
 - All API success/error envelopes include `meta.requestId` when request context is available.
 - Requests with a valid W3C `traceparent` header also include `meta.traceId` and `x-trace-id`.
 - `GET /api/v1/health/metrics` returns process telemetry for operational checks.
-- `GET /api/v1/config/audit-logs` returns the structured audit trail for sensitive operations.
+- `GET /api/v1/config/audit-logs` returns the hash-linked audit trail for sensitive operations with `valid`, `invalid`, `unknown-key`, or `legacy` integrity status.
 
 ## Operations
 

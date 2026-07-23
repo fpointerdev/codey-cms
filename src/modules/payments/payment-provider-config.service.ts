@@ -5,6 +5,7 @@ import type {
   Prisma
 } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
+import { writeAuditLog } from "../../core/audit/audit-log.js";
 import type { ModuleContext } from "../../core/types/module.js";
 import {
   decryptPaymentCredentials,
@@ -403,16 +404,16 @@ export class PaymentProviderConfigService {
     userAgent?: string;
     metadata?: Prisma.InputJsonObject;
   }) {
-    await this.context.prisma.auditLog.create({
-      data: {
-        actorUserId: input.actorUserId,
-        action: input.action,
-        subject: "payment_provider",
-        subjectId: input.provider,
-        ipAddress: input.ipAddress,
-        userAgent: input.userAgent,
-        metadata: input.metadata
-      }
+    await writeAuditLog(this.context.prisma, {
+      actorUserId: input.actorUserId,
+      action: input.action,
+      subject: "payment_provider",
+      subjectId: input.provider,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      outcome: input.action.endsWith("_failed") ? "FAILURE" : "SUCCESS",
+      severity: input.action.endsWith("_failed") ? "WARN" : "INFO",
+      metadata: input.metadata
     });
   }
 

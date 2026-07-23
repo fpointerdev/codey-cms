@@ -7,12 +7,18 @@ Use this checklist before a generated site is published.
 - `NODE_ENV=production`.
 - `APP_PUBLIC_URL` points to the final public URL.
 - `CORS_ORIGINS` contains only trusted origins.
+- `TRUST_PROXY` is `false` for direct hosting, or a numeric hop count matching the exact trusted reverse-proxy path; never use `true` in production.
+- PostgreSQL connection and mutation logs are retained off-host when audit evidence must survive a server compromise.
+- Audit records show `Verified`; `Changed` indicates a broken signature or missing predecessor link, while `Key unavailable` means a required previous audit key is absent.
+- Owners and administrators enable two-step verification under **Profile** and store recovery codes outside the server.
+- **Settings > Security** is reviewed for denied actions or changed audit records.
 - `JWT_ACCESS_SECRET` is unique per copied site and at least 32 characters.
 - `AUTH_RECOVERY_TOKEN_DELIVERY=email` when password recovery or email verification is enabled, and when invitations should be delivered automatically.
 - Transactional email is configured with an HTTPS endpoint and provider-tested under **Settings > Email** for auth recovery and shop notifications.
 - `STORAGE_DRIVER=s3` is enabled for production media.
 - `STORAGE_KEY_PREFIX` is unique per customer site.
 - `CMS_CREDENTIAL_ENCRYPTION_KEY` is unique, backed up, and stored in the platform secret manager.
+- `SECURITY_AUDIT_KEY` is stored outside the database, and old values remain in `SECURITY_AUDIT_PREVIOUS_KEYS` for the required verification-retention period.
 - `BACKUP_REQUIRED=true`, `BACKUP_REQUIRE_ENCRYPTION=true`, and a unique `BACKUP_ENCRYPTION_KEY` are set.
 - S3 versioning or replication has been tested before `BACKUP_S3_MEDIA_PROTECTED=true` is set.
 

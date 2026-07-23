@@ -1,4 +1,4 @@
-import { api, restoreSession, state, translateString } from "./core.js";
+import { api, escapeHtml, restoreSession, setStatus, state, translateString } from "./core.js";
 import { pageSlug } from "./routes.js";
 import { getModalFormHandler } from "./modal.js";
 import { renderAdminLogin } from "./ui.js";
@@ -87,6 +87,7 @@ export async function loginAdmin(form) {
   const formData = new FormData(form);
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
+  const mfaCode = String(formData.get("mfaCode") || "").trim();
 
   setFormDisabled(form, true);
   setFormMessage(form, "Signing in...");
@@ -94,7 +95,7 @@ export async function loginAdmin(form) {
   try {
     const { user, tokens } = await api("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password, ...(mfaCode ? { mfaCode } : {}) })
     });
 
     storeSession(user, tokens);
@@ -102,9 +103,108 @@ export async function loginAdmin(form) {
     const { bootstrap } = await import("./controller.js");
     await bootstrap();
   } catch (error) {
+    setFormDisabled(form, false);
+    if (error.code === "mfa_required" || error.code === "invalid_mfa_code") {
+      const mfaField = form.querySelector("[data-mfa-login-field]");
+      if (mfaField) mfaField.hidden = false;
+      const mfaInput = form.querySelector('input[name="mfaCode"]');
+      if (mfaInput) {
+        mfaInput.required = true;
+        mfaInput.focus();
+      }
+    }
     setFormMessage(form, error.message || "Unable to sign in.", true);
+  }
+}
+
+export async function beginMfaSetup(form) {
+  const currentPassword = String(new FormData(form).get("currentPassword") || "");
+  setFormDisabled(form, true);
+  setFormMessage(form, "Preparing two-step verification...");
+
+  try {
+    const { setup } = await api("/auth/mfa/setup", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword })
+    });
+    const panel = form.closest("[data-mfa-panel]");
+    panel.innerHTML = `
+      <div class="section-heading-row"><div><strong>Connect authenticator</strong><span>Setup expires in 10 minutes.</span></div><span class="status-pill">Pending</span></div>
+      <div class="mfa-setup-key"><span>Setup key</span><code>${escapeHtml(setup.secret)}</code></div>
+      <a class="secondary-button" href="${escapeHtml(setup.otpauthUri)}">Open authenticator app</a>
+      <form data-mfa-confirm-form>
+        <label><span>6-digit verification code</span><input name="code" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="6" required autofocus /></label>
+        ${renderInlineFormMessage()}
+        <div class="form-actions"><button type="submit">Verify and enable</button></div>
+      </form>
+    `;
+    panel.querySelector('input[name="code"]')?.focus();
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to start two-step verification.", true);
     setFormDisabled(form, false);
   }
+}
+
+export async function confirmMfaSetup(form) {
+  const code = String(new FormData(form).get("code") || "").trim();
+  setFormDisabled(form, true);
+  setFormMessage(form, "Verifying code...");
+
+  try {
+    const result = await api("/auth/mfa/confirm", {
+      method: "POST",
+      body: JSON.stringify({ code })
+    });
+    storeSession(result.user, result.tokens);
+    const panel = form.closest("[data-mfa-panel]");
+    panel.innerHTML = `
+      <div class="section-heading-row"><div><strong>Two-step verification enabled</strong><span>Store these one-time recovery codes securely.</span></div><span class="status-pill success">Enabled</span></div>
+      <pre class="mfa-recovery-codes" data-mfa-recovery-codes>${result.recoveryCodes.map(escapeHtml).join("\n")}</pre>
+      <div class="form-actions"><button type="button" class="secondary-button" data-copy-mfa-recovery>Copy codes</button></div>
+    `;
+    setStatus("Two-step verification enabled.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to enable two-step verification.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function disableMfa(form) {
+  const values = new FormData(form);
+  const currentPassword = String(values.get("currentPassword") || "");
+  const code = String(values.get("code") || "").trim();
+  setFormDisabled(form, true);
+  setFormMessage(form, "Disabling two-step verification...");
+
+  try {
+    const result = await api("/auth/mfa", {
+      method: "DELETE",
+      body: JSON.stringify({ currentPassword, code })
+    });
+    storeSession(result.user, result.tokens);
+    const { bootstrap } = await import("./controller.js");
+    await bootstrap();
+    setStatus("Two-step verification disabled.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to disable two-step verification.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function copyMfaRecoveryCodes(button) {
+  const codes = button.closest("[data-mfa-panel]")?.querySelector("[data-mfa-recovery-codes]")?.textContent?.trim();
+  if (!codes) return;
+
+  try {
+    await navigator.clipboard.writeText(codes);
+    button.textContent = "Copied";
+  } catch {
+    setStatus("Recovery codes could not be copied automatically.", true);
+  }
+}
+
+function renderInlineFormMessage() {
+  return '<p class="form-message" data-form-message hidden></p>';
 }
 
 export async function logoutAdmin() {

@@ -1,5 +1,5 @@
 const unsafeCssPattern =
-  /(@import|@namespace|expression\s*\(|url\s*\(|(?:-webkit-)?image-set\s*\(|javascript:|vbscript:|data:text\/html|behavior\s*:|-moz-binding|<\/?style|<!--|-->)/i;
+  /(@import|@namespace|expression\s*\(|url\s*\(|(?:-webkit-)?image-set\s*\(|javascript:|vbscript:|data:text\/html|(?:^|[;{])\s*behavior\s*:|-moz-binding|<\/?style|<!--|-->)/i;
 
 export function sanitizeGeneratedStylesheet(value: unknown) {
   const css = typeof value === "string"

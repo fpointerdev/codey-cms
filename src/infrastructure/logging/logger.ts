@@ -1,5 +1,6 @@
 import pino from "pino";
 import { config } from "../../config/index.js";
+import { runtimeVersion } from "../../runtime/release.js";
 
 export const logger = pino({
   level: config.logging.level,
@@ -32,7 +33,7 @@ export const logger = pino({
   base: {
     service: config.app.name,
     env: config.env,
-    version: "0.1.0"
+    version: runtimeVersion
   }
 });
 

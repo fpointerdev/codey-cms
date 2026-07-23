@@ -314,7 +314,40 @@ export function renderDashboardHome(data = {}) {
   setStatus("Dashboard loaded.");
 }
 
-export function renderProfilePage(profile) {
+function renderMfaPanel(mfa = {}) {
+  if (mfa.enabled) {
+    return `
+      <div class="admin-card settings-form profile-mfa-card" data-mfa-panel>
+        <div class="section-heading-row">
+          <div><strong>Two-step verification</strong><span>${escapeHtml(mfa.recoveryCodesRemaining || 0)} recovery codes remaining</span></div>
+          <span class="status-pill success">Enabled</span>
+        </div>
+        <form data-mfa-disable-form>
+          <label><span>Current password</span><input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+          <label><span>Verification or recovery code</span><input name="code" autocomplete="one-time-code" minlength="6" maxlength="32" required /></label>
+          ${renderFormMessage()}
+          <div class="form-actions"><button type="submit" class="secondary-button danger">Disable</button></div>
+        </form>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="admin-card settings-form profile-mfa-card" data-mfa-panel>
+      <div class="section-heading-row">
+        <div><strong>Two-step verification</strong><span>Protect sign-in with an authenticator app.</span></div>
+        <span class="status-pill">${mfa.recommended ? "Recommended" : "Optional"}</span>
+      </div>
+      <form data-mfa-setup-form>
+        <label><span>Current password</span><input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+        ${renderFormMessage()}
+        <div class="form-actions"><button type="submit">Set up</button></div>
+      </form>
+    </div>
+  `;
+}
+
+export function renderProfilePage(profile, mfa = {}) {
   renderAdminShell(
     { view: "profile" },
     `
@@ -346,6 +379,7 @@ export function renderProfilePage(profile) {
           ${renderFormMessage()}
           <div class="form-actions"><button type="submit">Update password</button></div>
         </form>
+        ${renderMfaPanel(mfa)}
         <div class="user-danger-zone" data-session-actions>
           <div><strong>Active sessions</strong><span>Revoke access for this browser and every other signed-in device.</span>${renderFormMessage()}</div>
           <button type="button" class="secondary-button danger" data-revoke-all-sessions>Sign out all sessions</button>
@@ -1593,6 +1627,52 @@ function renderDesignSystemEditor(settings) {
   `;
 }
 
+function renderSecurityActivity(config) {
+  const logs = Array.isArray(config.auditLogs) ? config.auditLogs : [];
+  const integrityWarning = logs.some((event) => event.integrity === "invalid");
+  const unavailableKeyWarning = logs.some((event) => event.integrity === "unknown-key");
+  const rows = logs.map((event) => {
+    const severityClass = event.outcome === "SUCCESS"
+      ? "success"
+      : ["HIGH", "CRITICAL"].includes(event.severity) ? "error" : "";
+    const integrity = event.integrity === "valid"
+      ? "Verified"
+      : event.integrity === "invalid"
+        ? "Changed"
+        : event.integrity === "unknown-key" ? "Key unavailable" : "Legacy";
+
+    return `
+      <tr>
+        <td><strong>${escapeHtml(String(event.action || "Activity").replaceAll(".", " "))}</strong><small>${escapeHtml(event.subject || "system")}</small></td>
+        <td><span class="status-pill ${severityClass}">${escapeHtml(event.outcome || "SUCCESS")}</span></td>
+        <td>${escapeHtml(event.ipAddress || "Local")}</td>
+        <td><span class="status-pill ${["invalid", "unknown-key"].includes(event.integrity) ? "error" : ""}">${integrity}</span></td>
+        <td>${escapeHtml(formatDate(event.createdAt))}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <section class="settings-info-card security-activity">
+      <div class="section-heading-row">
+        <div><p class="section-label">Protection</p><h2>Security activity</h2></div>
+        <a class="secondary-button" href="/dashboard/profile" data-dashboard-link>Account security</a>
+      </div>
+      ${config.auditError ? `<p class="form-message error">${escapeHtml(config.auditError)}</p>` : ""}
+      ${integrityWarning ? '<p class="form-message error">Audit history failed its signature or chain check. Review retained server and database logs.</p>' : ""}
+      ${unavailableKeyWarning ? '<p class="form-message error">Some audit history uses a previous key that is not configured. Restore the key in SECURITY_AUDIT_PREVIOUS_KEYS.</p>' : ""}
+      ${rows ? `
+        <div class="table-card">
+          <table class="admin-table">
+            <thead><tr><th>Event</th><th>Result</th><th>Source</th><th>Integrity</th><th>Time</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      ` : '<p class="dashboard-copy compact">No security activity has been recorded yet.</p>'}
+    </section>
+  `;
+}
+
 export function renderSettingsPage(config) {
   const settings = config.siteSettings || {};
   const email = config.email || {};
@@ -1631,12 +1711,14 @@ export function renderSettingsPage(config) {
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-email" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-multilingual" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-updates" />
+          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-security" />
           <nav class="admin-tabs settings-tabs" aria-label="Settings sections">
             <label for="settings-tab-general">General settings</label>
             <label for="settings-tab-style">Style</label>
             <label for="settings-tab-email">Email</label>
             <label for="settings-tab-multilingual">Multilingual</label>
             <label for="settings-tab-updates">Updates</label>
+            <label for="settings-tab-security">Security</label>
           </nav>
           <section class="settings-tab-panel settings-tab-panel-general" data-settings-panel="general">
             <form class="admin-card settings-form" data-site-settings-form>
@@ -1815,6 +1897,9 @@ export function renderSettingsPage(config) {
             <div data-runtime-update-panel>
               ${renderRuntimeUpdatePanel(runtimeUpdate)}
             </div>
+          </section>
+          <section class="settings-tab-panel settings-tab-panel-security" data-settings-panel="security">
+            ${renderSecurityActivity(config)}
           </section>
         </div>
       </section>

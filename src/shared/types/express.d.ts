@@ -6,6 +6,7 @@ declare global {
       user?: AuthenticatedUser;
       rawBody?: Buffer;
       traceId?: string;
+      requestId?: string;
     }
   }
 }

@@ -351,6 +351,39 @@
   margin-top: 18px;
 }
 
+.profile-mfa-card > form {
+  display: grid;
+  gap: 16px;
+}
+
+.mfa-setup-key {
+  display: grid;
+  gap: 6px;
+}
+
+.mfa-setup-key span {
+  color: var(--admin-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.mfa-setup-key code,
+.mfa-recovery-codes {
+  overflow-wrap: anywhere;
+  border: 1px solid var(--admin-line);
+  border-radius: 6px;
+  background: var(--admin-bg);
+  color: var(--admin-ink);
+  padding: 14px;
+  letter-spacing: 0;
+}
+
+.mfa-recovery-codes {
+  margin: 0;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
 .settings-tab-shell {
   display: grid;
   gap: 18px;
@@ -375,7 +408,8 @@
 #settings-tab-style:checked ~ .settings-tabs label[for="settings-tab-style"],
 #settings-tab-email:checked ~ .settings-tabs label[for="settings-tab-email"],
 #settings-tab-multilingual:checked ~ .settings-tabs label[for="settings-tab-multilingual"],
-#settings-tab-updates:checked ~ .settings-tabs label[for="settings-tab-updates"] {
+#settings-tab-updates:checked ~ .settings-tabs label[for="settings-tab-updates"],
+#settings-tab-security:checked ~ .settings-tabs label[for="settings-tab-security"] {
   border-color: var(--accent);
   color: var(--admin-ink);
 }
@@ -384,7 +418,8 @@
 #settings-tab-style:checked ~ .settings-tab-panel-style,
 #settings-tab-email:checked ~ .settings-tab-panel-email,
 #settings-tab-multilingual:checked ~ .settings-tab-panel-multilingual,
-#settings-tab-updates:checked ~ .settings-tab-panel-updates {
+#settings-tab-updates:checked ~ .settings-tab-panel-updates,
+#settings-tab-security:checked ~ .settings-tab-panel-security {
   display: grid;
   gap: 18px;
 }

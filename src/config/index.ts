@@ -25,7 +25,8 @@ export const config = {
   },
   api: {
     prefix: env.API_PREFIX,
-    port: env.PORT
+    port: env.PORT,
+    trustProxy: env.TRUST_PROXY ?? false
   },
   auth: {
     accessTokenSecret: env.JWT_ACCESS_SECRET,
@@ -58,6 +59,17 @@ export const config = {
   },
   logging: {
     level: env.LOG_LEVEL
+  },
+  security: {
+    credentialEncryptionKey: env.CMS_CREDENTIAL_ENCRYPTION_KEY ?? env.JWT_ACCESS_SECRET,
+    auditIntegrityKey: env.SECURITY_AUDIT_KEY ?? env.CMS_CREDENTIAL_ENCRYPTION_KEY ?? env.JWT_ACCESS_SECRET,
+    auditPreviousIntegrityKeys: parseCommaSeparated(env.SECURITY_AUDIT_PREVIOUS_KEYS),
+    loginProtection: {
+      windowMs: 15 * 60_000,
+      accountFreeAttempts: 5,
+      ipFreeAttempts: 20,
+      maxDelayMs: 15 * 60_000
+    }
   },
   rateLimits: {
     platform: {

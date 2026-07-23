@@ -15,6 +15,9 @@ import {
   listInvitesQuery,
   loginSchema,
   logoutSchema,
+  mfaConfirmSchema,
+  mfaDisableSchema,
+  mfaSetupSchema,
   refreshSchema,
   registerSchema,
   requestEmailVerificationSchema,
@@ -28,10 +31,15 @@ import {
 } from "./auth-session-cookie.js";
 import type { TokenPair } from "./auth.types.js";
 
-function requestMeta(req: { header: (name: string) => string | undefined; ip?: string }) {
+function requestMeta(req: {
+  header: (name: string) => string | undefined;
+  ip?: string;
+  requestId?: string;
+}) {
   return {
     userAgent: req.header("user-agent"),
-    ipAddress: req.ip
+    ipAddress: req.ip,
+    requestId: req.requestId
   };
 }
 
@@ -214,6 +222,44 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
       const result = await authService.revokeAllSessions(req.user!.id, requestMeta(req));
       clearRefreshTokenCookie(res, context.config);
       return sendSuccess(res, result);
+    })
+  );
+
+  router.get(
+    "/mfa",
+    requireAuth(context),
+    asyncHandler(async (req, res) => {
+      return sendSuccess(res, { mfa: await authService.mfaStatus(req.user!.id) });
+    })
+  );
+
+  router.post(
+    "/mfa/setup",
+    requireAuth(context),
+    validateRequest({ body: mfaSetupSchema }),
+    asyncHandler(async (req, res) => {
+      const setup = await authService.beginMfaSetup(req.user!.id, req.body, requestMeta(req));
+      return sendSuccess(res, { setup });
+    })
+  );
+
+  router.post(
+    "/mfa/confirm",
+    requireAuth(context),
+    validateRequest({ body: mfaConfirmSchema }),
+    asyncHandler(async (req, res) => {
+      const result = await authService.confirmMfaSetup(req.user!.id, req.body, requestMeta(req));
+      return sendSuccess(res, secureSessionResult(res, result, context));
+    })
+  );
+
+  router.delete(
+    "/mfa",
+    requireAuth(context),
+    validateRequest({ body: mfaDisableSchema }),
+    asyncHandler(async (req, res) => {
+      const result = await authService.disableMfa(req.user!.id, req.body, requestMeta(req));
+      return sendSuccess(res, secureSessionResult(res, result, context));
     })
   );
 
