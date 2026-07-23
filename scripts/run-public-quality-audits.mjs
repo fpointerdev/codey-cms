@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { runCommand } from "./test-runtime.mjs";
+import { prepareTestRuntime, runCommand } from "./test-runtime.mjs";
 
 const externalUrl = process.env.PUBLIC_AUDIT_URL?.replace(/\/+$/g, "");
 const baseUrl = externalUrl || "http://127.0.0.1:4173";
+const runtimeEnv = externalUrl ? process.env : await prepareTestRuntime();
 let server;
 
 async function waitForServer(url, child) {
@@ -24,15 +25,15 @@ async function waitForServer(url, child) {
 try {
   if (!externalUrl) {
     server = spawn(process.execPath, ["--import", "tsx", "scripts/start-lighthouse-server.mjs"], {
-      env: process.env,
+      env: runtimeEnv,
       stdio: "inherit"
     });
     await waitForServer(baseUrl, server);
   }
 
-  await runCommand(process.execPath, ["scripts/audit-public-site.mjs", baseUrl], process.env);
+  await runCommand(process.execPath, ["scripts/audit-public-site.mjs", baseUrl], runtimeEnv);
   await runCommand("pnpm", ["run", "audit:lighthouse"], {
-    ...process.env,
+    ...runtimeEnv,
     LIGHTHOUSE_URL: `${baseUrl}/`
   });
 } finally {
