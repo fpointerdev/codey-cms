@@ -76,3 +76,14 @@ Useful docs:
 Keep this repository focused on the generated website runtime. Platform-only code belongs in the private CodeY platform repository.
 
 Do not add production secrets, customer credentials, platform tokens, or generated-site private data to this repository.
+
+## License
+
+CodeY CMS is free software licensed under the GNU General Public License,
+version 2 or, at your option, any later version (`GPL-2.0-or-later`). This is
+the same open-source licensing model used by WordPress, while CodeY CMS remains
+a separate project with its own code, identity, and copyright notice.
+
+The software is provided without warranty. CodeY CMS does not claim ownership
+of user-created content. See `LICENSE` for the complete license and `NOTICE.md`
+for project, third-party, and trademark notices.

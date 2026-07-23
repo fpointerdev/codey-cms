@@ -1,6 +1,12 @@
 {
   "name": "codey-cms",
   "version": "0.9.0",
+  "author": "Fatlum Prekadini",
+  "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pointerdev-tech/codey-cms.git"
+  },
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.3.0",

@@ -159,6 +159,8 @@ function releaseFiles() {
     ".env.production.example",
     ".dockerignore",
     "Dockerfile",
+    "LICENSE",
+    "NOTICE.md",
     "README.md",
     "apps/web",
     "dist",

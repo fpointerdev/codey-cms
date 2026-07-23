@@ -30,11 +30,18 @@ FROM base AS production
 ENV NODE_ENV=production
 ENV PORT=4000
 
+LABEL org.opencontainers.image.title="CodeY CMS" \
+  org.opencontainers.image.authors="Fatlum Prekadini and CodeY CMS contributors" \
+  org.opencontainers.image.source="https://github.com/pointerdev-tech/codey-cms" \
+  org.opencontainers.image.licenses="GPL-2.0-or-later"
+
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 api
 
 COPY --from=builder --chown=api:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=api:nodejs /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=builder --chown=api:nodejs /app/LICENSE ./LICENSE
+COPY --from=builder --chown=api:nodejs /app/NOTICE.md ./NOTICE.md
 COPY --from=builder --chown=api:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=api:nodejs /app/dist ./dist
 COPY --from=builder --chown=api:nodejs /app/apps/web ./apps/web
