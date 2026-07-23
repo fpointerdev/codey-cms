@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,6 +19,7 @@ test("encrypted backup restores database records and local media", { timeout: 12
 
   try {
     await mkdir(mediaDirectory, { recursive: true });
+    const mediaDirectoryId = (await stat(mediaDirectory)).ino;
     await writeFile(mediaFile, "original media\n", "utf8");
     await prisma.cmsPage.create({
       data: {
@@ -64,6 +65,11 @@ test("encrypted backup restores database records and local media", { timeout: 12
     });
     assert.equal(restoredPage?.title, "Recovery marker");
     assert.equal(await readFile(mediaFile, "utf8"), "original media\n");
+    assert.equal((await stat(mediaDirectory)).ino, mediaDirectoryId);
+    assert.deepEqual(
+      (await readdir(mediaDirectory)).filter((name) => name.startsWith(".codey-")),
+      []
+    );
     await prisma.cmsPage.delete({ where: { locale_slug: { locale: "en", slug } } });
   } finally {
     await prisma.$disconnect().catch(() => undefined);

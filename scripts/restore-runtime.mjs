@@ -100,6 +100,47 @@ async function directoryHasFiles(directory) {
   }
 }
 
+async function installRestoredMedia(mediaDirectory, stagingDirectory) {
+  const rollbackDirectory = await mkdtemp(path.join(mediaDirectory, ".codey-rollback-"));
+  const ignoredNames = new Set([path.basename(stagingDirectory), path.basename(rollbackDirectory)]);
+  const currentEntries = (await readdir(mediaDirectory)).filter((name) => !ignoredNames.has(name));
+  const stagedEntries = await readdir(stagingDirectory);
+  const movedCurrentEntries = [];
+  const installedEntries = [];
+
+  try {
+    for (const name of currentEntries) {
+      await rename(path.join(mediaDirectory, name), path.join(rollbackDirectory, name));
+      movedCurrentEntries.push(name);
+    }
+    for (const name of stagedEntries) {
+      await rename(path.join(stagingDirectory, name), path.join(mediaDirectory, name));
+      installedEntries.push(name);
+    }
+  } catch (error) {
+    await Promise.all(installedEntries.map((name) =>
+      rm(path.join(mediaDirectory, name), { recursive: true, force: true })
+    ));
+
+    const recoveryErrors = [];
+    for (const name of movedCurrentEntries) {
+      try {
+        await rename(path.join(rollbackDirectory, name), path.join(mediaDirectory, name));
+      } catch (recoveryError) {
+        recoveryErrors.push(recoveryError);
+      }
+    }
+    if (recoveryErrors.length > 0) {
+      throw new Error(`Media restore failed and previous files remain in ${rollbackDirectory}.`, { cause: error });
+    }
+    await rm(rollbackDirectory, { recursive: true, force: true });
+    throw error;
+  }
+
+  await rm(stagingDirectory, { recursive: true, force: true });
+  await rm(rollbackDirectory, { recursive: true, force: true });
+}
+
 const databaseConnection = postgresCliConnection(requireEnv("DATABASE_URL"));
 delete process.env.DATABASE_URL;
 const databaseEnvironment = databaseCommandEnvironment(databaseConnection.password);
@@ -164,9 +205,8 @@ try {
       throw new Error("Media directory is not empty. Set RESTORE_REPLACE_MEDIA=true to replace it.");
     }
 
-    mediaStagingDirectory = `${mediaDirectory}.restore-${process.pid}`;
-    await rm(mediaStagingDirectory, { recursive: true, force: true });
-    await mkdir(mediaStagingDirectory, { recursive: true });
+    await mkdir(mediaDirectory, { recursive: true });
+    mediaStagingDirectory = await mkdtemp(path.join(mediaDirectory, ".codey-restore-"));
     await run("tar", ["-xzf", preparedMediaFile, "-C", mediaStagingDirectory]);
     await assertSafeMediaTree(mediaStagingDirectory);
   }
@@ -195,8 +235,7 @@ try {
 
   if (mediaStagingDirectory) {
     const mediaDirectory = path.resolve(process.env.STORAGE_LOCAL_DIR ?? "storage/uploads");
-    await rm(mediaDirectory, { recursive: true, force: true });
-    await rename(mediaStagingDirectory, mediaDirectory);
+    await installRestoredMedia(mediaDirectory, mediaStagingDirectory);
     mediaStagingDirectory = undefined;
   } else if (manifest?.media?.driver === "s3") {
     console.log("Database restored. Restore S3 media through the bucket versioning or replication workflow in the manifest.");
