@@ -153,6 +153,10 @@ test("self-host shell launcher selects and remembers an available port", async (
       cwd: directory,
       env: {
         ...process.env,
+        API_PORT: "",
+        APP_PUBLIC_URL: "",
+        CORS_ORIGINS: "",
+        CODEY_SETUP_URL: "",
         PATH: `${binDirectory}:${process.env.PATH || ""}`,
         CODEY_DOCKER_LOG: dockerLog,
         CODEY_OPENED_URL: openedUrl
