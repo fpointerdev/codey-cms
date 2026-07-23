@@ -344,7 +344,7 @@ test("shop customization and product creation keep advanced controls out of the 
 test("public structured tabs support keyboard navigation", async ({ page }) => {
   await page.goto("/");
   const pageRoot = page.locator("[data-page]");
-  await expect(pageRoot).not.toHaveAttribute("data-server-rendered", "true");
+  await expect(pageRoot).toHaveAttribute("data-server-rendered", "true");
   await pageRoot.evaluate((element) => {
     element.innerHTML = `
       <div data-structured-tabs>

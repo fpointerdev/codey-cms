@@ -42,6 +42,17 @@ export function normalizeLocale(value: unknown) {
   return parseLocaleCode(value) ?? defaultSettings.defaultLocale;
 }
 
+export function publicLocaleCodes(settings: LocalizationSettings) {
+  const defaultLocaleCode = normalizeLocale(settings.defaultLocale);
+  if (!settings.enabled) return [defaultLocaleCode];
+
+  const locales = new Set([defaultLocaleCode]);
+  settings.locales
+    .filter((locale) => locale.enabled)
+    .forEach((locale) => locales.add(normalizeLocale(locale.code)));
+  return [...locales];
+}
+
 function parseLocaleCode(value: unknown) {
   if (typeof value !== "string") return undefined;
 
@@ -247,7 +258,14 @@ export function resolveLocale(settings: LocalizationSettings, requestedLocale: u
 
 export function localizedPath(slug: string, locale: string, defaultLocaleCode = defaultSettings.defaultLocale) {
   const localeCode = normalizeLocale(locale);
-  const normalizedSlug = slug === "home" ? "" : slug.replace(/^\/+|\/+$/g, "");
+  const normalizedSlug = slug === "home"
+    ? ""
+    : slug
+        .replace(/^\/+|\/+$/g, "")
+        .split("/")
+        .filter(Boolean)
+        .map((part) => encodeURIComponent(part))
+        .join("/");
   const path = normalizedSlug ? `/${normalizedSlug}` : "/";
 
   if (localeCode === defaultLocaleCode) return path;

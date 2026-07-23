@@ -21,6 +21,7 @@ export const state = {
   hasSession: storedValue("cms_session_hint") === "1",
   user: null,
   config: null,
+  publicRenderLocale: "",
   menu: null,
   page: null,
   builderPage: null,
@@ -139,8 +140,8 @@ export const componentTemplates = [
         label: "Slider images",
         value: {
           slides: [
-            { url: placeholderImage(1200, 700, "Slide image"), alt: "Slide image", caption: "<p>Write first slide text here.</p>" },
-            { url: placeholderImage(1200, 700, "Slide image"), alt: "Slide image", caption: "<p>Write second slide text here.</p>" }
+            { url: placeholderImage(1200, 700, "Slide image"), alt: "Slide image", width: 1200, height: 700, caption: "<p>Write first slide text here.</p>" },
+            { url: placeholderImage(1200, 700, "Slide image"), alt: "Slide image", width: 1200, height: 700, caption: "<p>Write second slide text here.</p>" }
           ],
           settings: {
             slidesPerView: 1,
@@ -1102,7 +1103,7 @@ function pathLocale() {
 export function translateString(key, fallback = "", locale = "") {
   const localization = state.config?.localization || {};
   const strings = localization.strings || {};
-  const localeCode = String(locale || pathLocale() || localization.defaultLocale || "en").toLowerCase();
+  const localeCode = String(locale || state.publicRenderLocale || pathLocale() || localization.defaultLocale || "en").toLowerCase();
   const fallbackLocale = String(localization.fallbackLocale || localization.defaultLocale || "en").toLowerCase();
   const defaultLocale = String(localization.defaultLocale || "en").toLowerCase();
   const translations = strings[key] || {};

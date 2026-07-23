@@ -3,6 +3,7 @@ export type PublicShellContent = {
   body: string;
   footer: string;
   head?: string;
+  menu?: string;
 };
 
 export function injectPublicShellContent(html: string, content: PublicShellContent) {
@@ -14,6 +15,10 @@ export function injectPublicShellContent(html: string, content: PublicShellConte
     .replace(
       /(<a\b[^>]*\bdata-brand\b[^>]*>)[\s\S]*?(<\/a>)/i,
       (_match, openingTag: string, closingTag: string) => `${openingTag}${content.brand}${closingTag}`
+    )
+    .replace(
+      /(<nav\b[^>]*\bdata-menu\b[^>]*>)[\s\S]*?(<\/nav>)/i,
+      (_match, openingTag: string, closingTag: string) => `${openingTag}${content.menu ?? ""}${closingTag}`
     )
     .replace(
       /<article\s+data-page><\/article>/i,

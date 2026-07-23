@@ -1,7 +1,8 @@
 import { elements, setStatus, state, translateString } from "./core.js";
 import { currentLocale } from "./routes.js";
 import { normalizeShopSettings } from "./shop-config.js";
-import { renderProductDetailContent, renderShopListingContent } from "./public-renderer.js";
+import { renderProductDetailContent, renderShopListingContent, runtimeSeoContext } from "./public-renderer.js";
+import { applySeoDocument, createProductSeoDocument, createShopSeoDocument } from "./seo-document.js";
 
 function renderOptions(settings) {
   return {
@@ -19,7 +20,17 @@ export function renderShopListing({ products = [], categories = [], attributes =
       ? `${route.attributeName}: ${route.attributeValue}`.replaceAll("-", " ")
       : shopSettings.catalogTitle;
 
-  document.title = route.page > 1 ? `${title} - Page ${route.page}` : title;
+  const locale = currentLocale();
+  const translations = (state.config?.localization?.locales || [])
+    .filter((item) => item?.enabled !== false && item?.code)
+    .map((item) => ({ locale: item.code, route }));
+  applySeoDocument(createShopSeoDocument({
+    locale,
+    route,
+    title,
+    description: shopSettings.catalogDescription,
+    translations
+  }, runtimeSeoContext({ locale, route })));
   elements.brand.textContent = shopSettings.catalogTitle;
   elements.brand.href = "/";
   elements.page.innerHTML = renderShopListingContent(
@@ -32,7 +43,10 @@ export function renderShopListing({ products = [], categories = [], attributes =
 }
 
 export function renderProductDetail(product, settings = {}) {
-  document.title = product.name;
+  applySeoDocument(createProductSeoDocument(
+    product,
+    runtimeSeoContext({ locale: product.locale || currentLocale() })
+  ));
   elements.brand.textContent = product.name;
   elements.brand.href = "/";
   elements.page.innerHTML = renderProductDetailContent(product, renderOptions(settings));

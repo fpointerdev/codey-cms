@@ -6,6 +6,8 @@ import {
   addLocaleRow,
   addMenuItem,
   addSection,
+  applyRuntimeUpdate,
+  checkRuntimeUpdate,
   editBlock,
   editFooter,
   editMenuItem,
@@ -744,6 +746,18 @@ function bindBuilderClick(event) {
 }
 
 function bindAdminClick(event) {
+  const updateCheckButton = event.target.closest("[data-check-runtime-update]");
+  if (updateCheckButton) {
+    void checkRuntimeUpdate(updateCheckButton);
+    return true;
+  }
+
+  const updateApplyButton = event.target.closest("[data-apply-runtime-update]");
+  if (updateApplyButton) {
+    void applyRuntimeUpdate(updateApplyButton);
+    return true;
+  }
+
   const emailTestButton = event.target.closest("[data-test-email-settings]");
   if (emailTestButton) {
     void testEmailSettings(emailTestButton);

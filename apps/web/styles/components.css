@@ -374,7 +374,8 @@
 #settings-tab-general:checked ~ .settings-tabs label[for="settings-tab-general"],
 #settings-tab-style:checked ~ .settings-tabs label[for="settings-tab-style"],
 #settings-tab-email:checked ~ .settings-tabs label[for="settings-tab-email"],
-#settings-tab-multilingual:checked ~ .settings-tabs label[for="settings-tab-multilingual"] {
+#settings-tab-multilingual:checked ~ .settings-tabs label[for="settings-tab-multilingual"],
+#settings-tab-updates:checked ~ .settings-tabs label[for="settings-tab-updates"] {
   border-color: var(--accent);
   color: var(--admin-ink);
 }
@@ -382,9 +383,87 @@
 #settings-tab-general:checked ~ .settings-tab-panel-general,
 #settings-tab-style:checked ~ .settings-tab-panel-style,
 #settings-tab-email:checked ~ .settings-tab-panel-email,
-#settings-tab-multilingual:checked ~ .settings-tab-panel-multilingual {
+#settings-tab-multilingual:checked ~ .settings-tab-panel-multilingual,
+#settings-tab-updates:checked ~ .settings-tab-panel-updates {
   display: grid;
   gap: 18px;
+}
+
+.runtime-update-card {
+  display: grid;
+  max-width: 760px;
+  gap: 20px;
+}
+
+.runtime-update-summary {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.runtime-update-summary h2 {
+  margin: 2px 0 6px;
+  font-size: 20px;
+}
+
+.runtime-update-indicator {
+  width: 10px;
+  height: 10px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: #6f7a74;
+  box-shadow: 0 0 0 4px #e9eeeb;
+}
+
+.runtime-update-indicator.success {
+  background: #0d7454;
+  box-shadow: 0 0 0 4px #dceee7;
+}
+
+.runtime-update-indicator.pending {
+  background: #b47816;
+  box-shadow: 0 0 0 4px #f4e8cf;
+}
+
+.runtime-update-indicator.error {
+  background: #b33b32;
+  box-shadow: 0 0 0 4px #f4dfdc;
+}
+
+.runtime-update-details {
+  border-top: 1px solid #edf0f2;
+  padding-top: 14px;
+}
+
+.runtime-update-details summary {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.runtime-update-details dl {
+  display: grid;
+  gap: 9px;
+  margin: 14px 0 0;
+}
+
+.runtime-update-details dl div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  font-size: 12px;
+}
+
+.runtime-update-details dt {
+  color: var(--muted);
+}
+
+.runtime-update-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-info-card {

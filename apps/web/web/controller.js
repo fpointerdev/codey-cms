@@ -399,12 +399,16 @@ export async function loadAdminRoute(route) {
   if (route.view === "settings") {
     const { renderSettingsPage } = await adminViews();
     const config = await api("/config");
-    try {
-      const { email } = await api("/config/email");
-      config.email = email;
-    } catch (error) {
-      config.email = { error: error.message || "Unable to load email settings." };
-    }
+    const [emailResult, updateResult] = await Promise.allSettled([
+      api("/config/email"),
+      api("/config/runtime-update")
+    ]);
+    config.email = emailResult.status === "fulfilled"
+      ? emailResult.value.email
+      : { error: emailResult.reason?.message || "Unable to load email settings." };
+    config.runtimeUpdate = updateResult.status === "fulfilled"
+      ? updateResult.value.update
+      : { enabled: false, error: updateResult.reason?.message || "Unable to load update status." };
     renderSettingsPage(config);
     return;
   }

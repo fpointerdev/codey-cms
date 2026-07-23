@@ -36,6 +36,51 @@ enum SiteDomainStatus {
   DISABLED
 }
 
+enum RuntimeInstallationStatus {
+  PENDING
+  COMPLETE
+}
+
+enum RuntimeUpdateStatus {
+  AVAILABLE
+  STAGED
+  APPLYING
+  SUCCEEDED
+  FAILED
+  ROLLED_BACK
+}
+
+model RuntimeInstallation {
+  id             String                    @id @default("primary")
+  status         RuntimeInstallationStatus @default(PENDING)
+  runtimeVersion String
+  releaseChannel String                    @default("stable")
+  siteId         String?
+  ownerUserId    String?
+  completedAt    DateTime?
+  metadata       Json?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+}
+
+model RuntimeUpdate {
+  id                String              @id @default(cuid())
+  fromVersion       String
+  toVersion         String
+  status            RuntimeUpdateStatus @default(AVAILABLE)
+  releaseManifest   Json?
+  backupId          String?
+  requestedByUserId String?
+  error             String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([status, createdAt])
+  @@index([toVersion])
+}
+
 model Site {
   id                String            @id @default(cuid())
   slug              String            @unique

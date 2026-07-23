@@ -17,6 +17,7 @@ export const config = {
   env: env.APP_ENV,
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === "production",
+  selfHosted: env.SELF_HOSTED,
   app: {
     name: env.APP_NAME,
     mode: env.APP_MODE,
@@ -100,6 +101,19 @@ export const config = {
   },
   payments: {
     credentialEncryptionKey: env.CMS_CREDENTIAL_ENCRYPTION_KEY ?? env.JWT_ACCESS_SECRET
+  },
+  installation: {
+    claimToken: env.CODEY_INSTALL_TOKEN
+  },
+  updates: {
+    enabled: env.CODEY_UPDATES_ENABLED,
+    autoApply: env.CODEY_AUTO_UPDATE,
+    feedUrl: env.CODEY_RELEASE_FEED_URL,
+    publicKey: env.CODEY_RELEASE_PUBLIC_KEY,
+    publicKeyFile: env.CODEY_RELEASE_PUBLIC_KEY_FILE,
+    directory: env.CODEY_UPDATE_DIR,
+    controlFile: env.CODEY_UPDATE_CONTROL_FILE,
+    checkIntervalHours: env.CODEY_UPDATE_CHECK_INTERVAL_HOURS
   },
   email: {
     driver: env.EMAIL_DRIVER,

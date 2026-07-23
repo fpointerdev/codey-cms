@@ -40,9 +40,10 @@ COPY --from=builder --chown=api:nodejs /app/dist ./dist
 COPY --from=builder --chown=api:nodejs /app/apps/web ./apps/web
 COPY --from=builder --chown=api:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=api:nodejs /app/scripts ./scripts
+COPY --from=builder --chown=api:nodejs /app/runtime-meta ./runtime-meta
 
-RUN mkdir -p storage/uploads backups backups-mirror \
-  && chown -R api:nodejs storage backups backups-mirror
+RUN mkdir -p storage/uploads backups backups-mirror /runtime \
+  && chown -R api:nodejs storage backups backups-mirror /runtime
 
 USER api
 

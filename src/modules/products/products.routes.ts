@@ -29,6 +29,7 @@ import {
   findProductAttributePage,
   orderProductsByIds
 } from "./product-attribute-filter.js";
+import { enrichPublicMedia } from "../cms/public-media.js";
 
 function productInclude(canReadInactiveVariants = false) {
   return {
@@ -319,7 +320,10 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
               include: productInclude(canReadDrafts)
             })
           : [];
-        const products = orderProductsByIds(matchedProducts, result.ids);
+        const products = await enrichPublicMedia(
+          context.prisma,
+          orderProductsByIds(matchedProducts, result.ids)
+        );
 
         return sendSuccess(res, { products }, {
           page,
@@ -340,7 +344,7 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         context.prisma.product.count({ where })
       ]);
 
-      return sendSuccess(res, { products }, {
+      return sendSuccess(res, { products: await enrichPublicMedia(context.prisma, products) }, {
         page,
         limit,
         total,
@@ -367,7 +371,29 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         throw new AppError(404, "not_found", "Product not found.");
       }
 
-      return sendSuccess(res, { product });
+      const translationGroupId = product.translationGroupId || product.slug;
+      const translations = await context.prisma.product.findMany({
+        where: {
+          OR: [
+            { id: product.id },
+            { translationGroupId }
+          ],
+          ...(canReadDrafts ? {} : { status: "ACTIVE" })
+        },
+        select: {
+          name: true,
+          slug: true,
+          locale: true,
+          status: true
+        },
+        orderBy: {
+          locale: "asc"
+        }
+      });
+
+      return sendSuccess(res, {
+        product: await enrichPublicMedia(context.prisma, { ...product, translations })
+      });
     })
   );
 

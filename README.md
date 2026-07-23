@@ -6,23 +6,24 @@ This repository is intentionally separate from the CodeY platform/control plane.
 
 It must not contain the platform app that sells websites, prompt orchestration, AI provider secrets, hosting automation, Cloudflare OAuth tokens, SSH/SFTP credentials, registry secrets, or platform runbooks.
 
-## Quick Start
+## Install CodeY CMS
 
-Docker is the simplest local start because it includes PostgreSQL:
+CodeY CMS is a downloadable, self-hosted CMS. The supported nontechnical path includes PostgreSQL, generated secrets, encrypted backups, the browser installer, and managed stable updates.
 
-```bash
-cp .env.example .env
-docker compose up --build
-docker compose exec backend pnpm setup:admin
-```
+1. Install Docker Desktop.
+2. Download and extract the latest `codey-cms-<version>.zip` release.
+3. Run `start-codey.cmd` on Windows or `./start-codey.sh` on macOS and Linux.
+4. Complete the setup page that opens in your browser.
+
+The launcher generates installation secrets once and keeps them in Docker volumes. Users never choose a CMS version: new installations use the latest certified stable release, while every installed runtime records its exact version for updates and rollback.
 
 Open:
 
 - Public site: http://localhost:4000
 - CMS admin: http://localhost:4000/cy-admin
-- API base: http://localhost:4000/api/v1
+- Setup, before installation: http://localhost:4000/install
 
-The seed does not create a default owner. Set explicit `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` values before the first seed, or run `pnpm setup:admin` once after migrations. Remove bootstrap credentials from the environment after first use. The setup command uses a hidden password prompt, accepts those environment values in non-interactive deployments, and refuses to replace an existing owner. If the bootstrap email belongs to an existing non-owner, the seed stops and `pnpm setup:admin` must be used so the password and active sessions are reset safely. The Docker command above runs it inside the backend container.
+For a public domain, TLS, reverse proxy, backup, and recovery instructions, see `docs/self-host-installation.md`.
 
 ## Local Development
 
@@ -66,6 +67,9 @@ Useful docs:
 - `docs/module-system.md`
 - `docs/api-contract.md`
 - `docs/runtime-env-contract.md`
+- `docs/self-host-installation.md`
+- `docs/automatic-updates.md`
+- `docs/release-channels.md`
 
 ## Safety Boundary
 

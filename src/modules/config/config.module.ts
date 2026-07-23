@@ -45,6 +45,7 @@ import {
   sectionPresetRegistry
 } from "../builder/element-registry.js";
 import { normalizeDesignSystemSettings } from "./site-design.js";
+import { RuntimeUpdateService } from "../../runtime/runtime-update.service.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -155,6 +156,11 @@ export const configModule: AppModule = {
   register: (router, context) => {
     const moduleAdminService = new ModuleAdminService(context);
     const siteDomainService = new SiteDomainService(context);
+    const runtimeUpdateService = new RuntimeUpdateService(
+      context.prisma,
+      context.config,
+      context.logger
+    );
     const emailSettingsService = new EmailSettingsService(context.prisma, context.config);
 
     router.get("/", asyncHandler(async (_req, res) => {
@@ -462,6 +468,48 @@ export const configModule: AppModule = {
       requirePermission(context, "read", "modules"),
       asyncHandler(async (_req, res) => {
         return sendSuccess(res, generationContract());
+      })
+    );
+
+    router.get(
+      "/runtime-update",
+      requirePermission(context, "read", "modules"),
+      asyncHandler(async (_req, res) => {
+        return sendSuccess(res, { update: await runtimeUpdateService.status() });
+      })
+    );
+
+    router.post(
+      "/runtime-update/check",
+      requirePermission(context, "read", "modules"),
+      asyncHandler(async (_req, res) => {
+        return sendSuccess(res, { update: await runtimeUpdateService.check() });
+      })
+    );
+
+    router.post(
+      "/runtime-update/apply",
+      requirePermission(context, "manage", "modules"),
+      asyncHandler(async (req, res) => {
+        const update = await runtimeUpdateService.stageLatest(req.user?.id);
+        if (update.staged) {
+          await context.prisma.auditLog.create({
+            data: {
+              actorUserId: req.user?.id,
+              action: "runtime.update.stage",
+              subject: "runtime",
+              subjectId: update.updateId,
+              ipAddress: req.ip,
+              userAgent: req.header("user-agent"),
+              metadata: {
+                fromVersion: update.currentVersion,
+                toVersion: update.latestVersion
+              }
+            }
+          });
+        }
+
+        return sendSuccess(res, { update }, undefined, update.staged ? 202 : 200);
       })
     );
 

@@ -14,6 +14,20 @@ run(process.execPath, [
   "prisma/generated/schema.prisma"
 ]);
 
+const exportSpecPath = path.resolve(
+  root,
+  process.env.CODEY_EXPORT_WEBSITE_SPEC_PATH || "codey/export/website-spec.json"
+);
+const exportApplyScript = path.join(root, "scripts", "apply-export-website-spec.mjs");
+
+if (
+  process.env.CODEY_EXPORT_APPLY_ON_START !== "false" &&
+  existsSync(exportSpecPath) &&
+  existsSync(exportApplyScript)
+) {
+  run(process.execPath, [exportApplyScript]);
+}
+
 const serverEntry = path.join(root, "dist", "src", "server.js");
 
 if (!existsSync(serverEntry)) {

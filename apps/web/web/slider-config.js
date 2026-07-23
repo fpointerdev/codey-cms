@@ -75,6 +75,9 @@ function oneOf(value, options, fallback) {
 function normalizeSlide(item = {}, index = 0) {
   return {
     ...(item.mediaAssetId ? { mediaAssetId: item.mediaAssetId } : {}),
+    ...(item.width ? { width: item.width } : {}),
+    ...(item.height ? { height: item.height } : {}),
+    ...(item.variants ? { variants: item.variants } : {}),
     url: item.url || "",
     alt: item.alt || item.altText || `Slide ${index + 1}`,
     caption: typeof item.caption === "string" ? item.caption : "",
@@ -85,6 +88,9 @@ function normalizeSlide(item = {}, index = 0) {
 function normalizeGalleryItem(item = {}, index = 0) {
   return {
     ...(item.mediaAssetId ? { mediaAssetId: item.mediaAssetId } : {}),
+    ...(item.width ? { width: item.width } : {}),
+    ...(item.height ? { height: item.height } : {}),
+    ...(item.variants ? { variants: item.variants } : {}),
     url: item.url || "",
     alt: item.alt || item.altText || `Gallery image ${index + 1}`,
     caption: typeof item.caption === "string" ? item.caption : "",

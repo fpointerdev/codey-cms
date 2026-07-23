@@ -1,11 +1,18 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
-import { localizedPath, normalizeLocale, readLocalizationSettings } from "../localization/localization.service.js";
+import {
+  localizedPath,
+  normalizeLocale,
+  publicLocaleCodes,
+  readLocalizationSettings
+} from "../localization/localization.service.js";
 import {
   sanitizeContentBlockValue,
   sanitizePostContent,
   sanitizeRichObject
 } from "./rich-text-sanitizer.js";
+import { buildSitemapXml, emptySitemapXml, type SitemapEntry } from "./sitemap.js";
+import { enrichPublicMedia } from "./public-media.js";
 
 type CmsDatabase = PrismaClient | Prisma.TransactionClient;
 
@@ -515,15 +522,6 @@ function assertRedirectDoesNotLoop(sourcePath: string, targetPath: string) {
   }
 }
 
-function xmlEscape(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/g, "");
 }
@@ -541,18 +539,15 @@ function normalizePublicBaseUrl(value: unknown) {
 function localizedResourcePath(prefix: string, slug: string, locale: string, defaultLocale = "en") {
   const localeCode = normalizeLocale(locale);
   const defaultLocaleCode = normalizeLocale(defaultLocale);
-  const normalizedSlug = slug.replace(/^\/+|\/+$/g, "");
+  const normalizedSlug = slug
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
   const path = `/${prefix}/${normalizedSlug}`;
 
   return localeCode === defaultLocaleCode ? path : `/${localeCode}${path}`;
-}
-
-function emptySitemapXml() {
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    "</urlset>"
-  ].join("\n");
 }
 
 function detectSpam(input: ContactSubmissionInput, now = new Date()) {
@@ -821,8 +816,10 @@ export class CmsService {
       }
     });
 
+    const sanitizedPage = await enrichPublicMedia(this.prisma, sanitizePageRecord(page));
+
     return {
-      ...sanitizePageRecord(page),
+      ...sanitizedPage,
       translations
     };
   }
@@ -1343,8 +1340,30 @@ export class CmsService {
       },
       include: postInclude
     });
+    const translationGroupId = post.translationGroupId || post.slug;
+    const translations = await this.prisma.cmsPost.findMany({
+      where: {
+        OR: [
+          { id: post.id },
+          { translationGroupId }
+        ],
+        status: "PUBLISHED"
+      },
+      select: {
+        title: true,
+        slug: true,
+        locale: true,
+        status: true
+      },
+      orderBy: {
+        locale: "asc"
+      }
+    });
 
-    return sanitizePostRecord(post);
+    return {
+      ...sanitizePostRecord(post),
+      translations
+    };
   }
 
   async createPost(input: CreatePostInput, user?: RequestUser) {
@@ -1750,10 +1769,11 @@ export class CmsService {
     }
   }
 
-  private async listProductsForSitemap() {
+  private async listProductsForSitemap(locales: string[]) {
     try {
       return await this.prisma.product.findMany({
         where: {
+          locale: { in: locales },
           status: "ACTIVE"
         },
         orderBy: {
@@ -1762,6 +1782,7 @@ export class CmsService {
         select: {
           slug: true,
           locale: true,
+          translationGroupId: true,
           updatedAt: true
         }
       });
@@ -1781,36 +1802,63 @@ export class CmsService {
     ]);
     const origin = trimTrailingSlash(seoSettings.baseUrl);
     if (!seoSettings.searchIndexing || !seoSettings.sitemapEnabled) return emptySitemapXml();
+    const locales = publicLocaleCodes(localization);
 
-    let pages: Array<{ slug: string; locale: string; updatedAt: Date }> = [];
-    let posts: Array<{ slug: string; locale: string; updatedAt: Date }> = [];
-    let products: Array<{ slug: string; locale: string; updatedAt: Date }> = [];
+    type LocalizedSitemapRecord = {
+      slug: string;
+      locale: string;
+      translationGroupId: string | null;
+      updatedAt: Date;
+    };
+
+    let pages: LocalizedSitemapRecord[] = [];
+    let posts: LocalizedSitemapRecord[] = [];
+    let products: LocalizedSitemapRecord[] = [];
+    let productCategories: LocalizedSitemapRecord[] = [];
 
     try {
-      [pages, posts, products] = await Promise.all([
+      [pages, posts, products, productCategories] = await Promise.all([
         this.prisma.cmsPage.findMany({
-          where: visibleContentWhere(),
+          where: {
+            ...visibleContentWhere(),
+            locale: { in: locales }
+          },
           orderBy: {
             updatedAt: "desc"
           },
           select: {
             slug: true,
             locale: true,
+            translationGroupId: true,
             updatedAt: true
           }
         }),
         this.prisma.cmsPost.findMany({
-          where: visibleContentWhere(),
+          where: {
+            ...visibleContentWhere(),
+            locale: { in: locales }
+          },
           orderBy: {
             updatedAt: "desc"
           },
           select: {
             slug: true,
             locale: true,
+            translationGroupId: true,
             updatedAt: true
           }
         }),
-        this.listProductsForSitemap()
+        this.listProductsForSitemap(locales),
+        this.prisma.productCategory.findMany({
+          where: { locale: { in: locales } },
+          orderBy: { updatedAt: "desc" },
+          select: {
+            slug: true,
+            locale: true,
+            translationGroupId: true,
+            updatedAt: true
+          }
+        })
       ]);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2021", "P2022"].includes(error.code)) {
@@ -1819,34 +1867,51 @@ export class CmsService {
 
       throw error;
     }
-    const urls = [
+    const urls: SitemapEntry[] = [
       ...pages.map((page) => ({
         loc: `${origin}${localizedPath(page.slug, page.locale, localization.defaultLocale)}`,
-        lastmod: page.updatedAt
+        lastmod: page.updatedAt,
+        locale: page.locale,
+        groupKey: `page:${page.translationGroupId || `${page.locale}:${page.slug}`}`
       })),
       ...posts.map((post) => {
         return {
           loc: `${origin}${localizedResourcePath("posts", post.slug, post.locale, localization.defaultLocale)}`,
-          lastmod: post.updatedAt
+          lastmod: post.updatedAt,
+          locale: post.locale,
+          groupKey: `post:${post.translationGroupId || `${post.locale}:${post.slug}`}`
         };
       }),
       ...products.map((product) => {
         return {
           loc: `${origin}${localizedResourcePath("product", product.slug, product.locale, localization.defaultLocale)}`,
-          lastmod: product.updatedAt
+          lastmod: product.updatedAt,
+          locale: product.locale,
+          groupKey: `product:${product.translationGroupId || `${product.locale}:${product.slug}`}`
         };
-      })
+      }),
+      ...productCategories.map((category) => ({
+        loc: `${origin}${localizedResourcePath("shop/category", category.slug, category.locale, localization.defaultLocale)}`,
+        lastmod: category.updatedAt,
+        locale: category.locale,
+        groupKey: `product-category:${category.translationGroupId || `${category.locale}:${category.slug}`}`
+      }))
     ];
 
-    return [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-      ...urls.map(
-        (url) =>
-          `  <url><loc>${xmlEscape(url.loc)}</loc><lastmod>${url.lastmod.toISOString()}</lastmod></url>`
-      ),
-      "</urlset>"
-    ].join("\n");
+    if (products.length > 0) {
+      const lastmod = products.reduce(
+        (latest, product) => product.updatedAt > latest ? product.updatedAt : latest,
+        products[0]!.updatedAt
+      );
+      urls.push(...locales.map((locale) => ({
+        loc: `${origin}${normalizeLocale(locale) === normalizeLocale(localization.defaultLocale) ? "/shop" : `/${normalizeLocale(locale)}/shop`}`,
+        lastmod,
+        locale,
+        groupKey: "shop:index"
+      })));
+    }
+
+    return buildSitemapXml(urls, localization.defaultLocale);
   }
 
   async buildRobotsTxt(baseUrl: string) {

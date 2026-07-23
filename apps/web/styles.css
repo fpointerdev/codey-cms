@@ -1,10 +1,6 @@
 @import "./styles/base.css";
-@import "./styles/admin-builder.css";
-@import "./styles/product-editor.css";
 @import "./styles/components.css";
 @import "./styles/tables-modal-responsive.css";
-@import "./styles/design-system.css";
-@import "./styles/visual-editor.css";
 
 :root {
   --font-regular: 400;

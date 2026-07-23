@@ -147,6 +147,33 @@ async function seedAdminUser(adminRoleId: string) {
 }
 
 async function seedProducts() {
+  const site = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const imageUrl = "https://placehold.co/1200x800/png";
+  const existingImageAsset = await prisma.mediaAsset.findFirst({
+    where: { siteId: site.id, url: imageUrl, deletedAt: null }
+  });
+  const imageAsset = existingImageAsset
+    ? await prisma.mediaAsset.update({
+        where: { id: existingImageAsset.id },
+        data: {
+          kind: "IMAGE",
+          mimeType: "image/png",
+          width: 1200,
+          height: 800,
+          altText: "Starter product image"
+        }
+      })
+    : await prisma.mediaAsset.create({
+        data: {
+          siteId: site.id,
+          kind: "IMAGE",
+          url: imageUrl,
+          mimeType: "image/png",
+          width: 1200,
+          height: 800,
+          altText: "Starter product image"
+        }
+      });
   const category = await prisma.productCategory.upsert({
     where: {
       locale_slug: {
@@ -230,7 +257,7 @@ async function seedProducts() {
   const productImage = await prisma.productImage.findFirst({
     where: {
       productId: product.id,
-      url: "https://placehold.co/1200x800/png"
+      url: imageUrl
     }
   });
 
@@ -238,6 +265,7 @@ async function seedProducts() {
     await prisma.productImage.update({
       where: { id: productImage.id },
       data: {
+        mediaAssetId: imageAsset.id,
         alt: "Starter product image",
         sortOrder: 0,
         isPrimary: true
@@ -247,7 +275,8 @@ async function seedProducts() {
     await prisma.productImage.create({
       data: {
         productId: product.id,
-        url: "https://placehold.co/1200x800/png",
+        mediaAssetId: imageAsset.id,
+        url: imageUrl,
         alt: "Starter product image",
         sortOrder: 0,
         isPrimary: true

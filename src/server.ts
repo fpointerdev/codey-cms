@@ -2,6 +2,7 @@ import { config } from "./config/index.js";
 import { createApp } from "./core/app.js";
 import { prisma } from "./infrastructure/database/prisma.js";
 import { logger } from "./infrastructure/logging/logger.js";
+import { startRuntimeUpdateScheduler } from "./runtime/runtime-update.scheduler.js";
 
 const app = await createApp();
 
@@ -16,9 +17,15 @@ const server = app.listen(config.api.port, () => {
     "API server started"
   );
 });
+const stopRuntimeUpdateScheduler = startRuntimeUpdateScheduler({
+  prisma,
+  config,
+  logger
+});
 
 async function shutdown(signal: string) {
   logger.info({ signal }, "Shutting down API server");
+  stopRuntimeUpdateScheduler();
 
   server.close(async () => {
     await prisma.$disconnect();

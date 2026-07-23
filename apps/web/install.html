@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="theme-color" content="#f7f8f7" />
+    <title>Install CodeY CMS</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles/installer.css" />
+  </head>
+  <body>
+    <main class="installer-shell">
+      <header class="installer-header">
+        <a class="installer-brand" href="/install" aria-label="CodeY CMS setup">
+          <span class="installer-mark" aria-hidden="true">C</span>
+          <span>CodeY CMS</span>
+        </a>
+        <span class="installer-version" data-runtime-version>Checking system</span>
+      </header>
+
+      <div class="installer-layout">
+        <aside class="installer-progress" aria-label="Installation progress">
+          <p class="installer-eyebrow">First-time setup</p>
+          <h1>Make this site yours.</h1>
+          <ol>
+            <li class="is-current" data-step="system"><span>1</span>System</li>
+            <li data-step="site"><span>2</span>Site</li>
+            <li data-step="account"><span>3</span>Account</li>
+          </ol>
+          <div class="system-status" data-system-status aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span>Checking installation requirements</span>
+          </div>
+        </aside>
+
+        <section class="installer-content" aria-labelledby="installer-title">
+          <div class="installer-heading">
+            <p class="installer-eyebrow">Setup</p>
+            <h2 id="installer-title">Create your website</h2>
+            <p>Choose the starting point and owner account. You can change the site later.</p>
+          </div>
+
+          <form class="installer-form" data-install-form hidden>
+            <fieldset>
+              <legend>Website</legend>
+              <label class="field">
+                <span>Site name</span>
+                <input name="siteName" autocomplete="organization" maxlength="120" required />
+              </label>
+
+              <div class="field">
+                <span>Site type</span>
+                <div class="profile-options" role="radiogroup" aria-label="Site type">
+                  <label>
+                    <input type="radio" name="profile" value="presentation" />
+                    <span><strong>Website</strong><small>Pages and visual editing</small></span>
+                  </label>
+                  <label>
+                    <input type="radio" name="profile" value="cms" checked />
+                    <span><strong>Publishing</strong><small>Pages, posts, and authors</small></span>
+                  </label>
+                  <label>
+                    <input type="radio" name="profile" value="shop" />
+                    <span><strong>Shop</strong><small>Catalog, orders, and checkout</small></span>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Owner account</legend>
+              <div class="field-row">
+                <label class="field">
+                  <span>Your name</span>
+                  <input name="adminName" autocomplete="name" maxlength="120" required />
+                </label>
+                <label class="field">
+                  <span>Email</span>
+                  <input name="adminEmail" type="email" autocomplete="email" maxlength="254" required />
+                </label>
+              </div>
+              <div class="field-row">
+                <label class="field">
+                  <span>Password</span>
+                  <input name="adminPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+                </label>
+                <label class="field">
+                  <span>Confirm password</span>
+                  <input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset data-claim-token-field>
+              <legend>Installation access</legend>
+              <label class="field">
+                <span>Claim token</span>
+                <input name="claimToken" type="password" autocomplete="one-time-code" maxlength="512" />
+                <small>Use the token shown by your hosting provider or setup package.</small>
+              </label>
+            </fieldset>
+
+            <label class="indexing-option">
+              <input name="searchIndexing" type="checkbox" />
+              <span><strong>Allow search engines</strong><small>Enable this when the website is ready for visitors.</small></span>
+            </label>
+
+            <div class="installer-actions">
+              <p class="form-message" data-form-message aria-live="polite"></p>
+              <button type="submit">
+                <span>Install CodeY CMS</span>
+                <span aria-hidden="true">&rarr;</span>
+              </button>
+            </div>
+          </form>
+
+          <div class="installer-loading" data-installer-loading>
+            <span aria-hidden="true"></span>
+            <p>Preparing setup</p>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/web/install.js"></script>
+  </body>
+</html>

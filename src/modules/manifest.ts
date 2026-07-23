@@ -1,4 +1,5 @@
 import type { ModuleId } from "../core/types/module.js";
+import { runtimeVersion } from "../runtime/release.js";
 import { builderElementRegistry } from "./builder/element-registry.js";
 
 export type ModuleCategory = "core" | "content" | "commerce" | "operations";
@@ -42,7 +43,7 @@ export type DeploymentProfile = {
   monthlyEuroCents: number;
 };
 
-const baseVersion = "0.1.0";
+const baseVersion = runtimeVersion;
 const standardLifecycle: Record<ModuleLifecycleHook, boolean> = {
   install: true,
   enable: true,

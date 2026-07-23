@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { canonicalPublicRedirectTarget } from "../src/core/public-routing.js";
 import { CmsService } from "../src/modules/cms/cms.service.js";
+
+test("public canonical routing removes trailing slashes and preserves queries", () => {
+  assert.equal(canonicalPublicRedirectTarget("/about/?campaign=summer", "/about/"), "/about?campaign=summer");
+  assert.equal(canonicalPublicRedirectTarget("/", "/"), null);
+  assert.equal(canonicalPublicRedirectTarget("/about", "/about"), null);
+});
 
 test("CMS redirects normalize paths and preserve the incoming query string", async () => {
   const service = new CmsService({

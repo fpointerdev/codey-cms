@@ -1604,6 +1604,7 @@ export function renderSettingsPage(config) {
   const localizationModule = installedModules.get("localization");
   const localizationEnabled = localizationModule?.status === "ENABLED";
   const localization = config.localization || localizationModule?.settings?.settings || {};
+  const runtimeUpdate = config.runtimeUpdate || {};
   const locales = Array.isArray(localization.locales) && localization.locales.length
     ? localization.locales
     : [{ code: localization.defaultLocale || "en", label: "English", enabled: true }];
@@ -1629,11 +1630,13 @@ export function renderSettingsPage(config) {
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-style" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-email" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-multilingual" />
+          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-updates" />
           <nav class="admin-tabs settings-tabs" aria-label="Settings sections">
             <label for="settings-tab-general">General settings</label>
             <label for="settings-tab-style">Style</label>
             <label for="settings-tab-email">Email</label>
             <label for="settings-tab-multilingual">Multilingual</label>
+            <label for="settings-tab-updates">Updates</label>
           </nav>
           <section class="settings-tab-panel settings-tab-panel-general" data-settings-panel="general">
             <form class="admin-card settings-form" data-site-settings-form>
@@ -1808,9 +1811,88 @@ export function renderSettingsPage(config) {
               </form>
             </div>
           </section>
+          <section class="settings-tab-panel settings-tab-panel-updates" data-settings-panel="updates">
+            <div data-runtime-update-panel>
+              ${renderRuntimeUpdatePanel(runtimeUpdate)}
+            </div>
+          </section>
         </div>
       </section>
     `
   );
   setStatus("Settings loaded.");
+}
+
+export function renderRuntimeUpdatePanel(update = {}) {
+  const latest = update.latestUpdate || {};
+  const supervisor = update.supervisor || {};
+  const check = update.check || {};
+  const latestStatus = String(latest.status || "").toLowerCase();
+  const supervisorStatus = String(supervisor.status || "").toLowerCase();
+  const rawStatus = latestStatus && supervisor.updateId !== latest.id
+    ? latestStatus
+    : supervisorStatus || latestStatus;
+  const applying = ["staged", "applying"].includes(rawStatus);
+  const failed = ["failed", "rolled_back", "rolled-back"].includes(rawStatus);
+  const rolledBack = ["rolled_back", "rolled-back"].includes(rawStatus);
+  const updateAvailable = check.updateAvailable === true;
+  const failedTitle = rolledBack ? "The previous release was restored" : "The update needs attention";
+  const failedDescription = rolledBack
+    ? "CodeY CMS restored the previous working release. Review diagnostics before retrying."
+    : "CodeY CMS could not finish the update or recovery. Review the runtime logs before retrying.";
+  const title = update.error
+    ? "Update status unavailable"
+    : applying
+      ? rawStatus === "applying" ? "Installing the latest update" : "Update ready to install"
+      : failed
+      ? failedTitle
+        : updateAvailable
+          ? "A verified update is ready"
+          : "CodeY CMS is up to date";
+  const description = update.error
+    ? update.error
+    : applying
+      ? "The site will return automatically after backup, migration, and health checks finish."
+      : failed
+        ? failedDescription
+        : updateAvailable
+          ? "The update is signed, compatible, and will be backed up before installation."
+          : update.automatic
+            ? "Verified stable updates install automatically after a protected backup."
+            : "Check for a verified stable update at any time.";
+  const statusClass = update.error || failed ? "error" : applying ? "pending" : "success";
+
+  return `
+    <div class="admin-card runtime-update-card" data-runtime-update-state>
+      <div class="runtime-update-summary">
+        <span class="runtime-update-indicator ${statusClass}" aria-hidden="true"></span>
+        <div>
+          <p class="section-label">System updates</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p class="dashboard-copy compact">${escapeHtml(description)}</p>
+        </div>
+      </div>
+      <div class="module-status-row">
+        <div>
+          <strong>Automatic stable updates</strong>
+          <span>${update.automatic ? "On" : "Off"}</span>
+        </div>
+        <span class="status-pill ${update.automatic ? "success" : ""}">${update.automatic ? "Managed" : "Manual"}</span>
+      </div>
+      ${failed && (supervisor.error || latest.error) ? `<p class="form-message error">${escapeHtml(supervisor.error || latest.error)}</p>` : ""}
+      <details class="runtime-update-details">
+        <summary>Technical details</summary>
+        <dl>
+          <div><dt>Installed release</dt><dd>${escapeHtml(update.currentVersion || "Unknown")}</dd></div>
+          ${check.latestVersion ? `<div><dt>Latest stable</dt><dd>${escapeHtml(check.latestVersion)}</dd></div>` : ""}
+          ${latest.backupId ? `<div><dt>Recovery backup</dt><dd>${escapeHtml(latest.backupId)}</dd></div>` : ""}
+        </dl>
+      </details>
+      <p class="form-message" data-runtime-update-message aria-live="polite"></p>
+      <div class="form-actions">
+        <button type="button" class="secondary-button" data-check-runtime-update ${update.enabled === false || applying ? "disabled" : ""}>Check now</button>
+        ${updateAvailable ? `<button type="button" data-apply-runtime-update>Install update</button>` : ""}
+      </div>
+    </div>
+  `;
 }

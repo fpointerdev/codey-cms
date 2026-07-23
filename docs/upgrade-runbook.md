@@ -1,22 +1,23 @@
-# Copied Site Upgrade Runbook
+# Runtime Upgrade Runbook
 
-The platform creates one runtime copy per customer site. Base-product upgrades must be planned as repeatable rollouts across those copies.
+CodeY CMS supports signed managed updates for the self-host package and exact-version rollout through UseCodeY. End users do not select runtime versions.
 
 ## Version Contract
 
-- Keep `package.json` version aligned with module manifest compatibility.
+- Keep `package.json`, the Git tag, and runtime manifest version aligned.
+- Publish only signed stable manifests and immutable artifacts.
 - Use Prisma migrations only; never patch production schemas manually.
 - Use `GET /api/v1/config/compatibility` to check module compatibility before enabling new modules.
 - Record the deployed git SHA and migration version for every copied site.
 
 ## Upgrade Steps
 
-1. Select a pilot copied site for the same deployment profile.
+1. Qualify the signed release against presentation, CMS, and shop profiles.
 2. Back up the site database and media prefix.
 3. Enable maintenance mode if the migration affects auth, CMS writes, orders, or payments.
-4. Pull the new runtime image or code bundle.
-5. Run `pnpm db:deploy`.
-6. Start with `pnpm runtime:start`.
+4. Stage the exact signed artifact and verify its checksum.
+5. Use the supervisor or deployment pipeline to apply migrations.
+6. Start the exact pinned runtime.
 7. Check `/api/v1/health/ready` and `/api/v1/health/metrics`.
 8. Smoke test auth, CMS visibility, shop checkout, payment webhook handling, and email delivery.
 9. Disable maintenance mode.
@@ -25,7 +26,8 @@ The platform creates one runtime copy per customer site. Base-product upgrades m
 ## Rollback
 
 - Prefer forward fixes for schema-compatible bugs.
-- If rollback is required, restore the pre-upgrade database backup and matching media prefix.
+- The self-host supervisor restores the pre-update database and previous runtime when post-migration readiness fails.
+- For managed hosting, restore the exact pre-upgrade database backup and matching media prefix.
 - Reconcile payment provider state before reopening a shop site.
 - Keep the site in maintenance mode until the restored runtime is verified.
 

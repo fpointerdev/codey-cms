@@ -10,6 +10,7 @@ import {
   inspectMediaFile,
   publicMediaResponsePolicy
 } from "../src/modules/cms/media-policy.js";
+import { enrichPublicMedia } from "../src/modules/cms/public-media.js";
 import {
   sanitizeContentBlockValue,
   sanitizePostContent,
@@ -44,6 +45,37 @@ test("media references are found recursively without substring matches", () => {
 
   assert.equal(containsMediaReference(value, references), true);
   assert.equal(containsMediaReference({ mediaAssetId: "asset_123_old" }, references), false);
+});
+
+test("public media enrichment preserves non-plain values", async () => {
+  const createdAt = new Date("2026-07-22T10:00:00.000Z");
+  const result = await enrichPublicMedia({
+    mediaAsset: {
+      findMany: async () => [{
+        id: "asset_123",
+        url: "/uploads/sites/default/media/photo.jpg",
+        width: 1200,
+        height: 800,
+        variants: null,
+        altText: "Product photo"
+      }]
+    }
+  }, {
+    createdAt,
+    image: {
+      mediaAssetId: "asset_123",
+      url: "/uploads/sites/default/media/photo.jpg"
+    }
+  });
+
+  assert.strictEqual(result.createdAt, createdAt);
+  assert.deepEqual(result.image, {
+    mediaAssetId: "asset_123",
+    url: "/uploads/sites/default/media/photo.jpg",
+    width: 1200,
+    height: 800,
+    alt: "Product photo"
+  });
 });
 
 test("media uploads require matching extensions, MIME types, kinds, and file signatures", () => {

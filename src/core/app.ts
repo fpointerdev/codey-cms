@@ -18,6 +18,7 @@ import { loadModules } from "./http/module-loader.js";
 import { notFoundHandler } from "./http/not-found.middleware.js";
 import { requestContext } from "./http/request-context.middleware.js";
 import { injectPublicShellContent, type PublicShellContent } from "./public-shell.js";
+import { canonicalPublicRedirectTarget } from "./public-routing.js";
 import { prisma } from "../infrastructure/database/prisma.js";
 import { logger } from "../infrastructure/logging/logger.js";
 import {
@@ -35,13 +36,22 @@ import {
 } from "../modules/cms/media-optimizer.js";
 import { publicMediaResponsePolicy } from "../modules/cms/media-policy.js";
 import { sanitizeContentBlockValue, sanitizePostContent } from "../modules/cms/rich-text-sanitizer.js";
-import { localizedPath, normalizeLocale, readLocalizationSettings } from "../modules/localization/localization.service.js";
+import { enrichPublicMedia } from "../modules/cms/public-media.js";
+import {
+  normalizeLocale,
+  publicLocaleCodes,
+  readLocalizationSettings
+} from "../modules/localization/localization.service.js";
 import {
   findProductAttributePage,
   orderProductsByIds
 } from "../modules/products/product-attribute-filter.js";
 import { readShopSettings } from "../modules/products/shop-settings.js";
 import { publicSiteStyleTag } from "../modules/config/site-design.js";
+import {
+  createInstallationGate,
+  createInstallationRouter
+} from "../modules/installation/installation.routes.js";
 
 function normalizeOrigin(origin: string | undefined) {
   if (!origin) return undefined;
@@ -202,17 +212,28 @@ function createHelmetOptions() {
   };
 }
 
-type SeoMeta = {
+type SeoDocument = {
   title: string;
   description: string;
   htmlLang: string;
-  canonicalUrl?: string;
-  imageUrl?: string;
   noindex?: boolean;
+  alternates?: Array<{ hreflang: string; href: string }>;
+};
+
+type PublicSeoRenderer = {
+  createGenericSeoDocument(input: Record<string, unknown>): SeoDocument;
+  createPageSeoDocument(page: unknown, context?: Record<string, unknown>): SeoDocument;
+  createPostSeoDocument(post: unknown, context?: Record<string, unknown>): SeoDocument;
+  createProductSeoDocument(product: unknown, context?: Record<string, unknown>): SeoDocument;
+  createShopSeoDocument(shop: unknown, context?: Record<string, unknown>): SeoDocument;
+  injectSeoDocument(html: string, document: SeoDocument): string;
+  renderLanguageSwitcher(document: SeoDocument, localization: RouteLocalizationSettings): string;
 };
 
 type PublicMarkupRenderer = {
+  withPublicRenderContext<T>(context: Record<string, unknown>, render: () => T): T;
   renderFooter(page: unknown, canEdit?: boolean): string;
+  renderMenuItems(items: unknown[], canEdit?: boolean): string;
   renderPageContent(page: unknown, options?: { canEdit?: boolean }): string;
   renderPostContent(post: unknown): string;
   renderProductDetailContent(product: unknown, options?: Record<string, unknown>): string;
@@ -223,9 +244,11 @@ type PublicShellResolution = {
   found: boolean;
   content: PublicShellContent | null;
   siteTitle?: string;
+  localization?: RouteLocalizationSettings;
 };
 
 let publicMarkupRenderer: Promise<PublicMarkupRenderer> | null = null;
+let publicSeoRenderer: Promise<PublicSeoRenderer> | null = null;
 
 type PublicContentRoute =
   | { type: "page"; slug: string; locale: string }
@@ -268,16 +291,8 @@ function publicPageNumber(value: unknown) {
   return Number.isSafeInteger(page) && page > 0 ? Math.min(page, 10_000) : 1;
 }
 
-function encodeSlugPath(slug: string) {
-  return slug
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/");
-}
-
 function isAdminShellPath(path: string) {
-  return path === "/cy-admin" || path.startsWith("/dashboard") || path.startsWith("/auth/");
+  return path === "/install" || path === "/cy-admin" || path.startsWith("/dashboard") || path.startsWith("/auth/");
 }
 
 function looksLikeLocale(value: string | undefined) {
@@ -336,29 +351,6 @@ function publicContentRouteFromRequest(req: Request, localization?: RouteLocaliz
   return { type: "page", slug: querySlug || parts.join("/") || "home", locale };
 }
 
-function localizedResourcePath(prefix: string, slug: string, locale: string, defaultLocale = "en") {
-  const localeCode = normalizeLocale(locale);
-  const defaultLocaleCode = normalizeLocale(defaultLocale);
-  const normalizedSlug = slug.replace(/^\/+|\/+$/g, "");
-  const path = `/${prefix}/${encodeSlugPath(normalizedSlug)}`;
-
-  return localeCode === defaultLocaleCode ? path : `/${localeCode}${path}`;
-}
-
-function localizedShopPath(route: Extract<PublicContentRoute, { type: "shop" }>, defaultLocale = "en") {
-  const suffix = route.category
-    ? `/category/${encodeURIComponent(route.category)}`
-    : route.attributeName
-      ? `/attribute/${encodeURIComponent(route.attributeName)}/${encodeURIComponent(route.attributeValue || "")}`
-      : "";
-  const path = `/shop${suffix}`;
-
-  const localizedPath = normalizeLocale(route.locale) === normalizeLocale(defaultLocale)
-    ? path
-    : `/${normalizeLocale(route.locale)}${path}`;
-  return route.page > 1 ? `${localizedPath}?page=${route.page}` : localizedPath;
-}
-
 async function readPublicShopProductPage(
   route: Extract<PublicContentRoute, { type: "shop" }>,
   limit: number
@@ -394,7 +386,7 @@ async function readPublicShopProductPage(
       : [];
 
     return {
-      products: orderProductsByIds(matchedProducts, result.ids),
+      products: await enrichPublicMedia(prisma, orderProductsByIds(matchedProducts, result.ids)),
       total: result.total
     };
   }
@@ -410,7 +402,7 @@ async function readPublicShopProductPage(
     prisma.product.count({ where })
   ]);
 
-  return { products, total };
+  return { products: await enrichPublicMedia(prisma, products), total };
 }
 
 async function readPublicModuleStates() {
@@ -441,13 +433,6 @@ export function shouldRenderPublicShell(path: string, copiedRuntimeEnabled = tru
   if (/\.[a-z0-9]+$/i.test(path)) return false;
 
   return true;
-}
-
-function readSeoImage(seo: Prisma.JsonValue | null) {
-  if (!seo || typeof seo !== "object" || Array.isArray(seo)) return undefined;
-  const image = (seo as Record<string, unknown>).image;
-
-  return typeof image === "string" && image.trim() ? image : undefined;
 }
 
 async function readSiteSeoDefaults() {
@@ -501,6 +486,42 @@ async function readSiteSeoDefaults() {
   };
 }
 
+function seoDocumentContext(
+  origin: string,
+  site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
+  localization: RouteLocalizationSettings
+) {
+  return {
+    origin,
+    siteName: site.title || config.app.name,
+    siteDescription: site.description,
+    noindex: site.noindex === true,
+    defaultLocale: localization.defaultLocale,
+    storagePublicBaseUrl: config.storage.publicBaseUrl
+  };
+}
+
+function publishedTranslationWhere(id: string, translationGroupId: string | null, locales: string[]) {
+  return {
+    locale: { in: locales },
+    status: "PUBLISHED" as const,
+    AND: [
+      {
+        OR: [
+          { publishedAt: null },
+          { publishedAt: { lte: new Date() } }
+        ]
+      },
+      {
+        OR: [
+          { id },
+          ...(translationGroupId ? [{ translationGroupId }] : [])
+        ]
+      }
+    ]
+  };
+}
+
 function visiblePublishedWhere(slug: string, locale: string) {
   return {
     slug,
@@ -517,37 +538,45 @@ async function resolvePostSeo(
   route: Extract<PublicContentRoute, { type: "post" }>,
   origin: string,
   site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
-  defaultLocale: string
+  localization: RouteLocalizationSettings,
+  renderer: PublicSeoRenderer
 ) {
   const post = await prisma.cmsPost.findFirst({
     where: visiblePublishedWhere(route.slug, route.locale),
     select: {
+      id: true,
       title: true,
       slug: true,
       locale: true,
+      translationGroupId: true,
       excerpt: true,
       metaTitle: true,
       metaDescription: true,
-      seo: true
+      seo: true,
+      publishedAt: true,
+      updatedAt: true
     }
   });
   if (!post) return null;
 
-  return {
-    title: post.metaTitle || post.title || site.title || config.app.name,
-    description: post.metaDescription || post.excerpt || site.description || "Published article.",
-    htmlLang: htmlLangFromLocale(post.locale),
-    canonicalUrl: `${origin}${localizedResourcePath("posts", post.slug, post.locale, defaultLocale)}`,
-    imageUrl: readSeoImage(post.seo ?? null),
-    noindex: site.noindex
-  };
+  const translations = await prisma.cmsPost.findMany({
+    where: publishedTranslationWhere(post.id, post.translationGroupId, publicLocaleCodes(localization)),
+    select: { title: true, slug: true, locale: true },
+    orderBy: { locale: "asc" }
+  });
+
+  return renderer.createPostSeoDocument({ ...post, translations }, {
+    ...seoDocumentContext(origin, site, localization),
+    locale: post.locale
+  });
 }
 
 async function resolveProductSeo(
   route: Extract<PublicContentRoute, { type: "product" }>,
   origin: string,
   site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
-  defaultLocale: string
+  localization: RouteLocalizationSettings,
+  renderer: PublicSeoRenderer
 ) {
   const product = await prisma.product.findFirst({
     where: {
@@ -556,10 +585,16 @@ async function resolveProductSeo(
       status: "ACTIVE"
     },
     select: {
+      id: true,
       name: true,
       slug: true,
       locale: true,
+      translationGroupId: true,
       description: true,
+      sku: true,
+      priceCents: true,
+      currency: true,
+      stockQuantity: true,
       metaTitle: true,
       metaDescription: true,
       seo: true,
@@ -570,31 +605,45 @@ async function resolveProductSeo(
         ],
         take: 1,
         select: {
-          url: true
+          mediaAssetId: true,
+          url: true,
+          alt: true,
+          isPrimary: true
         }
       }
     }
   });
   if (!product) return null;
 
-  return {
-    title: product.metaTitle || product.name || site.title || config.app.name,
-    description: product.metaDescription || product.description || site.description || "Product details.",
-    htmlLang: htmlLangFromLocale(product.locale),
-    canonicalUrl: `${origin}${localizedResourcePath("product", product.slug, product.locale, defaultLocale)}`,
-    imageUrl: readSeoImage(product.seo ?? null) || product.images[0]?.url,
-    noindex: site.noindex
-  };
+  const translations = await prisma.product.findMany({
+    where: {
+      locale: { in: publicLocaleCodes(localization) },
+      status: "ACTIVE",
+      OR: [
+        { id: product.id },
+        ...(product.translationGroupId ? [{ translationGroupId: product.translationGroupId }] : [])
+      ]
+    },
+    select: { name: true, slug: true, locale: true },
+    orderBy: { locale: "asc" }
+  });
+
+  const enrichedProduct = await enrichPublicMedia(prisma, product);
+
+  return renderer.createProductSeoDocument({ ...enrichedProduct, translations }, {
+    ...seoDocumentContext(origin, site, localization),
+    locale: product.locale
+  });
 }
 
-async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
+async function resolveSeoMeta(req: Request, renderer: PublicSeoRenderer): Promise<SeoDocument> {
   if (isAdminShellPath(req.path)) {
-    return {
+    return renderer.createGenericSeoDocument({
       title: "Code Epsylon Admin",
       description: "Code Epsylon administration console.",
       htmlLang: "en",
       noindex: true
-    };
+    });
   }
 
   const fallbackOrigin = requestOrigin(req).replace(/\/+$/g, "");
@@ -609,12 +658,12 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
     const origin = (site.publicBaseUrl || fallbackOrigin).replace(/\/+$/g, "");
 
     if (route.type === "post") {
-      const postMeta = await resolvePostSeo(route, origin, site, localization.defaultLocale);
+      const postMeta = await resolvePostSeo(route, origin, site, localization, renderer);
       if (postMeta) return postMeta;
     }
 
     if (route.type === "product") {
-      const productMeta = await resolveProductSeo(route, origin, site, localization.defaultLocale);
+      const productMeta = await resolveProductSeo(route, origin, site, localization, renderer);
       if (productMeta) return productMeta;
     }
 
@@ -623,7 +672,13 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
         route.category
           ? prisma.productCategory.findFirst({
               where: { slug: route.category, locale: route.locale },
-              select: { name: true }
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                locale: true,
+                translationGroupId: true
+              }
             })
           : Promise.resolve(null),
         readShopSettings(prisma)
@@ -631,24 +686,49 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
       const routeTitle = category?.name || (route.attributeValue
         ? `${route.attributeName}: ${route.attributeValue}`.replaceAll("-", " ")
         : shopSettings.catalogTitle);
-      const pageTitle = route.page > 1 ? `${routeTitle} - Page ${route.page}` : routeTitle;
+      const categoryTranslations = category
+        ? await prisma.productCategory.findMany({
+            where: {
+              locale: { in: publicLocaleCodes(localization) },
+              OR: [
+                { id: category.id },
+                ...(category.translationGroupId ? [{ translationGroupId: category.translationGroupId }] : [])
+              ]
+            },
+            select: { slug: true, locale: true },
+            orderBy: { locale: "asc" }
+          })
+        : [];
+      const translations = categoryTranslations.length
+        ? categoryTranslations.map((translation) => ({
+            locale: translation.locale,
+            route: { ...route, locale: translation.locale, category: translation.slug }
+          }))
+        : publicLocaleCodes(localization)
+            .map((locale) => ({ locale, route: { ...route, locale } }));
 
-      return {
-        title: `${pageTitle} | ${site.title || config.app.name}`,
+      return renderer.createShopSeoDocument({
+        locale: route.locale,
+        route,
+        title: routeTitle,
         description: shopSettings.catalogDescription || site.description || "Browse products and product details.",
-        htmlLang: htmlLangFromLocale(route.locale),
-        canonicalUrl: `${origin}${localizedShopPath(route, localization.defaultLocale)}`,
-        noindex: site.noindex
-      };
+        translations
+      }, {
+        ...seoDocumentContext(origin, site, localization),
+        locale: route.locale,
+        route
+      });
     }
 
     const page = route.type === "page"
       ? await prisma.cmsPage.findFirst({
           where: visiblePublishedWhere(route.slug, route.locale),
           select: {
+            id: true,
             title: true,
             slug: true,
             locale: true,
+            translationGroupId: true,
             excerpt: true,
             metaTitle: true,
             metaDescription: true,
@@ -656,33 +736,50 @@ async function resolveSeoMeta(req: Request): Promise<SeoMeta> {
           }
         })
       : null;
-    const path = page ? localizedPath(page.slug, page.locale, localization.defaultLocale) : "/";
+    if (!page) {
+      return renderer.createGenericSeoDocument({
+        ...seoDocumentContext(origin, site, localization),
+        title: site.title || config.app.name,
+        description: site.description || "Modular project foundation.",
+        htmlLang: htmlLangFromLocale(route.locale),
+        canonicalUrl: `${origin}/`,
+        locale: route.locale
+      });
+    }
 
-    return {
-      title: page?.metaTitle || page?.title || site.title || config.app.name,
-      description: page?.metaDescription || page?.excerpt || site.description || "Modular project foundation.",
-      htmlLang: htmlLangFromLocale(page?.locale || route.locale),
-      canonicalUrl: `${origin}${path}`,
-      imageUrl: readSeoImage(page?.seo ?? null),
-      noindex: site.noindex
-    };
+    const translations = await prisma.cmsPage.findMany({
+      where: publishedTranslationWhere(page.id, page.translationGroupId, publicLocaleCodes(localization)),
+      select: { title: true, slug: true, locale: true },
+      orderBy: { locale: "asc" }
+    });
+
+    return renderer.createPageSeoDocument({ ...page, translations }, {
+      ...seoDocumentContext(origin, site, localization),
+      locale: page.locale
+    });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2021", "P2022"].includes(error.code)) {
-      return {
+      return renderer.createGenericSeoDocument({
         title: config.app.name,
         description: "Modular project foundation.",
         htmlLang: htmlLangFromLocale(route.locale),
-        canonicalUrl: `${fallbackOrigin}/`
-      };
+        canonicalUrl: `${fallbackOrigin}/`,
+        origin: fallbackOrigin,
+        locale: route.locale,
+        siteName: config.app.name
+      });
     }
 
     logger.warn({ err: error, path: req.path }, "Unable to resolve page SEO metadata");
-    return {
+    return renderer.createGenericSeoDocument({
       title: config.app.name,
       description: "Modular project foundation.",
       htmlLang: htmlLangFromLocale(route.locale),
-      canonicalUrl: `${fallbackOrigin}/`
-    };
+      canonicalUrl: `${fallbackOrigin}/`,
+      origin: fallbackOrigin,
+      locale: route.locale,
+      siteName: config.app.name
+    });
   }
 }
 
@@ -693,6 +790,32 @@ function loadPublicMarkupRenderer(webRoot: string) {
   }
 
   return publicMarkupRenderer;
+}
+
+function loadPublicSeoRenderer(webRoot: string) {
+  if (!publicSeoRenderer) {
+    const rendererUrl = pathToFileURL(join(webRoot, "web", "seo-document.js")).href;
+    publicSeoRenderer = import(rendererUrl) as Promise<PublicSeoRenderer>;
+  }
+
+  return publicSeoRenderer;
+}
+
+async function resolvePublicMenu(
+  renderer: PublicMarkupRenderer,
+  locale: string,
+  renderContext: Record<string, unknown>
+) {
+  try {
+    const menu = await new CmsService(prisma).getMenu("main", false, locale);
+    return renderer.withPublicRenderContext(
+      renderContext,
+      () => renderer.renderMenuItems(menu.items, false)
+    );
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") return "";
+    throw error;
+  }
 }
 
 async function resolvePublicShellContent(req: Request, webRoot: string): Promise<PublicShellResolution> {
@@ -708,13 +831,35 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
     const route = publicContentRouteFromRequest(req, localization);
     const siteTitle = site.title || config.app.name;
     const head = publicSiteStyleTag(site.design, site.customCss);
+    const publicRenderContext = {
+      locale: route.locale,
+      config: {
+        app: config.app,
+        storage: {
+          publicBaseUrl: config.storage.publicBaseUrl,
+          imageVariantWidths: config.storage.imageVariantWidths
+        },
+        siteSettings: {
+          title: siteTitle,
+          description: site.description,
+          metaDescription: site.description,
+          searchIndexing: site.noindex !== true,
+          design: site.design,
+          customCss: site.customCss
+        },
+        localization
+      }
+    };
+    const renderPublic = <T>(render: () => T) =>
+      renderer.withPublicRenderContext(publicRenderContext, render);
     const requiredModule = route.type === "product" || route.type === "shop" ? "products" : "cms";
     if (!publicModuleEnabled(moduleStates, requiredModule)) {
-      return { found: false, content: null, siteTitle };
+      return { found: false, content: null, siteTitle, localization };
     }
     const shopSettings = route.type === "product" || route.type === "shop"
       ? await readShopSettings(prisma)
       : null;
+    const menu = await resolvePublicMenu(renderer, route.locale, publicRenderContext);
 
     if (route.type === "post") {
       const post = await prisma.cmsPost.findFirst({
@@ -729,19 +874,21 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
           publishedAt: true
         }
       });
-      if (!post) return { found: false, content: null, siteTitle };
+      if (!post) return { found: false, content: null, siteTitle, localization };
 
       return {
         found: true,
         siteTitle,
+        localization,
         content: {
           head,
           brand: escapeHtml(siteTitle),
-          body: renderer.renderPostContent({
+          menu,
+          body: renderPublic(() => renderer.renderPostContent({
             ...post,
             content: sanitizePostContent(post.content)
-          }),
-          footer: renderer.renderFooter({ title: siteTitle }, false)
+          })),
+          footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
         }
       };
     }
@@ -760,20 +907,23 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
           }
         }
       });
-      if (!product) return { found: false, content: null, siteTitle };
+      if (!product) return { found: false, content: null, siteTitle, localization };
+      const enrichedProduct = await enrichPublicMedia(prisma, product);
 
       return {
         found: true,
         siteTitle,
+        localization,
         content: {
           head,
           brand: escapeHtml(siteTitle),
-          body: renderer.renderProductDetailContent(product, {
+          menu,
+          body: renderPublic(() => renderer.renderProductDetailContent(enrichedProduct, {
             locale: route.locale,
             defaultLocale: localization.defaultLocale,
             shopSettings
-          }),
-          footer: renderer.renderFooter({ title: siteTitle }, false)
+          })),
+          footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
         }
       };
     }
@@ -795,10 +945,12 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
       return {
         found: true,
         siteTitle,
+        localization,
         content: {
           head,
           brand: escapeHtml(siteTitle),
-          body: renderer.renderShopListingContent({
+          menu,
+          body: renderPublic(() => renderer.renderShopListingContent({
             products: productPage.products,
             categories,
             attributes,
@@ -812,8 +964,8 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
             locale: route.locale,
             defaultLocale: localization.defaultLocale,
             shopSettings
-          }),
-          footer: renderer.renderFooter({ title: siteTitle }, false)
+          })),
+          footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
         }
       };
     }
@@ -825,31 +977,36 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
           orderBy: { sortOrder: "asc" },
           include: {
             blocks: {
-              orderBy: { sortOrder: "asc" }
+              orderBy: { sortOrder: "asc" },
+              include: { mediaAsset: true }
             }
           }
         }
       }
     });
-    if (!page) return { found: false, content: null, siteTitle };
+    if (!page) return { found: false, content: null, siteTitle, localization };
+    const sanitizedPage = {
+      ...page,
+      sections: page.sections.map((section) => ({
+        ...section,
+        blocks: section.blocks.map((block) => ({
+          ...block,
+          value: sanitizeContentBlockValue(block.type, block.value)
+        }))
+      }))
+    };
+    const enrichedPage = await enrichPublicMedia(prisma, sanitizedPage);
 
     return {
       found: true,
       siteTitle,
+      localization,
       content: {
         head,
         brand: escapeHtml(siteTitle),
-        body: renderer.renderPageContent({
-          ...page,
-          sections: page.sections.map((section) => ({
-            ...section,
-            blocks: section.blocks.map((block) => ({
-              ...block,
-              value: sanitizeContentBlockValue(block.type, block.value)
-            }))
-          }))
-        }, { canEdit: false }),
-        footer: renderer.renderFooter({ title: siteTitle }, false)
+        menu,
+        body: renderPublic(() => renderer.renderPageContent(enrichedPage, { canEdit: false })),
+        footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
       }
     };
   } catch (error) {
@@ -859,31 +1016,6 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
 
     throw error;
   }
-}
-
-function injectSeoMeta(html: string, meta: SeoMeta) {
-  const htmlLang = escapeHtml(meta.htmlLang || "en");
-  const tags = [
-    `<title>${escapeHtml(meta.title)}</title>`,
-    `<meta name="description" content="${escapeHtml(meta.description)}" />`,
-    meta.noindex ? '<meta name="robots" content="noindex, nofollow" />' : undefined,
-    meta.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(meta.canonicalUrl)}" />` : undefined,
-    `<meta property="og:title" content="${escapeHtml(meta.title)}" />`,
-    `<meta property="og:description" content="${escapeHtml(meta.description)}" />`,
-    meta.canonicalUrl ? `<meta property="og:url" content="${escapeHtml(meta.canonicalUrl)}" />` : undefined,
-    '<meta property="og:type" content="website" />',
-    meta.imageUrl ? `<meta property="og:image" content="${escapeHtml(meta.imageUrl)}" />` : undefined,
-    '<meta name="twitter:card" content="summary_large_image" />'
-  ].filter(Boolean).join("\n    ");
-
-  return html
-    .replace(/<html\b[^>]*>/i, (tag) => {
-      if (/\slang=(["']).*?\1/i.test(tag)) return tag.replace(/\slang=(["']).*?\1/i, ` lang="${htmlLang}"`);
-
-      return tag.replace(/<html\b/i, `<html lang="${htmlLang}"`);
-    })
-    .replace(/\n?\s*<meta\s+name=(["'])description\1[^>]*\/?>/gis, "")
-    .replace(/<title>.*?<\/title>/is, tags);
 }
 
 export function publicNotFoundContent(siteTitle: string, renderer?: PublicMarkupRenderer): PublicShellContent {
@@ -906,26 +1038,37 @@ function createAppShellRenderer(webRoot: string, options: { publicRoute?: boolea
 
   return async function renderAppShell(req: Request, res: Response, next: NextFunction) {
     try {
-      const [html, meta, resolution] = await Promise.all([
+      const seoRendererPromise = loadPublicSeoRenderer(webRoot);
+      const [html, seoRenderer, meta, resolution] = await Promise.all([
         readFile(indexPath, "utf8"),
-        resolveSeoMeta(req),
+        seoRendererPromise,
+        seoRendererPromise.then((renderer) => resolveSeoMeta(req, renderer)),
         options.publicRoute
           ? resolvePublicShellContent(req, webRoot)
-          : Promise.resolve({ found: true, content: null } satisfies PublicShellResolution)
+          : Promise.resolve<PublicShellResolution>({ found: true, content: null })
       ]);
       const notFound = options.publicRoute && !resolution.found;
       const renderer = notFound ? await loadPublicMarkupRenderer(webRoot) : undefined;
-      const content = notFound
+      let content = notFound
         ? publicNotFoundContent(resolution.siteTitle || meta.title || config.app.name, renderer)
         : resolution.content;
-      const shell = injectSeoMeta(html, notFound
-        ? {
+      const document = notFound
+        ? seoRenderer.createGenericSeoDocument({
             title: `Page not found | ${resolution.siteTitle || config.app.name}`,
             description: "The requested page could not be found.",
             htmlLang: meta.htmlLang,
+            locale: meta.htmlLang,
+            siteName: resolution.siteTitle || config.app.name,
             noindex: true
-          }
-        : meta);
+          })
+        : meta;
+      if (content && resolution.localization && !notFound) {
+        content = {
+          ...content,
+          menu: `${content.menu ?? ""}${seoRenderer.renderLanguageSwitcher(document, resolution.localization)}`
+        };
+      }
+      const shell = seoRenderer.injectSeoDocument(html, document);
 
       if (notFound) res.status(404).setHeader("cache-control", "no-store");
       res.type("html").send(content ? injectPublicShellContent(shell, content) : shell);
@@ -1199,6 +1342,20 @@ export async function createApp() {
     }
   }));
   app.use(express.urlencoded({ extended: true }));
+  const installation = createInstallationRouter({ config, prisma, logger });
+  app.use(`${config.api.prefix}/install`, installation.router);
+  app.get("/install", async (_req, res, next) => {
+    try {
+      if ((await installation.service.status()).installed) {
+        res.redirect(302, "/cy-admin");
+        return;
+      }
+      res.sendFile(join(webRoot, "install.html"));
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.use(createInstallationGate(installation.service, config));
   app.get("/sitemap.xml", async (req, res, next) => {
     try {
       res.type("application/xml").send(await cmsService.buildSitemap(requestOrigin(req)));
@@ -1264,6 +1421,13 @@ export async function createApp() {
     }
 
     try {
+      const canonicalTarget = canonicalPublicRedirectTarget(req.originalUrl, req.path);
+      if (canonicalTarget) {
+        res.setHeader("cache-control", "public, max-age=3600");
+        res.redirect(308, canonicalTarget);
+        return;
+      }
+
       const redirect = await cmsService.resolveRedirect(req.originalUrl);
       if (redirect) {
         res.setHeader("cache-control", redirect.statusCode === 301 || redirect.statusCode === 308

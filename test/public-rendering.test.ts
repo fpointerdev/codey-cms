@@ -6,7 +6,8 @@ const {
   renderPageContent,
   renderPostContent,
   renderProductDetailContent,
-  renderShopListingContent
+  renderShopListingContent,
+  withPublicRenderContext
 } = await import("../apps/web/web/public-renderer.js");
 
 test("public page markup renders meaningful sanitized content without editor controls", () => {
@@ -131,9 +132,10 @@ test("public post markup and shell injection preserve the application shell", ()
     status: "PUBLISHED",
     content: { body: "<p>Post body</p>" }
   });
-  const shell = `<!doctype html><html><head><title>Site</title></head><body><a class="brand" data-brand>Old</a><article data-page></article><footer class="site-footer" data-footer></footer><script src="/app.js"></script></body></html>`;
+  const shell = `<!doctype html><html><head><title>Site</title></head><body><a class="brand" data-brand>Old</a><nav data-menu></nav><article data-page></article><footer class="site-footer" data-footer></footer><script src="/app.js"></script></body></html>`;
   const rendered = injectPublicShellContent(shell, {
     brand: "CodeY $&",
+    menu: '<a href="/about">About</a>',
     body: `${body}<p>$& stays literal</p>`,
     footer: "Copyright $1",
     head: '<style data-site-design-system>:root{--accent:#123456}</style>'
@@ -142,11 +144,101 @@ test("public post markup and shell injection preserve the application shell", ()
   assert.match(rendered, /data-server-rendered="true"/);
   assert.match(rendered, /Published post/);
   assert.match(rendered, />CodeY \$&<\/a>/);
+  assert.match(rendered, /<nav data-menu><a href="\/about">About<\/a><\/nav>/);
   assert.match(rendered, /\$& stays literal/);
   assert.match(rendered, />Copyright \$1<\/footer>/);
   assert.match(rendered, /data-site-design-system/);
   assert.match(rendered, /--accent:#123456/);
   assert.match(rendered, /<script src="\/app\.js"><\/script>/);
+});
+
+test("public images reserve layout, bound variants, and prioritize only the first image", () => {
+  const html = renderPageContent({
+    title: "Image page",
+    content: {},
+    sections: [{
+      id: "media",
+      key: "media",
+      settings: {},
+      blocks: [
+        {
+          key: "hero",
+          type: "IMAGE",
+          value: { url: "/uploads/hero.jpg", alt: "Hero", width: 640, height: 360 },
+          settings: {},
+          editable: true
+        },
+        {
+          key: "supporting",
+          type: "IMAGE",
+          value: { url: "/uploads/supporting.jpg", alt: "Supporting", width: 320, height: 240 },
+          settings: {},
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.equal((html.match(/fetchpriority="high"/g) || []).length, 1);
+  assert.equal((html.match(/loading="lazy"/g) || []).length, 1);
+  assert.match(html, /width="640" height="360"/);
+  assert.match(html, /hero\.jpg\?w=640 640w/);
+  assert.doesNotMatch(html, /hero\.jpg\?w=1200/);
+  assert.doesNotMatch(html, /supporting\.jpg\?w=640/);
+});
+
+test("legacy slider placeholders recover intrinsic SVG dimensions", () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700"></svg>';
+  const imageUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+  const html = renderPageContent({
+    title: "Slider page",
+    content: {},
+    sections: [{
+      id: "slider",
+      key: "slider",
+      settings: {},
+      blocks: [{
+        key: "slider-gallery",
+        type: "GALLERY",
+        value: {
+          slides: [{ url: imageUrl, alt: "Legacy slide" }],
+          settings: { displayMode: "slider" }
+        },
+        settings: {},
+        editable: true
+      }]
+    }]
+  });
+
+  assert.match(html, /alt="Legacy slide" width="1200" height="700"/);
+});
+
+test("server rendering uses the active locale without client hydration", () => {
+  const html = withPublicRenderContext({
+    locale: "sq",
+    config: {
+      localization: {
+        defaultLocale: "en",
+        fallbackLocale: "en",
+        strings: {
+          "form.contact.name": { sq: "Emri" },
+          "form.contact.submit": { sq: "Dergoni" }
+        }
+      }
+    }
+  }, () => renderPageContent({
+    title: "Kontakt",
+    content: {},
+    sections: [{
+      id: "contact",
+      key: "contact",
+      settings: {},
+      blocks: [{ key: "form", type: "CONTACT_FORM", value: {}, settings: {}, editable: true }]
+    }]
+  }));
+
+  assert.match(html, />Emri<\/span>/);
+  assert.match(html, />Dergoni<\/button>/);
 });
 
 test("shop and product markup are useful without JavaScript and escape catalog data", () => {

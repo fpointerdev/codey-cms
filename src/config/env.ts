@@ -29,6 +29,8 @@ const optionalSecretFromEnv = z.preprocess((value) => {
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  SELF_HOSTED: booleanFromEnv.default(false),
+  CODEY_ALLOW_LOCAL_SETUP_HTTP: booleanFromEnv.default(false),
   APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
   APP_NAME: z.string().default("CodeY CMS"),
   APP_MODE: z.enum(["presentation", "shop", "cms", "saas", "landing"]).default("cms"),
@@ -48,6 +50,15 @@ const envSchema = z.object({
   AUTH_REQUIRE_EMAIL_VERIFICATION: booleanFromEnv.default(false),
   AUTH_RECOVERY_TOKEN_DELIVERY: z.enum(["response", "email", "disabled"]).optional(),
   CMS_CREDENTIAL_ENCRYPTION_KEY: optionalSecretFromEnv,
+  CODEY_INSTALL_TOKEN: optionalSecretFromEnv,
+  CODEY_UPDATES_ENABLED: booleanFromEnv.default(true),
+  CODEY_AUTO_UPDATE: booleanFromEnv.default(false),
+  CODEY_RELEASE_FEED_URL: optionalHttpUrlFromEnv.default("https://github.com/loki-code-26/codey-cms/releases/latest/download/stable.json"),
+  CODEY_RELEASE_PUBLIC_KEY: optionalStringFromEnv,
+  CODEY_RELEASE_PUBLIC_KEY_FILE: z.string().trim().min(1).default("runtime-meta/release-public-key.pem"),
+  CODEY_UPDATE_DIR: z.string().trim().min(1).default("updates"),
+  CODEY_UPDATE_CONTROL_FILE: z.string().trim().min(1).default("updates/control/pending-update.json"),
+  CODEY_UPDATE_CHECK_INTERVAL_HOURS: z.coerce.number().positive().min(0.25).max(168).default(6),
   EMAIL_DRIVER: z.enum(["disabled", "http"]).default("disabled"),
   EMAIL_FROM: optionalStringFromEnv,
   EMAIL_HTTP_ENDPOINT: optionalHttpUrlFromEnv,
@@ -129,9 +140,14 @@ const envSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["CORS_ORIGINS"], message: "Wildcard CORS origins are not allowed in production." });
   }
 
+  const localSetupUrl = value.SELF_HOSTED &&
+    value.CODEY_ALLOW_LOCAL_SETUP_HTTP &&
+    value.APP_PUBLIC_URL &&
+    ["localhost", "127.0.0.1", "::1"].includes(new URL(value.APP_PUBLIC_URL).hostname);
+
   if (!value.APP_PUBLIC_URL) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_PUBLIC_URL"], message: "APP_PUBLIC_URL must be set in production." });
-  } else if (new URL(value.APP_PUBLIC_URL).protocol !== "https:") {
+  } else if (new URL(value.APP_PUBLIC_URL).protocol !== "https:" && !localSetupUrl) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["APP_PUBLIC_URL"], message: "APP_PUBLIC_URL must use HTTPS in production." });
   }
 
@@ -157,7 +173,23 @@ const envSchema = z.object({
     });
   }
 
-  if (value.STORAGE_DRIVER !== "s3") {
+  if (!value.CODEY_INSTALL_TOKEN) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["CODEY_INSTALL_TOKEN"],
+      message: "CODEY_INSTALL_TOKEN is required to protect first-run setup in production."
+    });
+  }
+
+  if (value.CODEY_UPDATES_ENABLED && value.CODEY_RELEASE_FEED_URL && new URL(value.CODEY_RELEASE_FEED_URL).protocol !== "https:") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["CODEY_RELEASE_FEED_URL"],
+      message: "CODEY_RELEASE_FEED_URL must use HTTPS in production."
+    });
+  }
+
+  if (value.STORAGE_DRIVER !== "s3" && !(value.SELF_HOSTED && value.STORAGE_DRIVER === "local")) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["STORAGE_DRIVER"], message: "STORAGE_DRIVER=s3 is required in production." });
   }
 

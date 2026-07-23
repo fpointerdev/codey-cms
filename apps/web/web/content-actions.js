@@ -801,6 +801,60 @@ export async function testEmailSettings(button) {
   }
 }
 
+export async function checkRuntimeUpdate(button) {
+  const panel = button.closest("[data-runtime-update-panel]");
+  const message = panel?.querySelector("[data-runtime-update-message]");
+  button.disabled = true;
+  if (message) message.textContent = "Checking the stable release...";
+
+  try {
+    const [{ update: check }, { update: status }] = await Promise.all([
+      api("/config/runtime-update/check", { method: "POST", body: JSON.stringify({}) }),
+      api("/config/runtime-update")
+    ]);
+    const { renderRuntimeUpdatePanel } = await import("./admin-views.js");
+    panel.innerHTML = renderRuntimeUpdatePanel({ ...status, check });
+    setStatus(check.updateAvailable ? "A verified update is ready." : "CodeY CMS is up to date.");
+  } catch (error) {
+    if (message) {
+      message.textContent = error.message || "Unable to check for updates.";
+      message.classList.add("error");
+    }
+    button.disabled = false;
+    setStatus(error.message || "Unable to check for updates.", true);
+  }
+}
+
+export async function applyRuntimeUpdate(button) {
+  const panel = button.closest("[data-runtime-update-panel]");
+  const message = panel?.querySelector("[data-runtime-update-message]");
+  button.disabled = true;
+  if (message) message.textContent = "Verifying and staging the update...";
+
+  try {
+    const { update } = await api("/config/runtime-update/apply", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    const { update: status } = await api("/config/runtime-update");
+    const { renderRuntimeUpdatePanel } = await import("./admin-views.js");
+    panel.innerHTML = renderRuntimeUpdatePanel({
+      ...status,
+      supervisor: update.staged
+        ? { status: "staged" }
+        : status.supervisor
+    });
+    setStatus(update.staged ? "Update staged. The protected installation is starting." : update.message);
+  } catch (error) {
+    if (message) {
+      message.textContent = error.message || "Unable to install the update.";
+      message.classList.add("error");
+    }
+    button.disabled = false;
+    setStatus(error.message || "Unable to install the update.", true);
+  }
+}
+
 function parseLocaleRows(value) {
   return String(value || "")
     .split(/\r?\n/)

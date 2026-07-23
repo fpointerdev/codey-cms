@@ -25,8 +25,27 @@ import {
   sanitizeStylesheet
 } from "./custom-css.js";
 import { applyDesignSystem } from "./design-system.js";
+import {
+  applySeoDocument,
+  createPageSeoDocument,
+  createPostSeoDocument
+} from "./seo-document.js";
 
 export { defaultPage };
+
+export function withPublicRenderContext(context = {}, render) {
+  const previousConfig = state.config;
+  const previousLocale = state.publicRenderLocale;
+  state.config = context.config || previousConfig;
+  state.publicRenderLocale = context.locale || "";
+
+  try {
+    return render();
+  } finally {
+    state.config = previousConfig;
+    state.publicRenderLocale = previousLocale;
+  }
+}
 
 function applySiteCustomCss() {
   if (!document.head || !document.createElement) return;
@@ -71,57 +90,18 @@ function localizedPublicPath(slug = "home", locale = currentLocale()) {
   return path === "/" ? `/${localeCode}` : `/${localeCode}${path}`;
 }
 
-function absolutePublicUrl(path) {
-  const base = state.config?.app?.publicUrl || window.location.origin || "http://localhost";
+export function runtimeSeoContext(overrides = {}) {
+  const siteSettings = state.config?.siteSettings || {};
 
-  return new URL(path, base).toString();
-}
-
-function setManagedLink(rel, attributes = {}) {
-  if (!document.head || !document.createElement) return;
-
-  const link = document.createElement("link");
-  link.setAttribute("rel", rel);
-  link.setAttribute("data-codey-seo-link", "");
-  for (const [key, value] of Object.entries(attributes)) {
-    if (value) link.setAttribute(key, value);
-  }
-  document.head.append(link);
-}
-
-function updatePageSeoLinks(page) {
-  if (!document.head) return;
-
-  document.querySelectorAll?.("[data-codey-seo-link]")?.forEach((element) => element.remove?.());
-  const pageLocale = page.locale || currentLocale();
-  const canonicalPath = localizedPublicPath(page.slug, pageLocale);
-  setManagedLink("canonical", { href: absolutePublicUrl(canonicalPath) });
-
-  const translations = Array.isArray(page.translations) ? page.translations : [];
-  const translationByLocale = new Map(translations.map((translation) => [translation.locale, translation]));
-  if (!translationByLocale.has(pageLocale)) {
-    translationByLocale.set(pageLocale, {
-      slug: page.slug,
-      locale: pageLocale,
-      title: page.title
-    });
-  }
-
-  for (const translation of translationByLocale.values()) {
-    setManagedLink("alternate", {
-      hreflang: translation.locale,
-      href: absolutePublicUrl(localizedPublicPath(translation.slug, translation.locale))
-    });
-  }
-
-  const defaultLocale = state.config?.localization?.defaultLocale || "en";
-  const defaultTranslation = translationByLocale.get(defaultLocale);
-  if (defaultTranslation) {
-    setManagedLink("alternate", {
-      hreflang: "x-default",
-      href: absolutePublicUrl(localizedPublicPath(defaultTranslation.slug, defaultTranslation.locale))
-    });
-  }
+  return {
+    origin: state.config?.app?.publicUrl || window.location.origin || "http://localhost",
+    siteName: siteSettings.title || state.config?.app?.name || "Website",
+    siteDescription: siteSettings.metaDescription || siteSettings.description || "",
+    noindex: siteSettings.searchIndexing === false,
+    defaultLocale: state.config?.localization?.defaultLocale || "en",
+    storagePublicBaseUrl: state.config?.storage?.publicBaseUrl || "",
+    ...overrides
+  };
 }
 
 function renderLanguageSwitcher(page) {
@@ -436,13 +416,84 @@ function imageSizesForContext(context = "") {
   return "(max-width: 760px) 92vw, 50vw";
 }
 
-function renderImageTag(src, alt = "", context = "section-image", className = "") {
-  const widths = responsiveImageWidths();
-  const responsiveAttrs = isUploadedImageSrc(src)
-    ? ` srcset="${escapeHtml(widths.map((width) => `${imageVariantSrc(src, width)} ${width}w`).join(", "))}" sizes="${escapeHtml(imageSizesForContext(context))}"`
-    : "";
+function positiveImageDimension(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : 0;
+}
 
-  return `<img${className ? ` class="${escapeHtml(className)}"` : ""} src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${responsiveAttrs} loading="lazy" decoding="async" />`;
+function dataSvgDimensions(src = "") {
+  const match = /^data:image\/svg\+xml;base64,([a-z0-9+/=]+)$/i.exec(src);
+  if (!match || typeof globalThis.atob !== "function") return { width: 0, height: 0 };
+
+  try {
+    const svg = globalThis.atob(match[1]);
+    const width = svg.match(/\bwidth=["'](\d+)["']/i)?.[1];
+    const height = svg.match(/\bheight=["'](\d+)["']/i)?.[1];
+
+    return {
+      width: positiveImageDimension(width),
+      height: positiveImageDimension(height)
+    };
+  } catch {
+    return { width: 0, height: 0 };
+  }
+}
+
+function normalizedImage(image, fallbackAlt = "") {
+  const source = isRecord(image) ? image : { url: image };
+  const mediaAsset = isRecord(source.mediaAsset) ? source.mediaAsset : {};
+  const src = safeMediaSrc(source.url || source.src || mediaAsset.url);
+  if (!src) return null;
+  const dataDimensions = dataSvgDimensions(src);
+
+  return {
+    src,
+    alt: source.alt || source.altText || mediaAsset.altText || fallbackAlt,
+    width: positiveImageDimension(source.width || mediaAsset.width) || dataDimensions.width,
+    height: positiveImageDimension(source.height || mediaAsset.height) || dataDimensions.height,
+    variants: Array.isArray(source.variants)
+      ? source.variants
+      : Array.isArray(mediaAsset.variants)
+        ? mediaAsset.variants
+        : []
+  };
+}
+
+function responsiveImageCandidates(image) {
+  const candidates = new Map();
+  for (const variant of image.variants) {
+    if (!isRecord(variant) || variant.status && variant.status !== "READY") continue;
+    const width = positiveImageDimension(variant.width);
+    const src = safeMediaSrc(variant.url);
+    if (!width || !src || image.width && width > image.width) continue;
+    candidates.set(width, src);
+  }
+
+  if (isUploadedImageSrc(image.src) && image.width) {
+    for (const width of responsiveImageWidths().filter((candidate) => candidate <= image.width)) {
+      if (!candidates.has(width)) candidates.set(width, imageVariantSrc(image.src, width));
+    }
+  }
+
+  return [...candidates.entries()].sort(([left], [right]) => left - right);
+}
+
+function renderImageTag(imageValue, fallbackAlt = "", context = "section-image", className = "", renderContext = {}) {
+  const image = normalizedImage(imageValue, fallbackAlt);
+  if (!image) return "";
+
+  const candidates = responsiveImageCandidates(image);
+  const responsiveAttrs = candidates.length
+    ? ` srcset="${escapeHtml(candidates.map(([width, src]) => `${src} ${width}w`).join(", "))}" sizes="${escapeHtml(imageSizesForContext(context))}"`
+    : "";
+  const dimensions = `${image.width ? ` width="${image.width}"` : ""}${image.height ? ` height="${image.height}"` : ""}`;
+  const priority = renderContext.highPriorityImageUsed !== true;
+  if (priority) renderContext.highPriorityImageUsed = true;
+  const loading = priority
+    ? ' loading="eager" decoding="async" fetchpriority="high"'
+    : ' loading="lazy" decoding="async"';
+
+  return `<img${className ? ` class="${escapeHtml(className)}"` : ""} src="${escapeHtml(image.src)}" alt="${escapeHtml(image.alt)}"${dimensions}${responsiveAttrs}${loading} />`;
 }
 
 function isRecord(value) {
@@ -470,21 +521,21 @@ function firstText(source, keys) {
   return "";
 }
 
-function renderStructuredImage(image, fallbackAlt = "") {
+function renderStructuredImage(image, fallbackAlt = "", renderContext = {}) {
   if (!image) return "";
 
   const imageData = typeof image === "string" ? { url: image } : image;
   if (!isRecord(imageData)) return "";
 
-  const src = safeMediaSrc(imageData.url || imageData.src);
-  if (!src) return "";
+  const normalized = normalizedImage(imageData, fallbackAlt);
+  if (!normalized) return "";
 
   const alt = firstText(imageData, ["alt", "title", "caption"]) || fallbackAlt;
   const caption = firstText(imageData, ["caption", "credit"]);
 
   return `
     <figure class="structured-media">
-      ${renderImageTag(src, alt, "structured-media", "block-image")}
+      ${renderImageTag(imageData, alt, "structured-media", "block-image", renderContext)}
       ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ""}
     </figure>
   `;
@@ -513,7 +564,7 @@ function renderStructuredStats(stats) {
   return items ? `<dl class="structured-stats">${items}</dl>` : "";
 }
 
-function renderStructuredItems(items, variant = "cards") {
+function renderStructuredItems(items, variant = "cards", renderContext = {}) {
   if (!Array.isArray(items)) return "";
 
   const token = cssToken(variant, "cards");
@@ -526,7 +577,7 @@ function renderStructuredItems(items, variant = "cards") {
       const label = firstText(item, ["label", "role", "kicker", "eyebrow", "meta"]);
       const value = firstText(item, ["value", "price", "metric"]);
       const url = item.url ? safePublicHref(item.url) : "";
-      const imageHtml = renderStructuredImage(item.image || item.media, title || label || `Item ${index + 1}`);
+      const imageHtml = renderStructuredImage(item.image || item.media, title || label || `Item ${index + 1}`, renderContext);
       const featured = item.featured === true || item.highlighted === true;
       const indexLabel = String(index + 1).padStart(2, "0");
 
@@ -588,7 +639,7 @@ function renderStructuredItems(items, variant = "cards") {
   return html ? `<div class="structured-items structured-items-${escapeHtml(token)}">${html}</div>` : "";
 }
 
-function normalizePanelItems(items) {
+function normalizePanelItems(items, renderContext = {}) {
   if (!Array.isArray(items)) return [];
 
   return items.flatMap((item, index) => {
@@ -597,7 +648,7 @@ function normalizePanelItems(items) {
     const title = firstText(item, ["title", "name", "label"]) || `Item ${index + 1}`;
     const body = firstText(item, ["body", "text", "copy", "description", "content"]);
     const note = firstText(item, ["note", "kicker", "eyebrow", "meta"]);
-    const imageHtml = renderStructuredImage(item.image || item.media, title);
+    const imageHtml = renderStructuredImage(item.image || item.media, title, renderContext);
     const cta = isRecord(item.cta) ? item.cta : null;
     const url = item.url ? safePublicHref(item.url) : "";
     const ctaHtml = cta?.label && cta?.url
@@ -619,8 +670,8 @@ function normalizePanelItems(items) {
   });
 }
 
-function renderStructuredTabs(items, variant, blockKey = "tabs") {
-  const panels = normalizePanelItems(items);
+function renderStructuredTabs(items, variant, blockKey = "tabs", renderContext = {}) {
+  const panels = normalizePanelItems(items, renderContext);
   if (!panels.length) return "";
 
   const group = cssToken(`${blockKey}-${variant}`, "tabs");
@@ -671,8 +722,8 @@ function renderStructuredTabs(items, variant, blockKey = "tabs") {
   `;
 }
 
-function renderStructuredAccordion(items, variant) {
-  const panels = normalizePanelItems(items);
+function renderStructuredAccordion(items, variant, renderContext = {}) {
+  const panels = normalizePanelItems(items, renderContext);
   if (!panels.length) return "";
 
   return `
@@ -697,16 +748,16 @@ function renderStructuredAccordion(items, variant) {
   `;
 }
 
-function renderStructuredCollection(items, variant, blockKey) {
+function renderStructuredCollection(items, variant, blockKey, renderContext = {}) {
   const token = cssToken(variant, "cards");
 
-  if (token === "tabs") return renderStructuredTabs(items, token, blockKey);
-  if (token === "accordion" || token === "faq-accordion") return renderStructuredAccordion(items, token);
+  if (token === "tabs") return renderStructuredTabs(items, token, blockKey, renderContext);
+  if (token === "accordion" || token === "faq-accordion") return renderStructuredAccordion(items, token, renderContext);
 
-  return renderStructuredItems(items, token);
+  return renderStructuredItems(items, token, renderContext);
 }
 
-function renderStructuredBlock(block) {
+function renderStructuredBlock(block, renderContext = {}) {
   const value = block.value;
   if (!isRecord(value)) return "";
 
@@ -714,9 +765,14 @@ function renderStructuredBlock(block) {
   const body = firstText(value, ["body", "text", "copy", "description", "content"]);
   const note = firstText(value, ["note", "kicker", "eyebrow", "summary"]);
   const variant = firstText(value, ["variant", "type"]) || block.settings?.elementId || block.label || "content";
-  const imageHtml = renderStructuredImage(value.image || value.media, title || block.label || "");
+  const imageHtml = renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
   const statsHtml = renderStructuredStats(value.stats || value.metrics);
-  const itemsHtml = renderStructuredCollection(value.items || value.cards || value.people || value.logos || value.questions, variant, block.key);
+  const itemsHtml = renderStructuredCollection(
+    value.items || value.cards || value.people || value.logos || value.questions,
+    variant,
+    block.key,
+    renderContext
+  );
   const cta = isRecord(value.cta) ? value.cta : null;
   const ctaHtml = cta?.label && cta?.url
     ? `<a class="action-link" href="${escapeHtml(safePublicHref(cta.url))}">${escapeHtml(cta.label)}</a>`
@@ -898,12 +954,12 @@ export function renderRichText(value) {
     .join("");
 }
 
-export function renderBlock(block) {
+export function renderBlock(block, renderContext = {}) {
   const value = block.value;
   const knownObjectTypes = new Set(["IMAGE", "GALLERY", "BUTTON", "CTA", "CONTACT_FORM", "PRODUCT_LIST"]);
 
   if (isRecord(value) && !knownObjectTypes.has(block.type)) {
-    const structuredHtml = renderStructuredBlock(block);
+    const structuredHtml = renderStructuredBlock(block, renderContext);
     if (structuredHtml) return structuredHtml;
   }
 
@@ -916,11 +972,12 @@ export function renderBlock(block) {
   }
 
   if (block.type === "IMAGE") {
-    const image = isRecord(value) ? value : { url: value };
-    const src = safeMediaSrc(image.url || image.src);
-    if (!src) return '<div class="fallback-content">Image source is not available.</div>';
+    const image = isRecord(value)
+      ? { ...(isRecord(block.mediaAsset) ? block.mediaAsset : {}), ...value }
+      : { ...(isRecord(block.mediaAsset) ? block.mediaAsset : {}), url: value };
+    if (!normalizedImage(image)) return '<div class="fallback-content">Image source is not available.</div>';
 
-    return renderImageTag(src, image.alt || block.label || "", "section-image", "block-image");
+    return renderImageTag(image, image.alt || block.label || "", "section-image", "block-image", renderContext);
   }
 
   if (block.type === "GALLERY") {
@@ -947,7 +1004,7 @@ export function renderBlock(block) {
             .map((item, index) => {
               const src = safeMediaSrc(item.url);
               if (!src) return "";
-              const image = renderImageTag(src, item.alt || `Gallery image ${index + 1}`, "gallery-block", "block-image");
+              const image = renderImageTag(item, item.alt || `Gallery image ${index + 1}`, "gallery-block", "block-image", renderContext);
               const href = item.link ? safePublicHref(item.link) : settings.lightbox ? src : "";
 
               return `
@@ -989,7 +1046,7 @@ export function renderBlock(block) {
                 const src = safeMediaSrc(item.url);
                 return src
                   ? `<figure class="slider-slide ${index === 0 ? "active" : ""}">
-                      ${renderImageTag(src, item.alt || `Slide ${index + 1}`, "gallery-block", "block-image")}
+                      ${renderImageTag(item, item.alt || `Slide ${index + 1}`, "gallery-block", "block-image", renderContext)}
                     </figure>`
                   : "";
               })
@@ -1068,6 +1125,7 @@ export function renderBlock(block) {
 export function renderSections(page, options = {}) {
   const layout = normalizePageLayout(page.content?.layout);
   const canEdit = options.canEdit === true;
+  const renderContext = options.imageContext || { highPriorityImageUsed: false };
 
   if (!page.sections?.length) {
     return '<div class="fallback-content">This page does not have visible sections yet.</div>';
@@ -1087,7 +1145,7 @@ export function renderSections(page, options = {}) {
                   (block, blockIndex, blocks) => `
                     <div class="${escapeHtml(blockClassName(block))}${canEdit && state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? " visual-selected" : ""}" data-block-key="${escapeHtml(block.key)}" data-editable="${block.editable}"${canEdit ? ` data-visual-block tabindex="0" role="group" aria-label="${escapeHtml(block.label || block.key || `Element ${blockIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? "true" : "false"}"` : ""}${advancedIdAttribute(block.settings || {})}${advancedStyleAttribute(block.settings || {})}>
                       ${canEdit ? renderVisualBlockControls(block, blockIndex, blocks) : ""}
-                      ${canEdit ? `<div data-visual-edit-surface>${renderBlock(block)}</div>` : renderBlock(block)}
+                      ${canEdit ? `<div data-visual-edit-surface>${renderBlock(block, renderContext)}</div>` : renderBlock(block, renderContext)}
                     </div>
                   `
                 )
@@ -1126,18 +1184,13 @@ function localizedShopPath(path, options = {}) {
 }
 
 function renderShopProductImage(image, fallbackAlt = "", priority = false) {
-  const src = safeMediaSrc(image?.url);
-  if (!src) return "";
-
-  const widths = responsiveImageWidths();
-  const responsiveAttrs = isUploadedImageSrc(src)
-    ? ` srcset="${escapeHtml(widths.map((width) => `${imageVariantSrc(src, width)} ${width}w`).join(", "))}" sizes="(max-width: 760px) 92vw, 34vw"`
-    : "";
-  const loadingAttributes = priority
-    ? 'loading="eager" decoding="async" fetchpriority="high"'
-    : 'loading="lazy" decoding="async"';
-
-  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(image?.alt || fallbackAlt)}"${responsiveAttrs} ${loadingAttributes} />`;
+  return renderImageTag(
+    image,
+    image?.alt || fallbackAlt,
+    "shop-card",
+    "",
+    { highPriorityImageUsed: !priority }
+  );
 }
 
 function renderShopProductCard(product, options) {
@@ -1374,9 +1427,7 @@ export function renderPage(page) {
 
   applyDesignSystem(state.config?.siteSettings?.design);
   applySiteCustomCss();
-  updatePageSeoLinks(page);
-  document.title = page.metaTitle || page.title;
-  if (document.documentElement) document.documentElement.lang = page.locale || currentLocale();
+  applySeoDocument(createPageSeoDocument(page, runtimeSeoContext({ locale: page.locale || currentLocale() })));
   elements.brand.textContent = page.title || "CMS Site";
   elements.brand.href = "/";
   updateHeaderLanguageSwitcher(page);
@@ -1409,8 +1460,7 @@ export function renderPostContent(post) {
 export function renderPost(post) {
   applyDesignSystem(state.config?.siteSettings?.design);
   applySiteCustomCss();
-  document.title = post.metaTitle || post.title;
-  if (document.documentElement) document.documentElement.lang = post.locale || currentLocale();
+  applySeoDocument(createPostSeoDocument(post, runtimeSeoContext({ locale: post.locale || currentLocale() })));
   elements.brand.textContent = state.config?.siteSettings?.title || "CMS Site";
   elements.brand.href = "/";
   elements.page.innerHTML = renderPostContent(post);
