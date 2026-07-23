@@ -92,7 +92,11 @@ services:
     <<: *codey-image
     command: ["node", "scripts/run-with-runtime-secrets.mjs", "--", "node", "scripts/backup-scheduler.mjs"]
     healthcheck:
-      disable: true
+      test: ["CMD", "node", "-e", "process.kill(1, 0)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
     environment:
       <<: *runtime-environment
       CODEY_SECRET_DIR: /run/codey-secrets

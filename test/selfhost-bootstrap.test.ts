@@ -64,15 +64,18 @@ test("self-host bootstrap refuses to rotate a damaged persisted secret", async (
 });
 
 test("self-host launchers load a generated export override when present", async () => {
-  const [shellLauncher, windowsLauncher] = await Promise.all([
+  const [shellLauncher, windowsLauncher, composeFile] = await Promise.all([
     readFile("start-codey.sh", "utf8"),
-    readFile("start-codey.cmd", "utf8")
+    readFile("start-codey.cmd", "utf8"),
+    readFile("docker-compose.selfhost.yml", "utf8")
   ]);
 
   assert.match(shellLauncher, /-f "docker-compose\.override\.yml"/);
   assert.match(shellLauncher, /compose run --rm --no-deps secrets/);
   assert.match(windowsLauncher, /-f docker-compose\.override\.yml/);
   assert.match(windowsLauncher, /docker compose %COMPOSE_FILES% run/);
+  assert.match(composeFile, /backup:[\s\S]*healthcheck:[\s\S]*process\.kill\(1, 0\)/);
+  assert.doesNotMatch(composeFile, /backup:[\s\S]*healthcheck:\s*\n\s*disable:\s*true/);
 });
 
 async function readSecrets(directory: string) {
