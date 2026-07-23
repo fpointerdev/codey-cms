@@ -29,7 +29,7 @@ const allowDirty = hasArg("allow-dirty") || process.env.CODEY_RELEASE_ALLOW_DIRT
 const releasedAt = releaseTimestamp();
 const gitSha = gitOutput(["rev-parse", "HEAD"]) || "unknown";
 const baseUrl = (readArg("base-url") || process.env.CODEY_RELEASE_BASE_URL ||
-  `https://github.com/loki-code-26/codey-cms/releases/download/v${version}`).replace(/\/$/, "");
+  `https://github.com/fpointerdev/codey-cms/releases/download/v${version}`).replace(/\/$/, "");
 
 assertTagMatchesVersion();
 

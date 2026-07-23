@@ -53,7 +53,7 @@ const envSchema = z.object({
   CODEY_INSTALL_TOKEN: optionalSecretFromEnv,
   CODEY_UPDATES_ENABLED: booleanFromEnv.default(true),
   CODEY_AUTO_UPDATE: booleanFromEnv.default(false),
-  CODEY_RELEASE_FEED_URL: optionalHttpUrlFromEnv.default("https://github.com/loki-code-26/codey-cms/releases/latest/download/stable.json"),
+  CODEY_RELEASE_FEED_URL: optionalHttpUrlFromEnv.default("https://github.com/fpointerdev/codey-cms/releases/latest/download/stable.json"),
   CODEY_RELEASE_PUBLIC_KEY: optionalStringFromEnv,
   CODEY_RELEASE_PUBLIC_KEY_FILE: z.string().trim().min(1).default("runtime-meta/release-public-key.pem"),
   CODEY_UPDATE_DIR: z.string().trim().min(1).default("updates"),

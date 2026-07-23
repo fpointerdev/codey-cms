@@ -13,6 +13,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { executeRuntimeUpdate } from "./runtime-update-orchestrator.mjs";
 
 const imageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const runtimeRoot = path.resolve(process.env.CODEY_RUNTIME_ROOT || "/runtime");
@@ -120,72 +121,66 @@ async function processPendingUpdate() {
 
   updating = true;
   const previousRelease = await currentRelease();
-  let switched = false;
-  let runtimeStopped = false;
-  let backupId;
-  let backupManifestPath;
 
   try {
-    await assertCurrentVersion(previousRelease, request.fromVersion);
-    await writeStatus("applying", request);
-    await markUpdate(previousRelease, request.updateId, "APPLYING");
-
-    await runWithSecrets(previousRelease, process.execPath, ["scripts/backup-runtime.mjs"]);
-    const backup = await readJson(path.join(backupRoot, "latest.json"));
-    backupId = backup?.status === "success" ? backup.backupId : undefined;
-    if (!backupId || !isSafeFileName(backup.manifestFile)) {
-      throw new Error("The pre-update backup did not publish a successful backup manifest.");
-    }
-    backupManifestPath = path.join(backupRoot, backup.manifestFile);
-    await markUpdate(previousRelease, request.updateId, "APPLYING", ["--backup-id", backupId]);
-
-    await stopRuntime();
-    runtimeStopped = true;
-    const targetRelease = await prepareRelease(previousRelease, request);
-    await switchCurrent(targetRelease);
-    switched = true;
-    await startRuntime();
-    runtimeStopped = false;
-    await waitForReadiness();
-    await markUpdate(targetRelease, request.updateId, "SUCCEEDED", ["--backup-id", backupId]);
-    await writeStatus("succeeded", request, { backupId })
-      .catch((statusError) => console.error("Unable to write update supervisor status.", statusError));
-    await archiveRequest(request, "succeeded")
-      .catch((archiveError) => console.error("Unable to archive the completed update request.", archiveError));
-    await cleanupOldReleases(targetRelease, previousRelease)
-      .catch((cleanupError) => console.error("Unable to clean old runtime releases.", cleanupError));
-  } catch (error) {
-    let message = error instanceof Error ? error.message : String(error);
-    console.error(`CodeY CMS update failed: ${message}`);
-    let recovered = false;
-
-    if (runtimeStopped || switched) {
-      try {
-        if (switched) {
-          await stopRuntime();
-          if (!backupManifestPath) throw new Error("The rollback backup manifest is unavailable.");
-          await restoreBackup(previousRelease, backupManifestPath);
-          await switchCurrent(previousRelease);
-        }
-        await startRuntime();
-        runtimeStopped = false;
-        await waitForReadiness();
-        recovered = true;
-      } catch (rollbackError) {
-        const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
-        message = `${message} Rollback failed: ${rollbackMessage}`;
-        console.error("Previous runtime recovery failed.", rollbackError);
+    const result = await executeRuntimeUpdate({
+      request,
+      previousRelease,
+      operations: {
+        beforeApply: async () => {
+          await assertCurrentVersion(previousRelease, request.fromVersion);
+          await writeStatus("applying", request);
+          await markUpdate(previousRelease, request.updateId, "APPLYING");
+        },
+        createBackup: async () => {
+          await runWithSecrets(previousRelease, process.execPath, ["scripts/backup-runtime.mjs"]);
+          const backup = await readJson(path.join(backupRoot, "latest.json"));
+          const backupId = backup?.status === "success" ? backup.backupId : undefined;
+          if (!backupId || !isSafeFileName(backup.manifestFile)) {
+            throw new Error("The pre-update backup did not publish a successful backup manifest.");
+          }
+          return {
+            backupId,
+            manifestPath: path.join(backupRoot, backup.manifestFile)
+          };
+        },
+        afterBackup: ({ backupId }) => markUpdate(
+          previousRelease,
+          request.updateId,
+          "APPLYING",
+          ["--backup-id", backupId]
+        ),
+        stopRuntime,
+        prepareRelease,
+        switchCurrent,
+        startRuntime,
+        waitForReadiness,
+        restoreBackup: (manifestPath) => restoreBackup(previousRelease, manifestPath),
+        onUpdateError: (message) => console.error(`CodeY CMS update failed: ${message}`),
+        onRollbackError: (error) => console.error("Previous runtime recovery failed.", error)
       }
-    }
+    });
 
-    const finalStatus = switched && recovered ? "ROLLED_BACK" : "FAILED";
-    await markUpdate(previousRelease, request.updateId, finalStatus, [
-      ...(backupId ? ["--backup-id", backupId] : []),
-      "--error",
-      message.slice(0, 2000)
-    ]).catch((statusError) => console.error("Unable to record update failure.", statusError));
-    await writeStatus(finalStatus.toLowerCase(), request, { backupId, error: message });
-    await archiveRequest(request, finalStatus.toLowerCase()).catch(() => undefined);
+    if (result.status === "SUCCEEDED") {
+      await markUpdate(result.targetRelease, request.updateId, "SUCCEEDED", ["--backup-id", result.backupId]);
+      await writeStatus("succeeded", request, { backupId: result.backupId })
+        .catch((statusError) => console.error("Unable to write update supervisor status.", statusError));
+      await archiveRequest(request, "succeeded")
+        .catch((archiveError) => console.error("Unable to archive the completed update request.", archiveError));
+      await cleanupOldReleases(result.targetRelease, previousRelease)
+        .catch((cleanupError) => console.error("Unable to clean old runtime releases.", cleanupError));
+    } else {
+      await markUpdate(previousRelease, request.updateId, result.status, [
+        ...(result.backupId ? ["--backup-id", result.backupId] : []),
+        "--error",
+        result.error.slice(0, 2000)
+      ]).catch((statusError) => console.error("Unable to record update failure.", statusError));
+      await writeStatus(result.status.toLowerCase(), request, {
+        backupId: result.backupId,
+        error: result.error
+      });
+      await archiveRequest(request, result.status.toLowerCase()).catch(() => undefined);
+    }
   } finally {
     updating = false;
   }

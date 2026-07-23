@@ -69,6 +69,8 @@ jobs:
         env:
           INTEGRATION_RESET_DATABASE: "true"
         run: pnpm run test:integration
+      - name: Encrypted backup and restore test
+        run: pnpm run test:recovery
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm run test:e2e
       - name: Public SEO and Lighthouse gates
@@ -107,8 +109,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - name: Verify release metadata and signing key
+        run: pnpm run release:preflight
       - run: pnpm run release:build
       - run: pnpm run release:verify
+      - name: Qualify downloadable self-host package
+        run: pnpm run release:qualify
       - name: Publish immutable runtime release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,4 +124,4 @@ jobs:
           --verify-tag
           --latest
           --title "CodeY CMS ${GITHUB_REF_NAME}"
-          --generate-notes
+          --notes-file "docs/releases/${GITHUB_REF_NAME}.md"

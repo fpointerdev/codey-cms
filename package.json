@@ -5,7 +5,7 @@
   "license": "GPL-2.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pointerdev-tech/codey-cms.git"
+    "url": "git+https://github.com/fpointerdev/codey-cms.git"
   },
   "private": true,
   "type": "module",
@@ -21,11 +21,12 @@
     "test": "node --import tsx --test test/*.test.ts",
     "test:installation": "node scripts/run-installation-integration-tests.mjs",
     "test:integration": "node scripts/run-integration-tests.mjs",
+    "test:recovery": "node scripts/run-recovery-integration-tests.mjs",
     "test:e2e": "node scripts/run-e2e-tests.mjs",
     "audit:public": "node scripts/audit-public-site.mjs",
     "audit:lighthouse": "node scripts/run-lighthouse-audits.mjs",
     "audit:quality": "node scripts/run-public-quality-audits.mjs",
-    "test:release": "pnpm run validate && pnpm run test:installation && pnpm run test:integration && pnpm run test:e2e",
+    "test:release": "pnpm run validate && pnpm run test:installation && pnpm run test:integration && pnpm run test:recovery && pnpm run test:e2e",
     "validate": "pnpm run typecheck && pnpm run test && pnpm run db:validate && pnpm run build",
     "runtime:start": "pnpm db:deploy && node dist/src/server.js",
     "runtime:bootstrap": "pnpm db:deploy && pnpm db:seed",
@@ -33,8 +34,10 @@
     "runtime:backup": "node scripts/backup-runtime.mjs",
     "runtime:backup:scheduler": "node scripts/backup-scheduler.mjs",
     "runtime:restore": "node scripts/restore-runtime.mjs",
+    "release:preflight": "node scripts/release-preflight.mjs",
     "release:build": "pnpm run build && node scripts/build-release.mjs",
     "release:verify": "node scripts/verify-release.mjs",
+    "release:qualify": "node scripts/qualify-selfhost-package.mjs",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
     "audit": "pnpm audit --prod --audit-level high",
     "db:schema": "node scripts/build-prisma-schema.mjs",

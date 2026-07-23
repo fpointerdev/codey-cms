@@ -24,7 +24,7 @@ If verification or preparation fails after shutdown, the supervisor restarts the
 ```bash
 CODEY_UPDATES_ENABLED=true
 CODEY_AUTO_UPDATE=true
-CODEY_RELEASE_FEED_URL=https://github.com/loki-code-26/codey-cms/releases/latest/download/stable.json
+CODEY_RELEASE_FEED_URL=https://github.com/fpointerdev/codey-cms/releases/latest/download/stable.json
 CODEY_RELEASE_PUBLIC_KEY_FILE=runtime-meta/release-public-key.pem
 CODEY_UPDATE_CHECK_INTERVAL_HOURS=6
 ```

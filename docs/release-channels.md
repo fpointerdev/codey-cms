@@ -15,14 +15,20 @@ Every tagged release publishes:
 - `release-public-key.pem`: public verification key
 - `SHA256SUMS`: artifact checksums
 
+The canonical stable feed is:
+
+`https://github.com/fpointerdev/codey-cms/releases/latest/download/stable.json`
+
 The stable pointer is not trusted by itself. Consumers verify the embedded signed manifest, release product, stable channel, semantic version, runtime contracts, artifact size, and SHA-256 before accepting an artifact.
 
 ## Publishing
 
 1. Update `package.json` to the intended semantic version.
-2. Run `pnpm run test:release` against the qualification database.
-3. Create and push the matching tag, for example `v0.9.0`.
-4. GitHub Actions builds the release from that exact tag and refuses a tag/package mismatch.
-5. The release job signs with the protected `CODEY_RELEASE_PRIVATE_KEY` secret and publishes immutable files.
+2. Add reviewed release notes at `docs/releases/v<version>.md`.
+3. Run `pnpm run test:release` against the qualification database.
+4. Run `pnpm run release:preflight` with the production signing key available.
+5. Create and push the matching tag, for example `v0.9.0`.
+6. GitHub Actions builds the release from that exact tag and refuses a tag/package mismatch.
+7. The release job signs with the protected `CODEY_RELEASE_PRIVATE_KEY` secret and publishes immutable files with the checked-in notes.
 
 The private signing key must never enter this repository, a runtime image, a generated website, or a downloadable package. Rotating the release key requires a separately authenticated trust migration for installed runtimes and UseCodeY.
