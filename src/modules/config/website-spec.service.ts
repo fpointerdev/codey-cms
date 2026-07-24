@@ -1163,17 +1163,11 @@ async function syncProducts(
     };
 
     if (existing) {
-      await context.prisma.productImage.deleteMany({ where: { productId: existing.id } });
-      await context.prisma.productOption.deleteMany({ where: { productId: existing.id } });
-      await context.prisma.productVariant.deleteMany({ where: { productId: existing.id } });
-      await context.prisma.product.update({
-        where: { id: existing.id },
-        data: {
-          ...productData,
-          images: { create: productImageData(product, mediaAssetIds) },
-          options: { create: product.options },
-          variants: { create: productVariantData(product) }
-        }
+      await replaceGeneratedProduct(context.prisma, existing.id, {
+        ...productData,
+        images: { create: productImageData(product, mediaAssetIds) },
+        options: { create: product.options },
+        variants: { create: productVariantData(product) }
       });
     } else {
       await context.prisma.product.create({
@@ -1192,54 +1186,86 @@ async function syncProducts(
   return synced;
 }
 
+export async function replaceGeneratedProduct(
+  database: ModuleContext["prisma"],
+  productId: string,
+  data: Prisma.ProductUpdateArgs["data"]
+) {
+  return database.$transaction(async (transaction) => {
+    await transaction.productImage.deleteMany({ where: { productId } });
+    await transaction.productOption.deleteMany({ where: { productId } });
+    await transaction.productVariant.deleteMany({ where: { productId } });
+
+    return transaction.product.update({
+      where: { id: productId },
+      data
+    });
+  });
+}
+
+export async function replaceGeneratedMainMenu(
+  database: ModuleContext["prisma"],
+  locale: string,
+  navigation: WebsiteGenerationPlan["navigation"]
+) {
+  return database.$transaction(async (transaction) => {
+    const menu = await transaction.menu.upsert({
+      where: {
+        locale_slug: {
+          locale,
+          slug: "main"
+        }
+      },
+      update: {
+        name: "Main menu",
+        location: "header"
+      },
+      create: {
+        slug: "main",
+        locale,
+        name: "Main menu",
+        location: "header"
+      }
+    });
+
+    await transaction.menuItem.deleteMany({
+      where: { menuId: menu.id }
+    });
+
+    const pages = await transaction.cmsPage.findMany({
+      where: {
+        locale,
+        slug: { in: navigation.map((item) => item.pageSlug) }
+      },
+      select: { id: true, slug: true }
+    });
+    const pageIds = new Map(pages.map((page) => [page.slug, page.id]));
+
+    if (navigation.length > 0) {
+      await transaction.menuItem.createMany({
+        data: navigation.map((item) => {
+          const pageId = pageIds.get(item.pageSlug);
+
+          return {
+            menuId: menu.id,
+            pageId,
+            label: item.label,
+            url: pageId ? null : `/${item.pageSlug}`,
+            sortOrder: item.sortOrder,
+            openInNewTab: false
+          };
+        })
+      });
+    }
+
+    return navigation.length;
+  });
+}
+
 async function syncMainMenu(context: ModuleContext, plan: WebsiteGenerationPlan) {
   if (!plan.modules.includes("cms")) return 0;
 
-  const menu = await context.prisma.menu.upsert({
-    where: {
-      locale_slug: {
-        locale: plan.site.locale,
-        slug: "main"
-      }
-    },
-    update: {
-      name: "Main menu",
-      location: "header"
-    },
-    create: {
-      slug: "main",
-      locale: plan.site.locale,
-      name: "Main menu",
-      location: "header"
-    }
-  });
-
-  await context.prisma.menuItem.deleteMany({
-    where: { menuId: menu.id }
-  });
-
-  for (const item of plan.navigation) {
-    const page = await context.prisma.cmsPage.findFirst({
-      where: {
-        slug: item.pageSlug,
-        locale: plan.site.locale
-      },
-      select: { id: true }
-    });
-
-    await context.prisma.menuItem.create({
-      data: {
-        menuId: menu.id,
-        pageId: page?.id,
-        label: item.label,
-        url: page ? null : `/${item.pageSlug}`,
-        sortOrder: item.sortOrder,
-        openInNewTab: false
-      }
-    });
-  }
-
-  return plan.navigation.length;
+  return replaceGeneratedMainMenu(context.prisma, plan.site.locale, plan.navigation);
 }
 
 function stripGeneratedBlockFields(page: GeneratedCmsPage, mediaAssetIds: Map<string, string>) {
