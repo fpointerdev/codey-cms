@@ -44,6 +44,7 @@ const productionEnvironment = {
   CMS_CREDENTIAL_ENCRYPTION_KEY: "production-credential-key-with-at-least-32-characters",
   CODEY_INSTALL_TOKEN: "production-install-token-with-at-least-32-characters",
   CORS_ORIGINS: "https://example.com",
+  AUTH_RECOVERY_TOKEN_DELIVERY: "disabled",
   STORAGE_DRIVER: "s3",
   STORAGE_S3_ENDPOINT: "https://storage.example.com",
   STORAGE_S3_BUCKET: "codey",
@@ -60,7 +61,7 @@ test("production rejects blanket proxy trust but accepts an exact hop count", as
     "--eval",
     "import('./src/config/env.ts').then(({ env }) => process.stdout.write(JSON.stringify(env.TRUST_PROXY)))"
   ], {
-    env: { ...process.env, ...productionEnvironment, TRUST_PROXY: trustProxy }
+    env: { ...productionEnvironment, TRUST_PROXY: trustProxy }
   });
 
   await assert.rejects(
