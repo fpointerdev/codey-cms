@@ -19,6 +19,21 @@ test("CodeY CMS accepts and maps the platform WebsiteSpec contract", () => {
       theme: "editorial-industrial",
       colorPalette: { primary: "#162019", accent: "#d9ad32" },
       typography: { heading: "Inter", body: "Inter" },
+      experience: {
+        family: "industrial",
+        recipeId: "editorial-industrial",
+        heroComposition: "offset-masthead",
+        navigationSystem: "quiet-topbar",
+        sectionRhythm: "alternating-editorial",
+        gridSystem: "twelve-column-editorial",
+        imageTreatment: "edge-to-edge-documentary",
+        typographySystem: "condensed-industrial",
+        signatureInteraction: "chapter-reveal",
+        shapeLanguage: "framed-void",
+        motionSystem: "quiet-crossfade",
+        motionLevel: "light"
+      },
+      runtimeCss: "body[data-codey-preview='cms']{background:#f7f5ef}",
       customCss: ".page-section{scroll-margin-top:96px}"
     },
     branding: {
@@ -114,10 +129,13 @@ test("CodeY CMS accepts and maps the platform WebsiteSpec contract", () => {
   };
 
   assert.equal(plan.style.customCss, ".page-section{scroll-margin-top:96px}");
+  assert.equal(plan.style.runtimeCss, "body[data-codey-preview='cms']{background:#f7f5ef}");
+  assert.equal(plan.style.experience?.family, "industrial");
   assert.equal(plan.branding?.logoUrl, "/media/brand-logo.svg");
   assert.equal(home?.excerpt, "");
   assert.equal(home?.content.layout, "full-width");
   assert.equal(home?.content.hideTitle, true);
+  assert.equal(home?.content.style.experience?.recipeId, "editorial-industrial");
   assert.equal(hero?.label, undefined);
   assert.equal(hero?.blocks[0]?.type, "RICH_TEXT");
   assert.equal(hero?.blocks[0]?.value, "<h1>Built with precision</h1>");

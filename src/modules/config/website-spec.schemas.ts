@@ -252,6 +252,24 @@ export const websiteSpecSchema = z
           })
           .strict()
           .default({}),
+        experience: z
+          .object({
+            family: z.string().trim().min(1).max(80),
+            recipeId: z.string().trim().min(1).max(80),
+            heroComposition: z.string().trim().min(1).max(80),
+            navigationSystem: z.string().trim().min(1).max(80),
+            sectionRhythm: z.string().trim().min(1).max(80),
+            gridSystem: z.string().trim().min(1).max(80),
+            imageTreatment: z.string().trim().min(1).max(80),
+            typographySystem: z.string().trim().min(1).max(80),
+            signatureInteraction: z.string().trim().min(1).max(80),
+            shapeLanguage: z.string().trim().min(1).max(80),
+            motionSystem: z.string().trim().min(1).max(80),
+            motionLevel: z.enum(["none", "light", "medium", "high"])
+          })
+          .strict()
+          .optional(),
+        runtimeCss: z.string().trim().max(60_000).optional(),
         customCss: z.string().trim().max(20_000).optional()
       })
       .strict(),

@@ -256,7 +256,7 @@ type PublicSeoRenderer = {
 
 type PublicMarkupRenderer = {
   withPublicRenderContext<T>(context: Record<string, unknown>, render: () => T): T;
-  renderFooter(page: unknown, canEdit?: boolean): string;
+  renderFooter(page: unknown, canEdit?: boolean, options?: { menu?: string }): string;
   renderMenuItems(items: unknown[], canEdit?: boolean): string;
   renderPageContent(page: unknown, options?: { canEdit?: boolean }): string;
   renderPostContent(post: unknown): string;
@@ -293,6 +293,83 @@ function escapeHtml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function safeBrandLogoUrl(value: unknown) {
+  const url = typeof value === "string" ? value.trim() : "";
+  if (!url || url.startsWith("//") || url.includes("\\")) return "";
+  if (/^(https?:\/\/|\/|\.\/)/i.test(url)) return url;
+  if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,[a-z0-9+/=]+$/i.test(url)) return url;
+
+  return "";
+}
+
+function brandInitials(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "CY";
+}
+
+function renderPublicBrand(site: Awaited<ReturnType<typeof readSiteSeoDefaults>>) {
+  const title = site.brandTitle || site.title || config.app.name;
+  const logoUrl = safeBrandLogoUrl(site.logoUrl);
+  const configuredLogoMode = typeof site.logoMode === "string" ? site.logoMode : "";
+  const logoMode = ["text", "image", "image-and-name"].includes(configuredLogoMode)
+    ? configuredLogoMode
+    : "text";
+  const showLogo = logoUrl && logoMode !== "text";
+  const showName = logoMode !== "image" || !showLogo;
+  const showGeneratedFallback = site.generatedFrom === "websiteSpec" && !showLogo;
+  const configuredLogoHeight = typeof site.logoHeight === "number" ? site.logoHeight : Number.NaN;
+  const logoHeight = Number.isFinite(configuredLogoHeight)
+    ? Math.min(120, Math.max(20, Math.round(configuredLogoHeight)))
+    : 42;
+
+  return [
+    showLogo
+      ? `<img class="brand-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(site.logoAltText || title)}" style="--brand-logo-height:${logoHeight}px" />`
+      : showGeneratedFallback ? `<span>${escapeHtml(brandInitials(title))}</span>` : "",
+    showName ? `<strong>${escapeHtml(title)}</strong>` : ""
+  ].join("");
+}
+
+function generatedPageBodyAttributes(page: { content?: unknown }) {
+  const content = page.content && typeof page.content === "object" && !Array.isArray(page.content)
+    ? page.content as Record<string, unknown>
+    : {};
+  if (content.source !== "websiteSpec") return undefined;
+  const style = content.style && typeof content.style === "object" && !Array.isArray(content.style)
+    ? content.style as Record<string, unknown>
+    : {};
+  const experience = style.experience && typeof style.experience === "object" && !Array.isArray(style.experience)
+    ? style.experience as Record<string, unknown>
+    : {};
+  const value = (key: string, fallback = "") => {
+    const candidate = experience[key];
+    return typeof candidate === "string" && candidate.trim() ? candidate.trim().slice(0, 80) : fallback;
+  };
+
+  return {
+    "data-codey-preview": "cms",
+    "data-codey-cms-rendered-preview": "true",
+    "data-codey-runtime-theme": typeof style.runtimeCss === "string" && style.runtimeCss.trim() ? "true" : "",
+    "data-design-family": value("family", "generated"),
+    "data-design-recipe": value("recipeId", typeof style.theme === "string" ? style.theme : "generated-site"),
+    "data-hero-composition": value("heroComposition"),
+    "data-navigation-system": value("navigationSystem"),
+    "data-section-rhythm": value("sectionRhythm"),
+    "data-grid-system": value("gridSystem"),
+    "data-image-treatment": value("imageTreatment"),
+    "data-typography-system": value("typographySystem"),
+    "data-signature-interaction": value("signatureInteraction"),
+    "data-shape-language": value("shapeLanguage"),
+    "data-motion-system": value("motionSystem"),
+    "data-motion-level": value("motionLevel", "light")
+  };
 }
 
 function requestOrigin(req: Request) {
@@ -473,8 +550,12 @@ async function readSiteSeoDefaults() {
   if (!site) {
     return {
       title: config.app.name,
+      brandTitle: config.app.name,
       description: "",
       design: undefined,
+      experience: undefined,
+      generatedCss: "",
+      generatedFrom: "",
       customCss: ""
     };
   }
@@ -496,6 +577,9 @@ async function readSiteSeoDefaults() {
       : typeof storedSettings.title === "string" && storedSettings.title
         ? storedSettings.title
         : site.name,
+    brandTitle: typeof storedSettings.title === "string" && storedSettings.title
+      ? storedSettings.title
+      : site.name,
     description: typeof storedSettings.metaDescription === "string" && storedSettings.metaDescription
       ? storedSettings.metaDescription
       : typeof storedSettings.description === "string"
@@ -506,6 +590,13 @@ async function readSiteSeoDefaults() {
       : undefined,
     noindex: storedSettings.searchIndexing === false,
     design: storedSettings.design,
+    experience: storedSettings.experience,
+    generatedCss: typeof storedSettings.generatedCss === "string" ? storedSettings.generatedCss : "",
+    generatedFrom: typeof storedSettings.generatedFrom === "string" ? storedSettings.generatedFrom : "",
+    logoUrl: typeof storedSettings.logoUrl === "string" ? storedSettings.logoUrl : "",
+    logoMode: typeof storedSettings.logoMode === "string" ? storedSettings.logoMode : "text",
+    logoAltText: typeof storedSettings.logoAltText === "string" ? storedSettings.logoAltText : "",
+    logoHeight: typeof storedSettings.logoHeight === "number" ? storedSettings.logoHeight : 42,
     customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }
@@ -854,9 +945,10 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
     ]);
     const route = publicContentRouteFromRequest(req, localization);
     const siteTitle = site.title || config.app.name;
-    const head = publicSiteStyleTag(site.design, site.customCss);
+    const head = publicSiteStyleTag(site.design, site.customCss, site.generatedCss);
     const publicRenderContext = {
       locale: route.locale,
+      path: req.path,
       config: {
         app: config.app,
         storage: {
@@ -906,7 +998,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         localization,
         content: {
           head,
-          brand: escapeHtml(siteTitle),
+          brand: renderPublicBrand(site),
           menu,
           body: renderPublic(() => renderer.renderPostContent({
             ...post,
@@ -940,7 +1032,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         localization,
         content: {
           head,
-          brand: escapeHtml(siteTitle),
+          brand: renderPublicBrand(site),
           menu,
           body: renderPublic(() => renderer.renderProductDetailContent(enrichedProduct, {
             locale: route.locale,
@@ -972,7 +1064,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         localization,
         content: {
           head,
-          brand: escapeHtml(siteTitle),
+          brand: renderPublicBrand(site),
           menu,
           body: renderPublic(() => renderer.renderShopListingContent({
             products: productPage.products,
@@ -1027,10 +1119,11 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
       localization,
       content: {
         head,
-        brand: escapeHtml(siteTitle),
+        brand: renderPublicBrand(site),
+        bodyAttributes: generatedPageBodyAttributes(enrichedPage),
         menu,
         body: renderPublic(() => renderer.renderPageContent(enrichedPage, { canEdit: false })),
-        footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
+        footer: renderPublic(() => renderer.renderFooter(enrichedPage, false, { menu }))
       }
     };
   } catch (error) {

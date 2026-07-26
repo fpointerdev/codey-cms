@@ -21,7 +21,32 @@ function loadAdminStyles() {
   });
 }
 
+function bindSiteNavigation() {
+  const toggle = document.querySelector("[data-site-nav-toggle]");
+  const navigation = document.querySelector("#site-navigation");
+  if (!toggle || !navigation || toggle.dataset.bound === "true") return;
+
+  const close = () => {
+    navigation.classList.remove("is-open");
+    toggle.setAttribute("aria-expanded", "false");
+  };
+
+  toggle.dataset.bound = "true";
+  toggle.addEventListener("click", () => {
+    const open = navigation.classList.toggle("is-open");
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  navigation.addEventListener("click", (event) => {
+    if (event.target?.closest?.("a")) close();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close();
+  });
+}
+
 export async function startApp() {
+  bindSiteNavigation();
+
   if (!needsEditorRuntime()) {
     const { startPublicRuntime } = await import("./public-runtime.js");
     await startPublicRuntime();

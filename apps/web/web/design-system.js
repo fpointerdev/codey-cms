@@ -229,43 +229,43 @@ export function designSystemCss(value = {}) {
   const typeSizes = typeScaleSizes[design.typography.scale];
 
   return `
-body:not(.auth-enabled):not(.dashboard-enabled) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) {
   ${declarations};
   background: var(--bg);
   color: var(--text);
   font-family: var(--site-body-font);
   font-size: ${design.typography.baseSize}px;
 }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(h1, h2, h3, h4, h5, h6, .brand) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(h1, h2, h3, h4, h5, h6, .brand) {
   font-family: var(--site-heading-font);
   font-weight: var(--site-heading-weight);
 }
-body:not(.auth-enabled):not(.dashboard-enabled) .page-title { font-size: var(--site-page-title-size); }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-title { font-size: var(--site-page-title-size); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
   font-size: var(--site-section-title-size);
 }
-body:not(.auth-enabled):not(.dashboard-enabled) .page-shell { width: min(100%, var(--site-content-width)); }
-body:not(.auth-enabled):not(.dashboard-enabled) .page-section { padding-block: var(--site-section-spacing); }
-body:not(.auth-enabled):not(.dashboard-enabled) .site-header {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-shell { width: min(100%, var(--site-content-width)); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-section { padding-block: var(--site-section-spacing); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-header {
   position: ${design.header.sticky ? "sticky" : "relative"};
   background: var(--site-header-bg);
   color: var(--site-header-text);
 }
-body:not(.auth-enabled):not(.dashboard-enabled) .site-header :where(.brand, .site-nav a) { color: var(--site-header-text); }
-body:not(.auth-enabled):not(.dashboard-enabled) .site-footer { background: var(--site-footer-bg); color: var(--site-footer-text); }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(.action-link, .contact-form > button, .shop-product-card button) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-header :where(.brand, .site-nav a) { color: var(--site-header-text); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-footer { background: var(--site-footer-bg); color: var(--site-footer-text); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.action-link, .contact-form > button, .shop-product-card button) {
   border-color: var(--accent);
   border-radius: var(--site-button-radius);
   background: var(--site-button-bg);
   color: var(--site-button-text);
 }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(.structured-card, .shop-product-card) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-card, .shop-product-card) {
   border-radius: var(--site-radius);
   box-shadow: var(--site-shadow);
 }
 @media (max-width: 680px) {
-  body:not(.auth-enabled):not(.dashboard-enabled) .page-title { font-size: ${typeSizes.pageMobile}px; }
-  body:not(.auth-enabled):not(.dashboard-enabled) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
+  body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-title { font-size: ${typeSizes.pageMobile}px; }
+  body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
     font-size: ${typeSizes.sectionMobile}px;
   }
 }`.trim();

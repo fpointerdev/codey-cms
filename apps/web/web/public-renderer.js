@@ -36,22 +36,37 @@ export { defaultPage };
 export function withPublicRenderContext(context = {}, render) {
   const previousConfig = state.config;
   const previousLocale = state.publicRenderLocale;
+  const previousPath = state.publicRenderPath;
   state.config = context.config || previousConfig;
   state.publicRenderLocale = context.locale || "";
+  state.publicRenderPath = context.path || "";
 
   try {
     return render();
   } finally {
     state.config = previousConfig;
     state.publicRenderLocale = previousLocale;
+    state.publicRenderPath = previousPath;
   }
 }
 
 function applySiteCustomCss() {
   if (!document.head || !document.createElement) return;
 
-  const css = sanitizeStylesheet(state.config?.siteSettings?.customCss || "");
-  let element = document.querySelector("[data-site-custom-css]");
+  applySiteStylesheet(
+    "[data-codey-generated-theme]",
+    "data-codey-generated-theme",
+    sanitizeStylesheet(state.config?.siteSettings?.generatedCss || "", 60000)
+  );
+  applySiteStylesheet(
+    "[data-site-custom-css]",
+    "data-site-custom-css",
+    sanitizeStylesheet(state.config?.siteSettings?.customCss || "")
+  );
+}
+
+function applySiteStylesheet(selector, attribute, css) {
+  let element = document.querySelector(selector);
   if (!css) {
     element?.remove?.();
     return;
@@ -59,7 +74,7 @@ function applySiteCustomCss() {
 
   if (!element) {
     element = document.createElement("style");
-    element.setAttribute("data-site-custom-css", "");
+    element.setAttribute(attribute, "");
     document.head.append(element);
   }
 
@@ -299,15 +314,25 @@ function renderVisualEditorToolbar(page) {
 }
 
 export function renderMenuItems(items, canEdit = false) {
+  const currentPath = normalizePublicPath(
+    typeof window === "undefined" ? state.publicRenderPath : window.location.pathname
+  );
+
   return items
     .map((item) => {
       const url = item.url?.startsWith("/") ? pageHref(item.url.slice(1)) : safePublicHref(item.url);
-      const link = `<a href="${escapeHtml(url || "#")}"${item.openInNewTab ? ' target="_blank" rel="noreferrer"' : ""}>${escapeHtml(item.label)}</a>`;
+      const isCurrent = Boolean(url && url.startsWith("/") && normalizePublicPath(url) === currentPath);
+      const link = `<a href="${escapeHtml(url || "#")}"${isCurrent ? ' aria-current="page"' : ""}${item.openInNewTab ? ' target="_blank" rel="noreferrer"' : ""}>${escapeHtml(item.label)}</a>`;
       const editButton = canEdit ? renderEditorButton("Edit", "data-edit-menu-item", item.id) : "";
 
       return `<span class="menu-item">${link}${editButton}</span>`;
     })
     .join("");
+}
+
+function normalizePublicPath(value = "/") {
+  const path = String(value || "/").split(/[?#]/, 1)[0].replace(/\/+$/g, "");
+  return path || "/";
 }
 
 function renderInlineRichText(value) {
@@ -386,6 +411,130 @@ function safeMediaSrc(value = "") {
   if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,[a-z0-9+/=]+$/i.test(src)) return src;
 
   return "";
+}
+
+function updatePublicBrand() {
+  const settings = state.config?.siteSettings || {};
+  const title = settings.title || state.config?.app?.name || "Website";
+  const logoUrl = safeMediaSrc(settings.logoUrl || "");
+  const logoMode = ["text", "image", "image-and-name"].includes(settings.logoMode)
+    ? settings.logoMode
+    : "text";
+  const showLogo = Boolean(logoUrl && logoMode !== "text");
+  const showName = logoMode !== "image" || !showLogo;
+  const showGeneratedFallback = settings.generatedFrom === "websiteSpec" && !showLogo;
+  const logoHeight = Number.isFinite(Number(settings.logoHeight))
+    ? Math.min(120, Math.max(20, Math.round(Number(settings.logoHeight))))
+    : 42;
+
+  elements.brand.href = "/";
+  elements.brand.innerHTML = [
+    showLogo
+      ? `<img class="brand-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(settings.logoAltText || title)}" style="--brand-logo-height:${logoHeight}px" />`
+      : showGeneratedFallback ? `<span>${escapeHtml(brandInitials(title))}</span>` : "",
+    showName ? `<strong>${escapeHtml(title)}</strong>` : ""
+  ].join("");
+}
+
+function brandInitials(value) {
+  return String(value || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "CY";
+}
+
+const generatedBodyDatasetKeys = [
+  "codeyPreview",
+  "codeyCmsRenderedPreview",
+  "codeyRuntimeTheme",
+  "designFamily",
+  "designRecipe",
+  "heroComposition",
+  "navigationSystem",
+  "sectionRhythm",
+  "gridSystem",
+  "imageTreatment",
+  "typographySystem",
+  "signatureInteraction",
+  "shapeLanguage",
+  "motionSystem",
+  "motionLevel"
+];
+
+let generatedMotionObserver = null;
+
+function applyGeneratedPageMotion(enabled) {
+  generatedMotionObserver?.disconnect();
+  generatedMotionObserver = null;
+  delete document.body.dataset.motionReady;
+  document.querySelectorAll(".website-spec-page .section").forEach((section) => {
+    delete section.dataset.motionState;
+  });
+
+  if (
+    !enabled ||
+    document.body.dataset.motionLevel === "none" ||
+    !("IntersectionObserver" in window) ||
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  ) {
+    return;
+  }
+
+  const sections = [...document.querySelectorAll(".website-spec-page .section")];
+  if (!sections.length) return;
+
+  document.body.dataset.motionReady = "true";
+  sections.forEach((section) => {
+    section.dataset.motionState = "pending";
+  });
+  generatedMotionObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.dataset.motionState = "visible";
+      generatedMotionObserver?.unobserve(entry.target);
+    });
+  }, {
+    rootMargin: "0px 0px -12% 0px",
+    threshold: 0.12
+  });
+  sections.slice(1).forEach((section) => generatedMotionObserver?.observe(section));
+  requestAnimationFrame(() => {
+    if (sections[0]) sections[0].dataset.motionState = "visible";
+  });
+}
+
+function applyGeneratedPageContext(page) {
+  for (const key of generatedBodyDatasetKeys) delete document.body.dataset[key];
+
+  const content = isRecord(page?.content) ? page.content : {};
+  if (content.source !== "websiteSpec") return;
+  const style = isRecord(content.style) ? content.style : {};
+  const experience = isRecord(style.experience) ? style.experience : {};
+  const value = (key, fallback = "") => firstText(experience, [key]) || fallback;
+  const context = {
+    codeyPreview: "cms",
+    codeyCmsRenderedPreview: "true",
+    codeyRuntimeTheme: typeof style.runtimeCss === "string" && style.runtimeCss.trim() ? "true" : "",
+    designFamily: value("family", "generated"),
+    designRecipe: value("recipeId", firstText(style, ["theme"]) || "generated-site"),
+    heroComposition: value("heroComposition"),
+    navigationSystem: value("navigationSystem"),
+    sectionRhythm: value("sectionRhythm"),
+    gridSystem: value("gridSystem"),
+    imageTreatment: value("imageTreatment"),
+    typographySystem: value("typographySystem"),
+    signatureInteraction: value("signatureInteraction"),
+    shapeLanguage: value("shapeLanguage"),
+    motionSystem: value("motionSystem"),
+    motionLevel: value("motionLevel", "light")
+  };
+
+  for (const [key, value] of Object.entries(context)) {
+    if (value) document.body.dataset[key] = String(value).slice(0, 80);
+  }
 }
 
 function responsiveImageWidths() {
@@ -521,7 +670,7 @@ function firstText(source, keys) {
   return "";
 }
 
-function renderStructuredImage(image, fallbackAlt = "", renderContext = {}) {
+function renderStructuredImage(image, fallbackAlt = "", renderContext = {}, className = "structured-media") {
   if (!image) return "";
 
   const imageData = typeof image === "string" ? { url: image } : image;
@@ -534,8 +683,8 @@ function renderStructuredImage(image, fallbackAlt = "", renderContext = {}) {
   const caption = firstText(imageData, ["caption", "credit"]);
 
   return `
-    <figure class="structured-media">
-      ${renderImageTag(imageData, alt, "structured-media", "block-image", renderContext)}
+    <figure class="${escapeHtml(className)}">
+      ${renderImageTag(imageData, alt, className, "block-image", renderContext)}
       ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ""}
     </figure>
   `;
@@ -833,7 +982,7 @@ function safeNumber(value, min, max) {
   return String(Math.min(max, Math.max(min, Math.round(number))));
 }
 
-function sectionClassName(section) {
+function sectionClassName(section, includeBuilderClasses = true) {
   const settings = section.settings || {};
   const websiteSpec = isRecord(settings.websiteSpec) ? settings.websiteSpec : null;
   const style = settings.style || {};
@@ -863,6 +1012,9 @@ function sectionClassName(section) {
     websiteSpec ? "section website-spec-section" : "",
     websiteSpec?.type ? `section-${cssToken(websiteSpec.type)}` : "",
     websiteSpec?.collection === true ? "is-collection" : "",
+    websiteSpec?.type === "hero" && settings.mediaMode === "background"
+      ? "section-media-background has-background-media"
+      : "",
     websiteSpec ? `layout-${layout}` : "",
     websiteSpec ? `container-${container}` : "",
     websiteSpec ? `spacing-${spacing}` : "",
@@ -872,20 +1024,22 @@ function sectionClassName(section) {
     websiteSpec ? `preset-${websiteSpecPreset}` : "",
     websiteSpec ? `shadow-${shadow}` : "",
     websiteSpec ? `decoration-${websiteSpecDecoration}` : "",
-    `section-layout-${layout}`,
-    `section-container-${container}`,
-    `section-spacing-${spacing}`,
-    `section-gap-${gap}`,
-    `section-align-${align}`,
-    `section-valign-${verticalAlign}`,
-    `section-style-${preset}`,
-    `section-shadow-${shadow}`,
-    `section-decoration-${decorationType}`,
-    `section-decoration-${decorationPosition}`,
-    `section-tablet-layout-${tabletLayout}`,
-    `section-tablet-spacing-${tabletSpacing}`,
-    `section-mobile-layout-${mobileLayout}`,
-    `section-mobile-spacing-${mobileSpacing}`,
+    ...(!websiteSpec || includeBuilderClasses ? [
+      `section-layout-${layout}`,
+      `section-container-${container}`,
+      `section-spacing-${spacing}`,
+      `section-gap-${gap}`,
+      `section-align-${align}`,
+      `section-valign-${verticalAlign}`,
+      `section-style-${preset}`,
+      `section-shadow-${shadow}`,
+      `section-decoration-${decorationType}`,
+      `section-decoration-${decorationPosition}`,
+      `section-tablet-layout-${tabletLayout}`,
+      `section-tablet-spacing-${tabletSpacing}`,
+      `section-mobile-layout-${mobileLayout}`,
+      `section-mobile-spacing-${mobileSpacing}`
+    ] : []),
     advancedClassList(settings)
   ].join(" ");
 }
@@ -900,6 +1054,15 @@ function sectionStyleAttribute(section) {
     safeHex(style.accentColor) ? `--section-accent:${safeHex(style.accentColor)}` : "",
     safeNumber(style.radius, 0, 48) ? `--section-radius:${safeNumber(style.radius, 0, 48)}px` : "",
     safeNumber(settings.minHeight, 0, 1200) ? `--section-min-height:${safeNumber(settings.minHeight, 0, 1200)}px` : "",
+    settings.mediaMode === "background" && safeHex(settings.overlayColor)
+      ? `--section-overlay-color:${safeHex(settings.overlayColor)}`
+      : "",
+    settings.mediaMode === "background" && safeRatio(settings.overlayOpacity)
+      ? `--section-overlay-opacity:${safeRatio(settings.overlayOpacity)}`
+      : "",
+    settings.mediaMode === "background"
+      ? `--section-media-position:${safeMediaPosition(settings.mediaPosition)}`
+      : "",
     safeHex(decoration.color) ? `--section-decoration-color:${safeHex(decoration.color)}` : "",
     Number.isFinite(Number(decoration.opacity)) ? `--section-decoration-opacity:${Math.min(0.9, Math.max(0, Number(decoration.opacity)))}` : "",
     animationCssVariables(settings),
@@ -907,6 +1070,26 @@ function sectionStyleAttribute(section) {
   ].filter(Boolean).join("; ");
 
   return declarations ? ` style="${escapeHtml(declarations)}"` : "";
+}
+
+function safeMediaPosition(value) {
+  return ({
+    center: "center center",
+    top: "center top",
+    bottom: "center bottom",
+    left: "left center",
+    right: "right center",
+    "top-left": "left top",
+    "top-right": "right top",
+    "bottom-left": "left bottom",
+    "bottom-right": "right bottom"
+  })[value] || "center center";
+}
+
+function safeRatio(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const number = Number(value);
+  return Number.isFinite(number) ? String(Math.min(0.9, Math.max(0, number))) : "";
 }
 
 function blockClassName(block) {
@@ -1177,6 +1360,201 @@ export function renderBlock(block, renderContext = {}) {
   return '<div class="fallback-content">This content block is not available in the public renderer.</div>';
 }
 
+function websiteSpecBlock(section, role) {
+  return section.blocks.find((block) => String(block.key || "").endsWith(`-${role}`));
+}
+
+function websiteSpecStructuredValue(section) {
+  const block = section.blocks.find((candidate) => candidate.type === "CUSTOM" && isRecord(candidate.value));
+  return isRecord(block?.value) ? block.value : {};
+}
+
+function renderWebsiteSpecIntro(section, headingLevel = "h2") {
+  const structured = websiteSpecStructuredValue(section);
+  const eyebrow = websiteSpecBlock(section, "eyebrow");
+  const heading = websiteSpecBlock(section, "heading");
+  const body = websiteSpecBlock(section, "body");
+  const eyebrowText = typeof eyebrow?.value === "string"
+    ? eyebrow.value
+    : firstText(structured, ["eyebrow", "note", "kicker"]);
+  const headingText = firstText(structured, ["heading", "title", "headline"]);
+  const bodyText = firstText(structured, ["body", "text", "copy", "description"]);
+
+  return [
+    eyebrowText ? `<p class="eyebrow">${escapeHtml(eyebrowText)}</p>` : "",
+    heading?.value
+      ? renderRichText(heading.value)
+      : headingText
+        ? `<${headingLevel}>${escapeHtml(headingText)}</${headingLevel}>`
+        : "",
+    body?.value
+      ? body.type === "TEXT" ? `<p>${escapeHtml(body.value)}</p>` : renderRichText(body.value)
+      : bodyText ? `<p>${escapeHtml(bodyText)}</p>` : ""
+  ].join("");
+}
+
+function renderWebsiteSpecCta(section) {
+  const structured = websiteSpecStructuredValue(section);
+  const block = websiteSpecBlock(section, "cta");
+  const action = isRecord(block?.value)
+    ? block.value
+    : isRecord(structured.cta)
+      ? structured.cta
+      : null;
+  if (!action?.label || !action?.url) return "";
+
+  const style = oneOf(action.style, ["primary", "secondary", "link"], "primary");
+  return `<a class="button action-link ${escapeHtml(style)}" href="${escapeHtml(safePublicHref(action.url))}">${escapeHtml(action.label)}</a>`;
+}
+
+function renderWebsiteSpecCards(section, type, renderContext) {
+  const structured = websiteSpecStructuredValue(section);
+  const items = Array.isArray(structured.items) ? structured.items : [];
+  const cards = items
+    .map((item) => {
+      if (!isRecord(item)) return "";
+
+      const title = firstText(item, ["title", "name", "label"]);
+      const body = firstText(item, ["body", "text", "copy", "description", "content"]);
+      const label = firstText(item, ["label", "role", "kicker", "eyebrow", "meta"]);
+      const value = firstText(item, ["value", "price", "metric"]);
+      const media = renderStructuredImage(
+        item.image || item.media,
+        title || label,
+        renderContext,
+        "card-media"
+      );
+      const url = item.url ? safePublicHref(item.url) : "";
+      if (!title && !body && !label && !value && !media) return "";
+
+      return [
+        '<article class="content-card structured-card">',
+        media,
+        label && label !== title ? `<small>${escapeHtml(label)}</small>` : "",
+        title ? `<h3>${escapeHtml(title)}</h3>` : "",
+        value ? `<strong>${escapeHtml(value)}</strong>` : "",
+        body ? `<p>${escapeHtml(body)}</p>` : "",
+        url ? `<a href="${escapeHtml(url)}">Learn more</a>` : "",
+        "</article>"
+      ].join("");
+    })
+    .join("");
+
+  if (!cards) return "";
+
+  return `<div class="card-grid structured-items${type === "pricing" ? " pricing-grid" : ""}">${cards}</div>`;
+}
+
+function renderWebsiteSpecFaq(section) {
+  const structured = websiteSpecStructuredValue(section);
+  const items = Array.isArray(structured.items) ? structured.items : [];
+  const entries = items
+    .map((item, index) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name", "label"]);
+      const body = firstText(item, ["body", "text", "copy", "description", "content"]);
+      if (!title && !body) return "";
+
+      return [
+        `<details ${index === 0 ? "open" : ""}>`,
+        `<summary>${escapeHtml(title || `Question ${index + 1}`)}</summary>`,
+        body ? `<p>${escapeHtml(body)}</p>` : "",
+        "</details>"
+      ].join("");
+    })
+    .join("");
+
+  return entries ? `<div class="faq-list">${entries}</div>` : "";
+}
+
+function renderWebsiteSpecMedia(section, className, renderContext) {
+  const block = section.blocks.find((candidate) => candidate.type === "IMAGE");
+  if (!block) return "";
+
+  return `<figure class="${escapeHtml(className)}">${renderBlock(block, renderContext)}</figure>`;
+}
+
+function renderWebsiteSpecBackgroundMedia(section, renderContext) {
+  if (section.settings?.websiteSpec?.type !== "hero" || section.settings?.mediaMode !== "background") {
+    return "";
+  }
+
+  const media = renderWebsiteSpecMedia(section, "section-background-media", renderContext);
+  return media ? `${media}<span class="section-background-overlay" aria-hidden="true"></span>` : "";
+}
+
+function renderWebsiteSpecSection(section, renderContext) {
+  const websiteSpec = section.settings?.websiteSpec;
+  const type = websiteSpec?.type || "text";
+  const structured = websiteSpecStructuredValue(section);
+  const intro = renderWebsiteSpecIntro(section, type === "hero" ? "h1" : "h2");
+  const cta = renderWebsiteSpecCta(section);
+
+  if (type === "hero") {
+    const points = websiteSpecBlock(section, "points");
+    const items = isRecord(points?.value) && Array.isArray(points.value.items) ? points.value.items : [];
+    const backgroundMedia = section.settings?.mediaMode === "background";
+    return [
+      `<div class="section-copy content-block hero-copy">${intro}${cta}${renderHeroPoints(items)}</div>`,
+      backgroundMedia ? "" : renderWebsiteSpecMedia(section, "section-media hero-media", renderContext)
+    ].join("");
+  }
+
+  if (["featureGrid", "pricing", "faq"].includes(type)) {
+    const collection = type === "faq"
+      ? renderWebsiteSpecFaq(section)
+      : renderWebsiteSpecCards(section, type, renderContext);
+    return `<div class="section-copy content-block">${intro}${cta}</div>${collection}`;
+  }
+
+  if (type === "custom") {
+    const items = Array.isArray(structured.items) ? structured.items : [];
+    const collection = renderStructuredItems(
+      items,
+      firstText(structured, ["variant"]) || "feature-cards",
+      renderContext
+    );
+    return `<div class="section-copy content-block">${intro}${cta}</div>${collection}`;
+  }
+
+  if (type === "gallery") {
+    const gallery = section.blocks.find((candidate) => candidate.type === "GALLERY");
+    return `<div class="section-copy content-block">${intro}${cta}</div>${gallery ? renderBlock(gallery, renderContext) : ""}`;
+  }
+
+  if (type === "contactForm") {
+    const form = section.blocks.find((candidate) => candidate.type === "CONTACT_FORM");
+    return `<div class="section-copy content-block">${intro}</div>${form ? renderBlock(form, renderContext) : ""}`;
+  }
+
+  if (type === "productList") {
+    const products = section.blocks.find((candidate) => candidate.type === "PRODUCT_LIST");
+    return `<div class="section-copy content-block">${intro}${cta}</div>${products ? renderBlock(products, renderContext) : ""}`;
+  }
+
+  if (type === "cta") {
+    return `<div class="section-copy content-block cta-copy">${intro}${cta}</div>`;
+  }
+
+  return [
+    `<div class="section-copy content-block">${intro}${cta}</div>`,
+    renderWebsiteSpecMedia(section, "section-media", renderContext)
+  ].join("");
+}
+
+function renderStandardSectionBlocks(section, canEdit, renderContext) {
+  return section.blocks
+    .map(
+      (block, blockIndex, blocks) => `
+        <div class="${escapeHtml(blockClassName(block))}${canEdit && state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? " visual-selected" : ""}" data-block-key="${escapeHtml(block.key)}" data-editable="${block.editable}"${canEdit ? ` data-visual-block tabindex="0" role="group" aria-label="${escapeHtml(block.label || block.key || `Element ${blockIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? "true" : "false"}"` : ""}${advancedIdAttribute(block.settings || {})}${advancedStyleAttribute(block.settings || {})}>
+          ${canEdit ? renderVisualBlockControls(block, blockIndex, blocks) : ""}
+          ${canEdit ? `<div data-visual-edit-surface>${renderBlock(block, renderContext)}</div>` : renderBlock(block, renderContext)}
+        </div>
+      `
+    )
+    .join("");
+}
+
 export function renderSections(page, options = {}) {
   const layout = normalizePageLayout(page.content?.layout);
   const canEdit = options.canEdit === true;
@@ -1191,21 +1569,17 @@ export function renderSections(page, options = {}) {
       ${page.sections
         .map(
           (section, sectionIndex, sections) => `
-            <section class="${escapeHtml(sectionClassName(section))}${canEdit && state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? " visual-selected" : ""}" data-section-id="${escapeHtml(section.id)}" data-section-key="${escapeHtml(section.key || section.id)}"${canEdit ? ` data-visual-section tabindex="0" role="group" aria-label="${escapeHtml(section.label || section.key || `Section ${sectionIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? "true" : "false"}"` : ""}${advancedIdAttribute(section.settings || {})}${sectionStyleAttribute(section)}>
+            <section class="${escapeHtml(sectionClassName(section, canEdit))}${isRecord(section.settings?.websiteSpec) && sectionIndex === 0 ? " is-first" : ""}${canEdit && state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? " visual-selected" : ""}" data-section-id="${escapeHtml(section.id)}" data-section-key="${escapeHtml(section.key || section.id)}"${canEdit ? ` data-visual-section tabindex="0" role="group" aria-label="${escapeHtml(section.label || section.key || `Section ${sectionIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? "true" : "false"}"` : ""}${advancedIdAttribute(section.settings || {})}${sectionStyleAttribute(section)}>
               ${canEdit ? renderVisualSectionControls(section, sectionIndex, sections) : ""}
+              ${isRecord(section.settings?.websiteSpec) && !canEdit
+                ? renderWebsiteSpecBackgroundMedia(section, renderContext)
+                : ""}
               ${renderSectionDecoration(section)}
               ${section.label ? `<h2 class="section-label">${escapeHtml(section.label)}</h2>` : ""}
               ${isRecord(section.settings?.websiteSpec) ? '<div class="section-inner">' : ""}
-              ${section.blocks
-                .map(
-                  (block, blockIndex, blocks) => `
-                    <div class="${escapeHtml(blockClassName(block))}${canEdit && state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? " visual-selected" : ""}" data-block-key="${escapeHtml(block.key)}" data-editable="${block.editable}"${canEdit ? ` data-visual-block tabindex="0" role="group" aria-label="${escapeHtml(block.label || block.key || `Element ${blockIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "block" && state.visualEditorSelection.key === block.key ? "true" : "false"}"` : ""}${advancedIdAttribute(block.settings || {})}${advancedStyleAttribute(block.settings || {})}>
-                      ${canEdit ? renderVisualBlockControls(block, blockIndex, blocks) : ""}
-                      ${canEdit ? `<div data-visual-edit-surface>${renderBlock(block, renderContext)}</div>` : renderBlock(block, renderContext)}
-                    </div>
-                  `
-                )
-                .join("")}
+              ${isRecord(section.settings?.websiteSpec) && !canEdit
+                ? renderWebsiteSpecSection(section, renderContext)
+                : renderStandardSectionBlocks(section, canEdit, renderContext)}
               ${isRecord(section.settings?.websiteSpec) ? "</div>" : ""}
             </section>
           `
@@ -1440,11 +1814,21 @@ export function renderPageContent(page, options = {}) {
   return `<div class="website-spec-page" data-design-theme="${escapeHtml(cssToken(theme, "generated-site"))}">${content}</div>`;
 }
 
-export function renderFooter(page, canEdit = false) {
+export function renderFooter(page, canEdit = false, options = {}) {
   const siteTitle = state.config?.siteSettings?.title || state.config?.app?.name || page.title || "Website";
   const fallbackText = `© ${new Date().getFullYear()} ${siteTitle}`;
   const footerText = page.content?.footerText || translateString("footer.copyright", fallbackText);
   const editButton = canEdit ? renderEditorButton("Edit Footer", "data-edit-footer") : "";
+
+  if (page.content?.source === "websiteSpec") {
+    const description = state.config?.siteSettings?.description || page.content?.project?.summary || "";
+    return `
+      <strong>${escapeHtml(siteTitle)}</strong>
+      ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+      ${options.menu ? `<nav aria-label="Footer navigation">${options.menu}</nav>` : ""}
+      ${editButton}
+    `;
+  }
 
   return `<span>${escapeHtml(footerText)}</span>${editButton}`;
 }
@@ -1489,9 +1873,9 @@ export function renderPage(page) {
 
   applyDesignSystem(state.config?.siteSettings?.design);
   applySiteCustomCss();
+  applyGeneratedPageContext(page);
   applySeoDocument(createPageSeoDocument(page, runtimeSeoContext({ locale: page.locale || currentLocale() })));
-  elements.brand.textContent = page.title || "CMS Site";
-  elements.brand.href = "/";
+  updatePublicBrand();
   updateHeaderLanguageSwitcher(page);
   elements.page.innerHTML = `
     ${canEditCms || canEditProducts ? renderVisualEditorToolbar(page) : ""}
@@ -1506,6 +1890,7 @@ export function renderPage(page) {
   document.body.classList.toggle("editor-enabled", visualEditorActive);
   document.body.dataset.visualDevice = visualEditorActive ? state.visualEditorDevice : "desktop";
   setStatus(visualEditorActive ? `Editing ${page.title}` : "");
+  applyGeneratedPageMotion(page.content?.source === "websiteSpec" && !visualEditorActive);
 }
 
 export function renderPostContent(post) {
@@ -1522,15 +1907,16 @@ export function renderPostContent(post) {
 export function renderPost(post) {
   applyDesignSystem(state.config?.siteSettings?.design);
   applySiteCustomCss();
+  applyGeneratedPageContext({});
   applySeoDocument(createPostSeoDocument(post, runtimeSeoContext({ locale: post.locale || currentLocale() })));
-  elements.brand.textContent = state.config?.siteSettings?.title || "CMS Site";
-  elements.brand.href = "/";
+  updatePublicBrand();
   elements.page.innerHTML = renderPostContent(post);
   elements.page.removeAttribute("data-server-rendered");
   elements.footer.innerHTML = renderFooter({ title: post.title }, false);
 
   document.body.classList.remove("auth-enabled", "dashboard-enabled");
   document.body.classList.remove("editor-enabled");
+  applyGeneratedPageMotion(false);
   setStatus(state.user ? `${post.status} post preview as ${state.user.email}` : "");
 }
 

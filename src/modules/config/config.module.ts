@@ -117,6 +117,13 @@ async function readSiteSettings(context: ModuleContext) {
     searchIndexing: storedSettings.searchIndexing !== false,
     sitemapEnabled: storedSettings.sitemapEnabled !== false,
     design: normalizeDesignSystemSettings(storedSettings.design),
+    generatedFrom: typeof storedSettings.generatedFrom === "string" ? storedSettings.generatedFrom : "",
+    generatedCss: typeof storedSettings.generatedCss === "string" ? storedSettings.generatedCss : "",
+    experience: storedSettings.experience,
+    logoUrl: typeof storedSettings.logoUrl === "string" ? storedSettings.logoUrl : "",
+    logoMode: typeof storedSettings.logoMode === "string" ? storedSettings.logoMode : "text",
+    logoAltText: typeof storedSettings.logoAltText === "string" ? storedSettings.logoAltText : "",
+    logoHeight: typeof storedSettings.logoHeight === "number" ? storedSettings.logoHeight : 42,
     customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }
@@ -379,6 +386,24 @@ export const configModule: AppModule = {
         const siteSettings = req.body;
 
         await context.prisma.$transaction(async (tx) => {
+          const current = await tx.moduleSetting.findUnique({
+            where: {
+              siteId_moduleId_key: {
+                siteId: site.id,
+                moduleId: "config",
+                key: "site"
+              }
+            },
+            select: { value: true }
+          });
+          const stored = current?.value && typeof current.value === "object" && !Array.isArray(current.value)
+            ? current.value as Record<string, unknown>
+            : {};
+          const mergedSettings = {
+            ...stored,
+            ...siteSettings
+          };
+
           await tx.site.update({
             where: {
               id: site.id
@@ -396,13 +421,13 @@ export const configModule: AppModule = {
               }
             },
             update: {
-              value: siteSettings as Prisma.InputJsonValue
+              value: mergedSettings as Prisma.InputJsonValue
             },
             create: {
               siteId: site.id,
               moduleId: "config",
               key: "site",
-              value: siteSettings as Prisma.InputJsonValue
+              value: mergedSettings as Prisma.InputJsonValue
             }
           });
           await writeAuditLog(tx, {

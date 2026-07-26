@@ -334,6 +334,9 @@ async function syncGeneratedSiteSettings(
     searchIndexing: stored.searchIndexing !== false,
     sitemapEnabled: stored.sitemapEnabled !== false,
     design,
+    generatedFrom: "websiteSpec",
+    generatedCss: sanitizeGeneratedStylesheet(plan.style.runtimeCss, 60_000),
+    experience: plan.style.experience,
     customCss: plan.style.customCss || (typeof stored.customCss === "string" ? stored.customCss : ""),
     ...(plan.branding
       ? {
@@ -709,7 +712,8 @@ function mapSection(
       label: section.heading ?? "Contact form",
       value: {
         formKey: `${pageSlug}-${section.key}`,
-        fields: ["name", "email", "phone", "message"]
+        fields: ["name", "email", "phone", "subject", "message"],
+        ...(section.cta?.label ? { buttonLabel: section.cta.label } : {})
       },
       sortOrder: blocks.length,
       editable: true

@@ -12,7 +12,15 @@
   <body>
     <header class="site-header">
       <a class="brand" href="/" data-brand>Code Epsylon</a>
-      <nav class="site-nav" data-menu aria-label="Primary navigation"></nav>
+      <button
+        class="site-nav-toggle"
+        type="button"
+        aria-label="Toggle navigation"
+        aria-controls="site-navigation"
+        aria-expanded="false"
+        data-site-nav-toggle
+      >&#9776;</button>
+      <nav id="site-navigation" class="site-nav" data-menu aria-label="Primary navigation"></nav>
     </header>
 
     <main class="page-shell">

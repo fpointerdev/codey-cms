@@ -143,6 +143,10 @@ button:disabled {
   text-decoration: none;
 }
 
+.site-nav-toggle {
+  display: none;
+}
+
 .site-nav {
   display: flex;
   flex-wrap: wrap;
@@ -810,12 +814,13 @@ body:not(.auth-enabled):not(.dashboard-enabled) [data-page]:empty {
   text-transform: uppercase;
 }
 
-.content-block {
+body:not([data-codey-runtime-theme="true"]) .content-block {
   position: relative;
   margin: 0 0 24px;
 }
 
 .content-block[data-editable="true"] {
+  position: relative;
   outline: 1px dashed transparent;
   outline-offset: 8px;
 }

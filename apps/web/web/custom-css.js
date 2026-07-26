@@ -52,14 +52,14 @@ export function sanitizeInlineCss(value = "") {
     .join("; ");
 }
 
-export function sanitizeStylesheet(value = "") {
+export function sanitizeStylesheet(value = "", maxLength = 20000) {
   const css = String(value || "")
     .replace(/<\/?style[^>]*>/gi, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
-    .slice(0, 20000)
+    .slice(0, maxLength)
     .trim();
 
-  if (!css || dangerousCssPattern.test(css) || /[<>]/.test(css)) return "";
+  if (!css || dangerousCssPattern.test(css) || css.includes("<")) return "";
 
   return css;
 }

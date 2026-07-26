@@ -1,6 +1,7 @@
 export type PublicShellContent = {
   brand: string;
   body: string;
+  bodyAttributes?: Record<string, string>;
   footer: string;
   head?: string;
   menu?: string;
@@ -8,6 +9,10 @@ export type PublicShellContent = {
 
 export function injectPublicShellContent(html: string, content: PublicShellContent) {
   return html
+    .replace(
+      /<body([^>]*)>/i,
+      (_match, attributes: string) => `<body${attributes}${renderBodyAttributes(content.bodyAttributes)}>`
+    )
     .replace(
       /<\/head>/i,
       () => `${content.head ?? ""}</head>`
@@ -29,4 +34,21 @@ export function injectPublicShellContent(html: string, content: PublicShellConte
       (_match, beforeAttribute: string, afterAttribute: string) =>
         `<footer${beforeAttribute}data-footer${afterAttribute}>${content.footer}</footer>`
     );
+}
+
+function renderBodyAttributes(attributes: Record<string, string> | undefined) {
+  if (!attributes) return "";
+
+  return Object.entries(attributes)
+    .filter(([name, value]) => /^data-[a-z0-9-]+$/.test(name) && Boolean(value))
+    .map(([name, value]) => ` ${name}="${escapeAttribute(value)}"`)
+    .join("");
+}
+
+function escapeAttribute(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }

@@ -356,10 +356,17 @@ export class InstallationService {
     const stored = existing?.value && typeof existing.value === "object" && !Array.isArray(existing.value)
       ? existing.value as Record<string, unknown>
       : {};
+    const generatedSite = stored.generatedFrom === "websiteSpec";
+    const generatedTitle = generatedSite && typeof stored.title === "string" && stored.title.trim()
+      ? stored.title.trim()
+      : input.siteName;
+    const generatedMetaTitle = generatedSite && typeof stored.metaTitle === "string" && stored.metaTitle.trim()
+      ? stored.metaTitle.trim()
+      : generatedTitle;
     const value = {
       ...stored,
-      title: input.siteName,
-      metaTitle: input.siteName,
+      title: generatedTitle,
+      metaTitle: generatedMetaTitle,
       siteUrl: this.config.app.publicUrl,
       searchIndexing: input.searchIndexing
     };
@@ -398,38 +405,33 @@ export class InstallationService {
         publishedAt: new Date()
       }
     });
-    const section = await tx.pageSection.upsert({
-      where: {
-        pageId_key: { pageId: page.id, key: "welcome" }
-      },
-      update: {},
-      create: {
-        pageId: page.id,
-        key: "welcome",
-        label: "Welcome",
-        settings: {
-          elementId: "hero-creative",
-          layout: "full-width",
-          container: "content"
+    const existingSections = await tx.pageSection.count({ where: { pageId: page.id } });
+    if (existingSections === 0) {
+      const section = await tx.pageSection.create({
+        data: {
+          pageId: page.id,
+          key: "welcome",
+          label: "Welcome",
+          settings: {
+            elementId: "hero-creative",
+            layout: "full-width",
+            container: "content"
+          }
         }
-      }
-    });
-    await tx.contentBlock.upsert({
-      where: {
-        pageId_key: { pageId: page.id, key: "welcome-copy" }
-      },
-      update: {},
-      create: {
-        pageId: page.id,
-        sectionId: section.id,
-        type: "RICH_TEXT",
-        key: "welcome-copy",
-        label: "Welcome copy",
-        value: `<h1>${escapeHtml(siteName)}</h1><p>Your website is ready to edit.</p>`,
-        settings: {},
-        editable: true
-      }
-    });
+      });
+      await tx.contentBlock.create({
+        data: {
+          pageId: page.id,
+          sectionId: section.id,
+          type: "RICH_TEXT",
+          key: "welcome-copy",
+          label: "Welcome copy",
+          value: `<h1>${escapeHtml(siteName)}</h1><p>Your website is ready to edit.</p>`,
+          settings: {},
+          editable: true
+        }
+      });
+    }
     const menu = await tx.menu.upsert({
       where: {
         locale_slug: { locale: "en", slug: "main" }

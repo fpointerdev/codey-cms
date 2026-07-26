@@ -56,10 +56,32 @@ test("an empty runtime can be claimed once and used immediately", { timeout: 60_
         moduleId: "config",
         key: "site",
         value: {
+          title: "Generated site",
+          metaTitle: "Generated site",
           description: "Generated website description",
           design: { preset: "custom" },
+          generatedFrom: "websiteSpec",
+          generatedCss: "body[data-codey-preview='cms']{background:#fff}",
           customCss: ".website-spec-page{--codey-dna:test-install;}"
         }
+      }
+    });
+    const generatedHome = await prisma.cmsPage.create({
+      data: {
+        title: "Home",
+        slug: "home",
+        locale: "en",
+        translationGroupId: "home",
+        content: { source: "websiteSpec", hideTitle: true },
+        status: "PUBLISHED",
+        publishedAt: new Date()
+      }
+    });
+    await prisma.pageSection.create({
+      data: {
+        pageId: generatedHome.id,
+        key: "generated-hero",
+        settings: { websiteSpec: { type: "hero" } }
       }
     });
 
@@ -91,17 +113,21 @@ test("an empty runtime can be claimed once and used immediately", { timeout: 60_
     assert.equal(installation?.ownerUserId, owner?.id);
     assert.deepEqual(owner?.roles.map(({ role }) => role.name), ["owner"]);
     assert.equal(await prisma.cmsPage.count({ where: { slug: "home", status: "PUBLISHED" } }), 1);
+    assert.equal(await prisma.pageSection.count({ where: { pageId: generatedHome.id } }), 1);
+    assert.equal(await prisma.pageSection.count({ where: { pageId: generatedHome.id, key: "welcome" } }), 0);
     const siteSettings = await prisma.moduleSetting.findUnique({
       where: {
         siteId_moduleId_key: { siteId: preparedSite.id, moduleId: "config", key: "site" }
       }
     });
     assert.deepEqual(siteSettings?.value, {
+      title: "Generated site",
+      metaTitle: "Generated site",
       description: "Generated website description",
       design: { preset: "custom" },
+      generatedFrom: "websiteSpec",
+      generatedCss: "body[data-codey-preview='cms']{background:#fff}",
       customCss: ".website-spec-page{--codey-dna:test-install;}",
-      title: "First CodeY Site",
-      metaTitle: "First CodeY Site",
       siteUrl: process.env.APP_PUBLIC_URL,
       searchIndexing: false
     });

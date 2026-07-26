@@ -1,15 +1,25 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { injectPublicShellContent } from "../src/core/public-shell.js";
 
 const {
   renderPageContent,
   renderFooter,
+  renderMenuItems,
   renderPostContent,
   renderProductDetailContent,
   renderShopListingContent,
   withPublicRenderContext
 } = await import("../apps/web/web/public-renderer.js");
+
+test("public shell includes an accessible mobile navigation control", async () => {
+  const shell = await readFile(new URL("../apps/web/index.html", import.meta.url), "utf8");
+
+  assert.match(shell, /data-site-nav-toggle/);
+  assert.match(shell, /aria-controls="site-navigation"/);
+  assert.match(shell, /<nav id="site-navigation"/);
+});
 
 test("public page markup renders meaningful sanitized content without editor controls", () => {
   const page = {
@@ -158,9 +168,59 @@ test("WebsiteSpec pages keep preview-compatible layout hooks and editable hero p
   assert.match(html, /preset-refined-light/);
   assert.match(html, /decoration-narrative-ribbon/);
   assert.match(html, /<div class="section-inner">/);
+  assert.match(html, /section-copy content-block hero-copy/);
   assert.match(html, /class="hero-points"/);
-  assert.match(html, /website-spec-heading/);
-  assert.match(html, /section-media/);
+  assert.match(html, /<figure class="section-media hero-media">/);
+  assert.doesNotMatch(html, /content-type-rich-text website-spec-heading/);
+});
+
+test("WebsiteSpec hero background settings render matching public hooks", () => {
+  const html = renderPageContent({
+    title: "Home",
+    content: { source: "websiteSpec", hideTitle: true },
+    sections: [{
+      id: "hero-background-section",
+      key: "hero",
+      settings: {
+        layout: "full-bleed",
+        container: "full",
+        mediaMode: "background",
+        mediaPosition: "top",
+        overlayColor: "#071014",
+        overlayOpacity: 0.56,
+        websiteSpec: {
+          type: "hero",
+          composition: "full-bleed",
+          collection: false
+        }
+      },
+      blocks: [
+        {
+          key: "hero-heading",
+          type: "RICH_TEXT",
+          value: "<h1>Architecture for daily life</h1>",
+          settings: {},
+          editable: true
+        },
+        {
+          key: "hero-image",
+          type: "IMAGE",
+          value: { url: "/uploads/hero.jpg", alt: "Architects reviewing a physical model" },
+          settings: {},
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.match(html, /section-hero\s+section-media-background\s+has-background-media/);
+  assert.match(html, /layout-full-bleed/);
+  assert.match(html, /--section-overlay-color:#071014/);
+  assert.match(html, /--section-overlay-opacity:0\.56/);
+  assert.match(html, /--section-media-position:center top/);
+  assert.match(html, /<figure class="section-background-media">/);
+  assert.match(html, /class="section-background-overlay"/);
+  assert.doesNotMatch(html, /<figure class="section-media hero-media">/);
 });
 
 test("WebsiteSpec collection headings and actions render in one semantic copy group", () => {
@@ -197,6 +257,18 @@ test("public footer keeps the configured site name on every page", () => {
 
   assert.match(html, /© \d{4} Washgo/);
   assert.doesNotMatch(html, /© \d{4} Home/);
+});
+
+test("public menu marks the current route", () => {
+  const html = withPublicRenderContext({
+    path: "/services/"
+  }, () => renderMenuItems([
+    { id: "home", label: "Home", url: "/" },
+    { id: "services", label: "Services", url: "/services" }
+  ]));
+
+  assert.match(html, /href="\/services" aria-current="page"/);
+  assert.doesNotMatch(html, /href="\/" aria-current="page"/);
 });
 
 test("structured tabs render accessible controls without an item limit", () => {
@@ -238,6 +310,11 @@ test("public post markup and shell injection preserve the application shell", ()
   const shell = `<!doctype html><html><head><title>Site</title></head><body><a class="brand" data-brand>Old</a><nav data-menu></nav><article data-page></article><footer class="site-footer" data-footer></footer><script src="/app.js"></script></body></html>`;
   const rendered = injectPublicShellContent(shell, {
     brand: "CodeY $&",
+    bodyAttributes: {
+      "data-codey-preview": "cms",
+      "data-codey-runtime-theme": "true",
+      "data-design-family": "editorial"
+    },
     menu: '<a href="/about">About</a>',
     body: `${body}<p>$& stays literal</p>`,
     footer: "Copyright $1",
@@ -245,6 +322,7 @@ test("public post markup and shell injection preserve the application shell", ()
   });
 
   assert.match(rendered, /data-server-rendered="true"/);
+  assert.match(rendered, /<body data-codey-preview="cms" data-codey-runtime-theme="true" data-design-family="editorial">/);
   assert.match(rendered, /Published post/);
   assert.match(rendered, />CodeY \$&<\/a>/);
   assert.match(rendered, /<nav data-menu><a href="\/about">About<\/a><\/nav>/);

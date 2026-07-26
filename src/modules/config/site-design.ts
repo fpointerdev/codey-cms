@@ -190,7 +190,7 @@ export function designSystemCss(value: unknown) {
   const buttonText = design.buttons.style === "outline" ? design.colors.primary : design.colors.primaryContrast;
 
   return `
-body:not(.auth-enabled):not(.dashboard-enabled) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) {
   --bg: ${design.colors.background};
   --page: ${design.colors.surface};
   --surface: ${design.colors.surface};
@@ -215,54 +215,56 @@ body:not(.auth-enabled):not(.dashboard-enabled) {
   font-family: var(--site-body-font);
   font-size: ${design.typography.baseSize}px;
 }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(h1, h2, h3, h4, h5, h6, .brand) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(h1, h2, h3, h4, h5, h6, .brand) {
   font-family: var(--site-heading-font);
   font-weight: var(--site-heading-weight);
 }
-body:not(.auth-enabled):not(.dashboard-enabled) .page-title { font-size: var(--site-page-title-size); }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-title { font-size: var(--site-page-title-size); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
   font-size: var(--site-section-title-size);
 }
-body:not(.auth-enabled):not(.dashboard-enabled) .page-shell { width: min(100%, var(--site-content-width)); }
-body:not(.auth-enabled):not(.dashboard-enabled) .page-section { padding-block: var(--site-section-spacing); }
-body:not(.auth-enabled):not(.dashboard-enabled) .site-header {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-shell { width: min(100%, var(--site-content-width)); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-section { padding-block: var(--site-section-spacing); }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-header {
   position: ${design.header.sticky ? "sticky" : "relative"};
   background: ${design.header.background};
   color: ${design.header.text};
 }
-body:not(.auth-enabled):not(.dashboard-enabled) .site-header :where(.brand, .site-nav a) { color: ${design.header.text}; }
-body:not(.auth-enabled):not(.dashboard-enabled) .site-footer { background: ${design.footer.background}; color: ${design.footer.text}; }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(.action-link, .contact-form > button, .shop-product-card button) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-header :where(.brand, .site-nav a) { color: ${design.header.text}; }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-footer { background: ${design.footer.background}; color: ${design.footer.text}; }
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.action-link, .contact-form > button, .shop-product-card button) {
   border-color: ${design.colors.primary};
   border-radius: ${design.buttons.radius}px;
   background: ${buttonBackground};
   color: ${buttonText};
 }
-body:not(.auth-enabled):not(.dashboard-enabled) :where(.structured-card, .shop-product-card) {
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-card, .shop-product-card) {
   border-radius: var(--site-radius);
   box-shadow: var(--site-shadow);
 }
 @media (max-width: 680px) {
-  body:not(.auth-enabled):not(.dashboard-enabled) .page-title { font-size: ${typeSizes.pageMobile}px; }
-  body:not(.auth-enabled):not(.dashboard-enabled) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
+  body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-title { font-size: ${typeSizes.pageMobile}px; }
+  body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
     font-size: ${typeSizes.sectionMobile}px;
   }
 }`.trim();
 }
 
-export function sanitizeSiteStylesheet(value: unknown) {
+export function sanitizeSiteStylesheet(value: unknown, maxLength = 20_000) {
   const css = typeof value === "string"
-    ? value.replace(/<\/?style[^>]*>/gi, "").replace(/\/\*[\s\S]*?\*\//g, "").slice(0, 20_000).trim()
+    ? value.replace(/<\/?style[^>]*>/gi, "").replace(/\/\*[\s\S]*?\*\//g, "").slice(0, maxLength).trim()
     : "";
-  const dangerous = /(@import|expression\s*\(|javascript:|vbscript:|data:text\/html|(?:^|[;{])\s*behavior\s*:|-moz-binding|<|>)/i;
+  const dangerous = /(@import|expression\s*\(|javascript:|vbscript:|data:text\/html|(?:^|[;{])\s*behavior\s*:|-moz-binding|<)/i;
 
   return css && !dangerous.test(css) ? css : "";
 }
 
-export function publicSiteStyleTag(design: unknown, customCss: unknown) {
+export function publicSiteStyleTag(design: unknown, customCss: unknown, generatedCss?: unknown) {
   const custom = sanitizeSiteStylesheet(customCss);
+  const generated = sanitizeSiteStylesheet(generatedCss, 60_000);
   const designTag = `<style data-site-design-system>${designSystemCss(design)}</style>`;
+  const generatedTag = generated ? `<style data-codey-generated-theme>${generated}</style>` : "";
   const customTag = custom ? `<style data-site-custom-css>${custom}</style>` : "";
 
-  return `${designTag}${customTag}`;
+  return `${designTag}${generatedTag}${customTag}`;
 }
