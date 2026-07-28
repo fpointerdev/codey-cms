@@ -15,6 +15,7 @@ import { renderAdminShell, renderFormMessage } from "./ui.js";
 import { designSystemCss } from "./design-system.js";
 import { hydrateRichEditors } from "./rich-editor.js";
 import { sanitizeStylesheet, styleAttribute } from "./custom-css.js";
+import { pageChangeToken } from "./editor-sync.js";
 
 function statusOptionHtml(value = "DRAFT") {
   return ["DRAFT", "PUBLISHED", "ARCHIVED"]
@@ -898,6 +899,7 @@ export function renderPageBuilderPage(page, message = "") {
   }
 
   state.builderPage = page;
+  state.builderPageChangeToken = pageChangeToken(page);
   if (!state.activeBuilderSectionId || !page.sections?.some((section) => section.id === state.activeBuilderSectionId)) {
     state.activeBuilderSectionId = page.sections?.[0]?.id || null;
   }

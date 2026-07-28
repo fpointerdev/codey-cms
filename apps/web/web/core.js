@@ -1,3 +1,5 @@
+import { recordPageChange } from "./editor-sync.js";
+
 const defaultApiUrl = "/api/v1";
 
 function storedValue(key) {
@@ -25,6 +27,7 @@ export const state = {
   menu: null,
   page: null,
   builderPage: null,
+  builderPageChangeToken: "",
   builderPageRevisions: [],
   builderRevisionComparison: null,
   builderRevisionSlug: "",
@@ -781,6 +784,7 @@ export function resetState() {
   state.menu = null;
   state.page = null;
   state.builderPage = null;
+  state.builderPageChangeToken = "";
   state.builderPageRevisions = [];
   state.builderRevisionComparison = null;
   state.builderRevisionSlug = "";
@@ -935,6 +939,11 @@ async function apiRequest(path, options, allowRefresh, includeMeta = false) {
     error.code = body?.error?.code;
     error.details = body?.error?.details || null;
     throw error;
+  }
+
+  const method = String(options.method || "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && body.data?.page) {
+    recordPageChange(body.data.page);
   }
 
   return includeMeta ? { data: body.data, meta: body.meta || {} } : body.data;
