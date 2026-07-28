@@ -151,6 +151,54 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   expect(browserErrors).toEqual([]);
 });
 
+test("backend builder follows visual editor changes from another tab", async ({ page }) => {
+  await login(page);
+  await page.getByRole("link", { name: "Pages", exact: true }).click();
+  const homeRow = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "Home", exact: true })
+  });
+  await homeRow.getByRole("link", { name: "Backend builder" }).click();
+  await expect(page.locator("[data-page-builder]")).toBeVisible();
+
+  const visualEditor = await page.context().newPage();
+  let originalText = "";
+  let updatedText = "";
+  try {
+    await visualEditor.goto("/?edit=1");
+    await expect(visualEditor.locator("[data-editor-ui].visual-editor-bar")).toBeVisible();
+    const visualBlock = visualEditor.locator("[data-visual-block]").first();
+    originalText = (await visualBlock.locator("[data-visual-edit-surface]").innerText()).trim();
+    updatedText = `Cross-tab sync ${Date.now()}`;
+
+    await visualBlock.click();
+    await visualEditor.locator("[data-visual-start-inline]").first().click();
+    await visualEditor.locator("[data-visual-inline-editor]").fill(updatedText);
+    await visualEditor.locator("[data-visual-save-inline]").click();
+    await expect(visualEditor.locator("[data-visual-edit-surface]").first()).toContainText(updatedText);
+
+    await page.bringToFront();
+    await expect(page.locator(".form-message:not([hidden])")).toHaveText("Updated with changes from the visual editor.");
+    await expect(page.locator("[data-page-builder]").getByText(updatedText, { exact: true }).first()).toBeVisible();
+
+    await visualEditor.bringToFront();
+    await visualEditor.locator("[data-visual-undo]").click();
+    await expect(visualEditor.locator("[data-visual-edit-surface]").first()).toContainText(originalText);
+
+    await page.bringToFront();
+    await expect(page.locator("[data-page-builder]").getByText(originalText, { exact: true }).first()).toBeVisible();
+  } finally {
+    if (!visualEditor.isClosed() && originalText && updatedText) {
+      await visualEditor.bringToFront();
+      const currentText = await visualEditor.locator("[data-visual-edit-surface]").first().innerText().catch(() => "");
+      if (currentText.includes(updatedText)) {
+        await visualEditor.locator("[data-visual-undo]").click();
+        await expect(visualEditor.locator("[data-visual-edit-surface]").first()).toContainText(originalText);
+      }
+    }
+    await visualEditor.close();
+  }
+});
+
 test("visual editing, design tokens, and reusable sections work without hover", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));

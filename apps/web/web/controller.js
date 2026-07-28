@@ -4,6 +4,9 @@ import { loadMenu } from "./content-actions.js";
 import { renderPage, renderPost } from "./public-renderer.js";
 import { loadUser } from "./session-actions.js";
 import { renderAdminLogin, renderEmailVerification, renderInviteAcceptance, renderPasswordReset } from "./ui.js";
+import { pageChangeStorageKey, pageChangeToken } from "./editor-sync.js";
+
+let pageBuilderRefreshPromise = null;
 
 async function adminViews() {
   return import("./admin-views.js");
@@ -434,6 +437,41 @@ export async function loadAdminRoute(route) {
     renderDashboardHome(await api("/config"));
   } catch {
     renderDashboardHome();
+  }
+}
+
+export async function refreshPageBuilderIfStale(changedStorageKey = "") {
+  const route = currentAdminRoute();
+  const activePage = state.builderPage;
+  if (route?.view !== "page-builder" || !route.slug || !activePage || activePage.slug !== route.slug) return;
+
+  const storageKey = pageChangeStorageKey(activePage);
+  if (changedStorageKey && changedStorageKey !== storageKey) return;
+
+  const latestToken = pageChangeToken(activePage);
+  if (!latestToken || latestToken === state.builderPageChangeToken) return;
+  if (pageBuilderRefreshPromise) return pageBuilderRefreshPromise;
+
+  const previousToken = state.builderPageChangeToken;
+  state.builderPageChangeToken = latestToken;
+  pageBuilderRefreshPromise = (async () => {
+    try {
+      const { renderPageBuilderPage } = await builderViews();
+      const { page } = await api(
+        adminLocaleUrl(`/cms/pages/${encodeURIComponent(route.slug)}`, { preview: "true" }),
+        { cache: "no-store" }
+      );
+      renderPageBuilderPage(page, "Updated with changes from the visual editor.");
+    } catch (error) {
+      state.builderPageChangeToken = previousToken;
+      setStatus(error.message || "Unable to refresh the page builder.", true);
+    }
+  })();
+
+  try {
+    await pageBuilderRefreshPromise;
+  } finally {
+    pageBuilderRefreshPromise = null;
   }
 }
 

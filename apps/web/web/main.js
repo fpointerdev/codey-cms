@@ -44,6 +44,17 @@ function bindSiteNavigation() {
   });
 }
 
+let editorSyncBound = false;
+
+function bindEditorSync(refreshPageBuilderIfStale) {
+  if (editorSyncBound) return;
+
+  editorSyncBound = true;
+  window.addEventListener("pageshow", () => void refreshPageBuilderIfStale());
+  window.addEventListener("focus", () => void refreshPageBuilderIfStale());
+  window.addEventListener("storage", (event) => void refreshPageBuilderIfStale(event.key || ""));
+}
+
 export async function startApp() {
   bindSiteNavigation();
 
@@ -54,10 +65,11 @@ export async function startApp() {
   }
 
   await loadAdminStyles();
-  const [{ bootstrap }, { bindEvents }] = await Promise.all([
+  const [{ bootstrap, refreshPageBuilderIfStale }, { bindEvents }] = await Promise.all([
     import("./controller.js"),
     import("./events.js")
   ]);
   bindEvents();
+  bindEditorSync(refreshPageBuilderIfStale);
   await bootstrap();
 }
