@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { releaseKeyId, releasePublicKey } from "./release-contract.mjs";
@@ -19,6 +20,15 @@ if (
   process.env.GITHUB_REPOSITORY !== "fpointerdev/codey-cms"
 ) {
   throw new Error("Official releases can only be published from fpointerdev/codey-cms.");
+}
+if (process.env.GITHUB_ACTIONS === "true") {
+  const checkoutCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8"
+  }).trim();
+  if (!/^[a-f0-9]{40}$/.test(checkoutCommit) || checkoutCommit !== process.env.GITHUB_SHA) {
+    throw new Error("Release checkout does not match the GitHub tag commit.");
+  }
 }
 
 const notesFile = path.join(root, "docs", "releases", `${tag}.md`);

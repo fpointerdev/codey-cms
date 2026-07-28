@@ -135,7 +135,9 @@ Email verification and password reset tokens are created server-side, delivered 
 - `PATCH /api/v1/config/maintenance` changes DB-level maintenance settings and writes an audit log.
 - All API success/error envelopes include `meta.requestId` when request context is available.
 - Requests with a valid W3C `traceparent` header also include `meta.traceId` and `x-trace-id`.
-- `GET /api/v1/health/metrics` returns process telemetry for operational checks.
+- `GET /api/v1/health/ready` is an unauthenticated, minimal traffic-readiness result.
+- `GET /api/v1/health/diagnostics` returns detailed readiness, backup, and process telemetry to users with `manage:modules`.
+- `GET /api/v1/health/metrics` remains available to users with `manage:modules` for compatibility.
 - `GET /api/v1/config/audit-logs` returns the hash-linked audit trail for sensitive operations with `valid`, `invalid`, `unknown-key`, or `legacy` integrity status.
 
 ## Operations
@@ -148,12 +150,12 @@ Email verification and password reset tokens are created server-side, delivered 
 
 `runtime:start` deploys migrations before starting the API. `runtime:bootstrap` deploys migrations and runs the idempotent seed flow once after a new copied site is provisioned. The seed only creates an owner when explicit `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` values are present; otherwise run `pnpm setup:admin` after bootstrap. If the configured email already belongs to a non-owner, the seed refuses to elevate it and `pnpm setup:admin` must be used to reset its password and sessions during promotion.
 
-Backup controls are `BACKUP_DIR`, `BACKUP_MIRROR_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_INTERVAL_HOURS`, `BACKUP_MAX_AGE_HOURS`, `BACKUP_REQUIRED`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_REQUIRE_ENCRYPTION`, `BACKUP_S3_MEDIA_PROTECTED`, and the optional alert webhook values. Production should require encryption and a recent successful backup. See [backup-disaster-recovery.md](backup-disaster-recovery.md).
+Backup controls are `BACKUP_DIR`, `BACKUP_MIRROR_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_INTERVAL_HOURS`, `BACKUP_MAX_AGE_HOURS`, `BACKUP_REQUIRED`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_REQUIRE_ENCRYPTION`, `BACKUP_OFFSITE_REQUIRED`, `BACKUP_OFFSITE_PROTECTED`, `BACKUP_S3_MEDIA_PROTECTED`, and the optional alert webhook values. Production should require encryption, a recent successful backup, and a tested off-site mirror. See [backup-disaster-recovery.md](backup-disaster-recovery.md).
 
 Production restore requires `ALLOW_PRODUCTION_RESTORE=true`. Use the generated manifest so checksums, encryption, and matching media are verified.
 
 ## Readiness
 
-Use `/api/v1/health/ready` for container and reverse-proxy health checks. It verifies the database query path, live storage connectivity, dashboard-managed email state, the last provider test, and backup freshness. Optional email or backup failures remain visible but only block readiness when that capability is required.
+Use `/api/v1/health/ready` for container and reverse-proxy health checks. Its response contains only `ready` or `not_ready`; internal check results are never exposed publicly. It verifies the database query path, live storage connectivity, dashboard-managed email state, and the last provider test. Backup failures do not take a working website offline.
 
-`/api/v1/health/metrics` includes process telemetry and the current backup health summary.
+Authenticated owners can use `/api/v1/health/diagnostics` for detailed runtime checks, process telemetry, backup freshness, encryption, mirroring, and off-site protection. `/api/v1/health/metrics` is also authenticated and retained as a compatibility endpoint.

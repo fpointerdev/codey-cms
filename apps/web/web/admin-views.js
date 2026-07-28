@@ -1685,6 +1685,7 @@ export function renderSettingsPage(config) {
   const localizationEnabled = localizationModule?.status === "ENABLED";
   const localization = config.localization || localizationModule?.settings?.settings || {};
   const runtimeUpdate = config.runtimeUpdate || {};
+  const operationsDiagnostics = config.operationsDiagnostics || {};
   const locales = Array.isArray(localization.locales) && localization.locales.length
     ? localization.locales
     : [{ code: localization.defaultLocale || "en", label: "English", enabled: true }];
@@ -1894,6 +1895,7 @@ export function renderSettingsPage(config) {
             </div>
           </section>
           <section class="settings-tab-panel settings-tab-panel-updates" data-settings-panel="updates">
+            ${renderBackupProtection(operationsDiagnostics)}
             <div data-runtime-update-panel>
               ${renderRuntimeUpdatePanel(runtimeUpdate)}
             </div>
@@ -1906,6 +1908,52 @@ export function renderSettingsPage(config) {
     `
   );
   setStatus("Settings loaded.");
+}
+
+function renderBackupProtection(diagnostics = {}) {
+  if (!hasPermission("manage", "modules")) return "";
+
+  const backup = diagnostics.operations?.backup || {};
+  const details = backup.details || {};
+  const protectedOffsite = details.offsiteProtected === true;
+  const healthy = backup.status === "pass" && protectedOffsite;
+  const title = diagnostics.error
+    ? "Backup status unavailable"
+    : healthy
+      ? "Backups are protected off-site"
+      : "Backups need off-site protection";
+  const description = diagnostics.error
+    ? diagnostics.error
+    : healthy
+      ? "The latest encrypted backup was verified and copied to the configured off-site mirror."
+      : backup.message || "Encrypted local backups are enabled, but another machine or storage service has not been confirmed.";
+
+  return `
+    <div class="admin-card runtime-update-card">
+      <div class="runtime-update-summary">
+        <span class="runtime-update-indicator ${healthy ? "success" : "error"}" aria-hidden="true"></span>
+        <div>
+          <p class="section-label">Recovery</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p class="dashboard-copy compact">${escapeHtml(description)}</p>
+        </div>
+      </div>
+      <div class="module-status-row">
+        <div>
+          <strong>Off-site copy</strong>
+          <span>${protectedOffsite ? "Confirmed by the deployment" : "Action required before production handoff"}</span>
+        </div>
+        <span class="status-pill ${healthy ? "success" : "error"}">${healthy ? "Protected" : "Local only"}</span>
+      </div>
+      ${details.completedAt ? `<p class="field-help">Latest verified backup: ${escapeHtml(formatDate(details.completedAt))}</p>` : ""}
+      ${healthy ? "" : `
+        <div class="translation-help">
+          <strong>Complete disaster recovery</strong>
+          <span>Sync the backup mirror to another machine or object-storage service, test a restore, then set <code>BACKUP_OFFSITE_PROTECTED=true</code>.</span>
+        </div>
+      `}
+    </div>
+  `;
 }
 
 export function renderRuntimeUpdatePanel(update = {}) {

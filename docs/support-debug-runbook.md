@@ -6,7 +6,7 @@ Use this procedure when a copied customer site has a production incident.
 
 1. Identify the copied site, deployment profile, domain, git SHA, and runtime environment.
 2. Check `/api/v1/health/ready`.
-3. Check `/api/v1/health/metrics`.
+3. Sign in as an owner and check `/api/v1/health/diagnostics`.
 4. Capture the `x-request-id` from the failing response.
 5. Search structured logs by request ID or trace ID.
 6. Check `GET /api/v1/config/audit-logs` for recent sensitive actions.
@@ -19,7 +19,7 @@ Use this procedure when a copied customer site has a production incident.
 - Payment not updating: verify provider signature headers, webhook secret, `providerEventId`, and `providerReference`.
 - Domain unavailable: inspect `SiteDomain.status`, reverse proxy config, DNS A/CNAME records, and TLS issuance logs.
 - Storage failure: check S3 endpoint credentials, bucket policy, key prefix, and quota.
-- Backup failure: inspect `operations.backup` in health metrics, `BACKUP_DIR/latest.json`, scheduler logs, mirror storage, and the alert webhook response.
+- Backup failure: inspect `operations.backup` in authenticated diagnostics, `BACKUP_DIR/latest.json`, scheduler logs, mirror storage, and the alert webhook response.
 
 ## Safe Operator Actions
 

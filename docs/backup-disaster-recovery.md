@@ -10,7 +10,7 @@ The production Compose stack runs `scripts/backup-scheduler.mjs` immediately on 
 - A compressed media snapshot when `STORAGE_DRIVER=local`.
 - An S3 media-protection declaration when `STORAGE_DRIVER=s3`.
 - A manifest containing checksums, byte sizes, timestamps, and encryption state.
-- `latest.json`, consumed by readiness and metrics.
+- `latest.json`, consumed by authenticated operational diagnostics.
 
 Set these values per runtime:
 
@@ -23,12 +23,14 @@ BACKUP_MAX_AGE_HOURS=30
 BACKUP_REQUIRED=true
 BACKUP_ENCRYPTION_KEY=<unique secret of at least 32 characters>
 BACKUP_REQUIRE_ENCRYPTION=true
+BACKUP_OFFSITE_REQUIRED=true
+BACKUP_OFFSITE_PROTECTED=false
 BACKUP_S3_MEDIA_PROTECTED=true
 BACKUP_ALERT_WEBHOOK_URL=https://monitor.example.com/hooks/codey
 BACKUP_ALERT_WEBHOOK_TOKEN=<optional bearer token>
 ```
 
-`BACKUP_MIRROR_DIR` should be mounted on independent storage or synchronized off-host. A second volume on the same server is not a complete disaster-recovery strategy.
+`BACKUP_MIRROR_DIR` must be mounted on independent storage or synchronized off-host. A second volume on the same server is not a complete disaster-recovery strategy and is reported as **Local only** under **Settings > Updates**. After the external copy and a restore test are working, set `BACKUP_OFFSITE_PROTECTED=true`. CodeY reports protection only when that confirmation is present and the latest backup was successfully mirrored.
 
 For S3-compatible media, enable and test bucket versioning, replication, or an independent object backup before setting `BACKUP_S3_MEDIA_PROTECTED=true`. The database dump does not copy S3 objects.
 
@@ -57,7 +59,7 @@ pnpm runtime:restore -- /path/to/runtime-....manifest.json
 
 5. For S3 media, use the bucket versioning or replication recovery workflow recorded in the manifest.
 6. Run `pnpm db:deploy` and start the runtime.
-7. Check `/api/v1/health/ready` and `/api/v1/health/metrics`.
+7. Check public `/api/v1/health/ready`, then authenticated `/api/v1/health/diagnostics`.
 8. Smoke test login, public pages, media, forms, and shop workflows before disabling maintenance mode.
 
 The restore command verifies manifest checksums and sizes, encrypted-file authentication, PostgreSQL archive structure, and media archive paths and entry types before modifying the target. Media archives containing links or special files are rejected. The command also supports legacy plain SQL dumps. Production restore is blocked unless `ALLOW_PRODUCTION_RESTORE=true`.

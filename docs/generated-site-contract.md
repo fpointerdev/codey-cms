@@ -78,7 +78,7 @@ pnpm run release:qualify -- \
 The release directory must contain the signed manifest, public key, runtime
 archive, and self-host ZIP produced by `release:build`. The qualifier verifies
 the signature and checksums before extracting the ZIP. It then starts the
-extracted package through `start-codey.sh --no-open`, reads the readiness and
+extracted package through `start-codey.sh --no-open`, reads the minimal readiness and
 installation APIs, completes owner setup, verifies admin login, edits imported
 CMS content, restarts the backend, and requires the edited marker in HTML with
 `data-server-rendered="true"`. Encrypted backup and restore remain part of the

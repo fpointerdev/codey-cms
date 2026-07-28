@@ -72,6 +72,43 @@ test("production rejects blanket proxy trust but accepts an exact hop count", as
   assert.equal(exactHop.stdout, "1");
 });
 
+test("off-site backup claims require mandatory backups and a mirror", async () => {
+  const inspectBackup = (overrides: Record<string, string>) => execFileAsync(process.execPath, [
+    "--import",
+    "tsx",
+    "--input-type=module",
+    "--eval",
+    "import('./src/config/env.ts').then(({ env }) => process.stdout.write(JSON.stringify({ required: env.BACKUP_REQUIRED, offsiteRequired: env.BACKUP_OFFSITE_REQUIRED, protected: env.BACKUP_OFFSITE_PROTECTED })))"
+  ], {
+    env: { ...productionEnvironment, ...overrides }
+  });
+
+  await assert.rejects(
+    inspectBackup({ BACKUP_REQUIRED: "false", BACKUP_OFFSITE_REQUIRED: "true" }),
+    (error: any) => error.stderr?.includes("BACKUP_REQUIRED must be enabled")
+  );
+  await assert.rejects(
+    inspectBackup({
+      BACKUP_REQUIRED: "true",
+      BACKUP_OFFSITE_REQUIRED: "true",
+      BACKUP_OFFSITE_PROTECTED: "true"
+    }),
+    (error: any) => error.stderr?.includes("BACKUP_MIRROR_DIR is required")
+  );
+
+  const valid = await inspectBackup({
+    BACKUP_REQUIRED: "true",
+    BACKUP_OFFSITE_REQUIRED: "true",
+    BACKUP_OFFSITE_PROTECTED: "true",
+    BACKUP_MIRROR_DIR: "/offsite/backups"
+  });
+  assert.deepEqual(JSON.parse(valid.stdout), {
+    required: true,
+    offsiteRequired: true,
+    protected: true
+  });
+});
+
 test("TOTP verification follows the standard time window", () => {
   const rfcSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 

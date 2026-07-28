@@ -109,6 +109,8 @@ const envSchema = z.object({
   BACKUP_REQUIRED: booleanFromEnv.default(false),
   BACKUP_ENCRYPTION_KEY: optionalSecretFromEnv,
   BACKUP_REQUIRE_ENCRYPTION: booleanFromEnv.default(false),
+  BACKUP_OFFSITE_REQUIRED: booleanFromEnv.default(false),
+  BACKUP_OFFSITE_PROTECTED: booleanFromEnv.default(false),
   BACKUP_S3_MEDIA_PROTECTED: booleanFromEnv.default(false),
   BACKUP_ALERT_WEBHOOK_URL: optionalHttpUrlFromEnv,
   BACKUP_ALERT_WEBHOOK_TOKEN: optionalStringFromEnv
@@ -142,6 +144,20 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["BACKUP_ENCRYPTION_KEY"],
       message: "BACKUP_ENCRYPTION_KEY is required when backup encryption is mandatory."
+    });
+  }
+  if (value.BACKUP_OFFSITE_REQUIRED && !value.BACKUP_REQUIRED) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["BACKUP_REQUIRED"],
+      message: "BACKUP_REQUIRED must be enabled when off-site backup protection is required."
+    });
+  }
+  if (value.BACKUP_OFFSITE_PROTECTED && !value.BACKUP_MIRROR_DIR) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["BACKUP_MIRROR_DIR"],
+      message: "BACKUP_MIRROR_DIR is required when off-site backup protection is confirmed."
     });
   }
 

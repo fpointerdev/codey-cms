@@ -18,7 +18,7 @@ CodeY CMS supports signed managed updates for the self-host package and exact-ve
 4. Stage the exact signed artifact and verify its checksum.
 5. Use the supervisor or deployment pipeline to apply migrations.
 6. Start the exact pinned runtime.
-7. Check `/api/v1/health/ready` and `/api/v1/health/metrics`.
+7. Check public `/api/v1/health/ready`, then authenticated `/api/v1/health/diagnostics`.
 8. Smoke test auth, CMS visibility, shop checkout, payment webhook handling, and email delivery.
 9. Disable maintenance mode.
 10. Roll out to the next batch only after logs and audit events look clean.

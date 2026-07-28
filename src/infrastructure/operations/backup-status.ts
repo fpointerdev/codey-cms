@@ -9,6 +9,8 @@ type BackupStatusConfig = {
   required: boolean;
   encrypted: boolean;
   requireEncryption: boolean;
+  offsiteRequired: boolean;
+  offsiteProtected: boolean;
   s3MediaProtected: boolean;
   storageDriver: "disabled" | "local" | "s3";
 };
@@ -132,7 +134,7 @@ async function verifyRecordedArtifacts(directory: string, latest: Record<string,
 }
 
 export async function readBackupHealth(config: BackupStatusConfig, now = new Date()): Promise<BackupHealth> {
-  const blocking = config.required || config.requireEncryption;
+  const blocking = config.required || config.requireEncryption || config.offsiteRequired;
 
   if (config.requireEncryption && !config.encrypted) {
     return {
@@ -160,7 +162,11 @@ export async function readBackupHealth(config: BackupStatusConfig, now = new Dat
     return {
       status: config.required ? "fail" : "skipped",
       blocking,
-      message: missing ? "No completed backup has been recorded." : "Backup status file is invalid."
+      message: missing ? "No completed backup has been recorded." : "Backup status file is invalid.",
+      details: {
+        offsiteRequired: config.offsiteRequired,
+        offsiteProtected: false
+      }
     };
   }
 
@@ -221,6 +227,28 @@ export async function readBackupHealth(config: BackupStatusConfig, now = new Dat
     };
   }
 
+  const mirrored = latest.mirrored === true;
+  const offsiteProtected = config.offsiteProtected && mirrored && latest.offsiteProtected === true;
+  if (config.offsiteRequired && !offsiteProtected) {
+    return {
+      status: "fail",
+      blocking: true,
+      message: config.offsiteProtected
+        ? "The latest backup was not copied to the configured off-site mirror."
+        : "Off-site backup protection has not been confirmed.",
+      details: {
+        backupId: typeof latest.backupId === "string" ? latest.backupId : undefined,
+        completedAt: completedAt.toISOString(),
+        ageHours,
+        encrypted,
+        mirrored,
+        offsiteRequired: true,
+        offsiteProtected: false,
+        ...artifacts
+      }
+    };
+  }
+
   return {
     status: "pass",
     blocking: false,
@@ -229,7 +257,9 @@ export async function readBackupHealth(config: BackupStatusConfig, now = new Dat
       completedAt: completedAt.toISOString(),
       ageHours,
       encrypted,
-      mirrored: latest.mirrored === true,
+      mirrored,
+      offsiteRequired: config.offsiteRequired,
+      offsiteProtected,
       s3MediaProtected: config.s3MediaProtected,
       ...artifacts
     }

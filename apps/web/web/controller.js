@@ -402,12 +402,15 @@ export async function loadAdminRoute(route) {
   if (route.view === "settings") {
     const { renderSettingsPage } = await adminViews();
     const config = await api("/config");
-    const [emailResult, updateResult, auditResult] = await Promise.allSettled([
+    const [emailResult, updateResult, auditResult, diagnosticsResult] = await Promise.allSettled([
       api("/config/email"),
       api("/config/runtime-update"),
       hasPermission("read", "audit")
         ? api("/config/audit-logs?limit=20")
-        : Promise.resolve({ auditLogs: [] })
+        : Promise.resolve({ auditLogs: [] }),
+      hasPermission("manage", "modules")
+        ? api("/health/diagnostics")
+        : Promise.resolve(null)
     ]);
     config.email = emailResult.status === "fulfilled"
       ? emailResult.value.email
@@ -419,6 +422,9 @@ export async function loadAdminRoute(route) {
     config.auditError = auditResult.status === "rejected"
       ? auditResult.reason?.message || "Unable to load security activity."
       : "";
+    config.operationsDiagnostics = diagnosticsResult.status === "fulfilled"
+      ? diagnosticsResult.value
+      : { error: diagnosticsResult.reason?.message || "Unable to load operational diagnostics." };
     renderSettingsPage(config);
     return;
   }

@@ -54,6 +54,8 @@ export const config = {
     required: env.BACKUP_REQUIRED,
     encrypted: Boolean(env.BACKUP_ENCRYPTION_KEY),
     requireEncryption: env.BACKUP_REQUIRE_ENCRYPTION,
+    offsiteRequired: env.BACKUP_OFFSITE_REQUIRED,
+    offsiteProtected: env.BACKUP_OFFSITE_PROTECTED,
     s3MediaProtected: env.BACKUP_S3_MEDIA_PROTECTED,
     storageDriver: env.STORAGE_DRIVER
   },

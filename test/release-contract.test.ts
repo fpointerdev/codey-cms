@@ -8,6 +8,7 @@ import {
   createUnsignedRelease,
   verifyReleaseEnvelope
 } from "../scripts/release-contract.mjs";
+import { assertProductionSbom } from "../scripts/sbom.mjs";
 
 function releasePayload() {
   return {
@@ -69,4 +70,62 @@ test("release manifests reject unsafe artifact names and compare stable versions
   assert.equal(compareSemver("0.9.1", "0.9.0"), 1);
   assert.equal(compareSemver("1.0.0", "1.0.0"), 0);
   assert.equal(compareSemver("1.0.0-beta.1", "1.0.0"), -1);
+});
+
+test("hardened release manifests require source, image, and SBOM provenance", () => {
+  const payload: any = releasePayload();
+  payload.contracts = {
+    ...payload.contracts,
+    operationalDiagnostics: "1.0",
+    offsiteBackupReadiness: "1.0",
+    supplyChain: "1.0"
+  };
+  payload.supplyChain = {
+    source: {
+      repository: "https://github.com/fpointerdev/codey-cms",
+      commit: "a".repeat(40)
+    },
+    containerImages: {
+      node: `node:24-alpine@sha256:${"b".repeat(64)}`,
+      postgres: `postgres:16-alpine@sha256:${"c".repeat(64)}`
+    },
+    sbom: {
+      file: "codey-cms-0.9.0.sbom.cdx.json",
+      url: "https://releases.example/codey-cms-0.9.0.sbom.cdx.json",
+      sizeBytes: 2048,
+      sha256: "d".repeat(64)
+    }
+  };
+
+  assert.doesNotThrow(() => createUnsignedRelease(payload));
+  payload.supplyChain.source.commit = "unknown";
+  assert.throws(() => createUnsignedRelease(payload), /provenance is invalid/);
+});
+
+test("CycloneDX release SBOM validation binds the source commit", () => {
+  const sbom = {
+    bomFormat: "CycloneDX",
+    specVersion: "1.6",
+    version: 1,
+    metadata: {
+      timestamp: "2026-07-28T00:00:00.000Z",
+      component: {
+        name: "codey-cms",
+        version: "0.9.3",
+        properties: [{ name: "codey:source:commit", value: "a".repeat(40) }]
+      }
+    },
+    components: [{ purl: "pkg:npm/express@4.22.2" }]
+  };
+
+  assert.equal(assertProductionSbom(sbom, {
+    name: "codey-cms",
+    version: "0.9.3",
+    commit: "a".repeat(40)
+  }), sbom);
+  assert.throws(() => assertProductionSbom(sbom, {
+    name: "codey-cms",
+    version: "0.9.3",
+    commit: "b".repeat(40)
+  }), /source commit/i);
 });

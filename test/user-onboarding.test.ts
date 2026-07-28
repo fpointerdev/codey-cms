@@ -380,6 +380,49 @@ test("admin navigation hides user and settings pages from content editors", asyn
   assert.equal(availableAdminNavItems().some((item) => item.view === "settings"), true);
 });
 
+test("settings show whether backups are protected off-site", async () => {
+  const nodes = new Map([
+    ["[data-brand]", { textContent: "", href: "" }],
+    ["[data-menu]", { innerHTML: "" }],
+    ["[data-footer]", { innerHTML: "" }],
+    ["[data-page]", { innerHTML: "" }],
+    ["[data-status]", { textContent: "", classList: { toggle: () => undefined } }]
+  ]);
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      title: "",
+      body: { classList: { toggle: () => undefined } },
+      querySelector: (selector: string) => nodes.get(selector) || null
+    }
+  });
+  const { state } = await import("../apps/web/web/core.js");
+  const { renderSettingsPage } = await import("../apps/web/web/admin-views.js");
+  state.user = {
+    id: "owner-1",
+    email: "owner@example.com",
+    permissions: [{ action: "manage", subject: "all" }]
+  };
+
+  renderSettingsPage({
+    app: { name: "CodeY CMS" },
+    operationsDiagnostics: {
+      status: "attention",
+      operations: {
+        backup: {
+          status: "fail",
+          message: "Off-site backup protection has not been confirmed.",
+          details: { offsiteProtected: false }
+        }
+      }
+    }
+  });
+  const page = nodes.get("[data-page]") as { innerHTML: string };
+  assert.match(page.innerHTML, /Backups need off-site protection/);
+  assert.match(page.innerHTML, /Local only/);
+  assert.match(page.innerHTML, /BACKUP_OFFSITE_PROTECTED=true/);
+});
+
 test("read-only dashboard views hide mutation controls", async () => {
   const nodes = new Map([
     ["[data-brand]", { textContent: "", href: "" }],

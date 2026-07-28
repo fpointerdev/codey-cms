@@ -9,13 +9,14 @@ The self-host package checks the signed `stable` feed on a schedule. Users do no
 3. Reject an older, equal, malformed, oversized, or contract-incompatible release.
 4. Download the artifact into a private staging directory.
 5. Verify its signed size and SHA-256 while limiting streamed bytes.
-6. Enter maintenance mode and create an encrypted database/media backup.
-7. Stop the current runtime.
-8. Reject unsafe archive paths, links, and unexpected roots before extraction.
-9. Install locked production dependencies and generate the Prisma client.
-10. Switch the `current` runtime link atomically and apply migrations.
-11. Require the readiness endpoint to pass.
-12. Mark the exact runtime version active and retain the previous release.
+6. Validate the signed source commit, immutable container-image references, and CycloneDX SBOM metadata.
+7. Enter maintenance mode and create an encrypted database/media backup.
+8. Stop the current runtime.
+9. Reject unsafe archive paths, links, and unexpected roots before extraction.
+10. Install locked production dependencies and generate the Prisma client.
+11. Switch the `current` runtime link atomically and apply migrations.
+12. Require the readiness endpoint to pass.
+13. Mark the exact runtime version active and retain the previous release.
 
 If verification or preparation fails after shutdown, the supervisor restarts the previous runtime. If the new runtime was started but does not become ready, the supervisor restores the pre-update database backup, switches to the previous release, verifies readiness, and records `ROLLED_BACK`. A failed recovery is recorded as `FAILED` and requires operator attention.
 
@@ -30,6 +31,8 @@ CODEY_UPDATE_CHECK_INTERVAL_HOURS=6
 ```
 
 Official signed packages contain the public key. A source checkout without that key can build and run, but managed update checks remain deferred until an official key is supplied.
+
+Every hardening release also publishes `codey-cms-<version>.sbom.cdx.json`. Its checksum, source commit, and pinned Node/PostgreSQL image references are covered by the Ed25519 release signature.
 
 ## Recovery
 

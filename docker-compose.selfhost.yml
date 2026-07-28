@@ -30,7 +30,9 @@ x-runtime-environment: &runtime-environment
   BACKUP_DIR: /app/backups
   BACKUP_MIRROR_DIR: /app/backups-mirror
   BACKUP_REQUIRE_ENCRYPTION: "true"
-  BACKUP_REQUIRED: ${BACKUP_REQUIRED:-false}
+  BACKUP_REQUIRED: ${BACKUP_REQUIRED:-true}
+  BACKUP_OFFSITE_REQUIRED: ${BACKUP_OFFSITE_REQUIRED:-true}
+  BACKUP_OFFSITE_PROTECTED: ${BACKUP_OFFSITE_PROTECTED:-false}
   CODEY_UPDATES_ENABLED: "true"
   CODEY_AUTO_UPDATE: ${CODEY_AUTO_UPDATE:-true}
   CODEY_RELEASE_FEED_URL: ${CODEY_RELEASE_FEED_URL:-https://github.com/fpointerdev/codey-cms/releases/latest/download/stable.json}
@@ -52,7 +54,7 @@ services:
     restart: "no"
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     command:
       - postgres
       - -c

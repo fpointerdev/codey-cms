@@ -134,7 +134,7 @@ Stable `/api/v1` endpoint families:
 - `products`: catalog, product media, options, variants, and public storefront settings.
 - `orders`: orders, carts, checkout, shipping, tax, coupons, order notifications.
 - `payments`: site payment-provider configuration, public provider discovery, Stripe intents, PayPal orders/capture, manual settlement, and verified idempotent webhooks.
-- `health`: liveness, readiness, metrics.
+- `health`: minimal public liveness/readiness plus authenticated operational diagnostics and metrics.
 
 Transactional email configuration is site-owned:
 

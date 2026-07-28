@@ -19,6 +19,7 @@ import {
   releaseSchemaVersion,
   sha256File
 } from "./release-contract.mjs";
+import { assertProductionSbom, createProductionSbom } from "./sbom.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
@@ -44,8 +45,10 @@ const migrations = (await readdir(path.join(root, "prisma", "migrations"), { wit
 const artifactFile = `codey-cms-${version}.tar.gz`;
 const downloadFile = `codey-cms-${version}.zip`;
 const manifestFile = `codey-cms-${version}.manifest.json`;
+const sbomFile = `codey-cms-${version}.sbom.cdx.json`;
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "codey-cms-release-"));
 const stageRoot = path.join(temporaryRoot, `codey-cms-${version}`);
+const containerImages = JSON.parse(await readFile(path.join(root, "runtime-meta", "container-images.json"), "utf8"));
 
 try {
   assertSafeOutputDirectory();
@@ -78,7 +81,10 @@ try {
     contracts: {
       websiteSpec: "1.0",
       builder: "1.0",
-      exportedSiteAcceptance: "1.0"
+      exportedSiteAcceptance: "1.0",
+      operationalDiagnostics: "1.0",
+      offsiteBackupReadiness: "1.0",
+      supplyChain: "1.0"
     },
     requirements: {
       node: ">=24 <25",
@@ -95,9 +101,31 @@ try {
       installer: "/install",
       admin: "/cy-admin",
       readiness: "/api/v1/health/ready"
+    },
+    supplyChain: {
+      source: {
+        repository: "https://github.com/fpointerdev/codey-cms",
+        commit: gitSha
+      },
+      containerImages: {
+        node: containerImages.node,
+        postgres: containerImages.postgres
+      },
+      sbom: "SBOM.cdx.json"
     }
   };
   await writeJson(path.join(stageRoot, "codey-runtime.json"), runtimeManifest);
+
+  const sbom = createProductionSbom({
+    name: packageJson.name,
+    version,
+    timestamp: releasedAt,
+    commit: gitSha
+  }, root);
+  assertProductionSbom(sbom, { name: packageJson.name, version, commit: gitSha });
+  const sbomPath = path.join(outputDir, sbomFile);
+  await writeJson(sbomPath, sbom);
+  await cp(sbomPath, path.join(stageRoot, "SBOM.cdx.json"));
 
   const artifactPath = path.join(outputDir, artifactFile);
   run("tar", ["-czf", artifactPath, "-C", temporaryRoot, path.basename(stageRoot)]);
@@ -105,6 +133,7 @@ try {
   const downloadPath = path.join(outputDir, downloadFile);
   run("zip", ["-qr", downloadPath, path.basename(stageRoot)], temporaryRoot);
   const downloadStats = await stat(downloadPath);
+  const sbomStats = await stat(sbomPath);
   const payload = {
     ...runtimeManifest,
     artifact: {
@@ -119,6 +148,15 @@ try {
         url: `${baseUrl}/${downloadFile}`,
         sizeBytes: downloadStats.size,
         sha256: await sha256File(downloadPath)
+      }
+    },
+    supplyChain: {
+      ...runtimeManifest.supplyChain,
+      sbom: {
+        file: sbomFile,
+        url: `${baseUrl}/${sbomFile}`,
+        sizeBytes: sbomStats.size,
+        sha256: await sha256File(sbomPath)
       }
     }
   };
@@ -144,7 +182,7 @@ try {
   });
   await writeFile(
     path.join(outputDir, "SHA256SUMS"),
-    `${payload.artifact.sha256}  ${artifactFile}\n${payload.downloads.selfHostedZip.sha256}  ${downloadFile}\n`,
+    `${payload.artifact.sha256}  ${artifactFile}\n${payload.downloads.selfHostedZip.sha256}  ${downloadFile}\n${payload.supplyChain.sbom.sha256}  ${sbomFile}\n`,
     "utf8"
   );
   if (publicKey) await writeFile(path.join(outputDir, "release-public-key.pem"), publicKey, "utf8");

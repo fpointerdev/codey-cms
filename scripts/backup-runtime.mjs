@@ -249,7 +249,8 @@ try {
     completedAt: completedAt.toISOString(),
     manifestFile: path.basename(manifestFile),
     encrypted: Boolean(encryptionKey),
-    mirrored: Boolean(mirrorDir)
+    mirrored: Boolean(mirrorDir),
+    offsiteProtected: enabled("BACKUP_OFFSITE_PROTECTED") && Boolean(mirrorDir)
   };
   const artifacts = [databaseFile, ...(mediaFile ? [mediaFile] : []), manifestFile];
 

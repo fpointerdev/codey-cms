@@ -49,6 +49,8 @@ function backupConfig(directory: string, overrides: Record<string, unknown> = {}
     required: true,
     encrypted: true,
     requireEncryption: true,
+    offsiteRequired: false,
+    offsiteProtected: false,
     s3MediaProtected: false,
     storageDriver: "local" as const,
     ...overrides
@@ -148,7 +150,11 @@ test("backup readiness requires a recent successful encrypted backup", async () 
       {
         status: "fail",
         blocking: true,
-        message: "No completed backup has been recorded."
+        message: "No completed backup has been recorded.",
+        details: {
+          offsiteRequired: false,
+          offsiteProtected: false
+        }
       }
     );
 
@@ -175,7 +181,8 @@ test("backup readiness requires a recent successful encrypted backup", async () 
       completedAt: "2026-07-16T00:00:00.000Z",
       manifestFile,
       encrypted: true,
-      mirrored: true
+      mirrored: true,
+      offsiteProtected: true
     }));
     const healthy = await readBackupHealth(backupConfig(directory), now);
 
@@ -183,6 +190,22 @@ test("backup readiness requires a recent successful encrypted backup", async () 
     assert.equal(healthy.blocking, false);
     assert.equal(healthy.details?.backupId, "backup-1");
     assert.equal(healthy.details?.databaseFile, databaseFile);
+
+    const localOnly = await readBackupHealth(backupConfig(directory, {
+      offsiteRequired: true,
+      offsiteProtected: false
+    }), now);
+    assert.equal(localOnly.status, "fail");
+    assert.equal(localOnly.blocking, true);
+    assert.equal(localOnly.details?.offsiteProtected, false);
+    assert.match(localOnly.message ?? "", /off-site/i);
+
+    const offsite = await readBackupHealth(backupConfig(directory, {
+      offsiteRequired: true,
+      offsiteProtected: true
+    }), now);
+    assert.equal(offsite.status, "pass");
+    assert.equal(offsite.details?.offsiteProtected, true);
 
     await writeFile(path.join(directory, databaseFile), "x".repeat(Buffer.byteLength(databaseBody)));
     const corruptedArtifact = await readBackupHealth(backupConfig(directory), now);

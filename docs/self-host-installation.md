@@ -64,7 +64,26 @@ Never add `-v` to `docker compose down` unless the database, secrets, uploads, b
 
 ## Backup Requirement
 
-The default package writes encrypted backups to two local Docker volumes. For real production recovery, mirror `/app/backups-mirror` to another machine or object-storage service. A backup on the same disk is not disaster recovery.
+The default package immediately writes encrypted backups to two local Docker volumes. This keeps first setup automatic, but **Settings > Updates** reports **Local only** until the mirror is stored somewhere independent.
+
+Before production handoff, mount `/app/backups-mirror` from both `backend` and `backup` onto a NAS, removable drive, or cloud-synchronized directory with `docker-compose.override.yml`. Test a restore, then add `BACKUP_OFFSITE_PROTECTED=true` to the installation `.env`. A backup on the same disk is not disaster recovery, and CodeY will not report it as protected.
+
+Example override, using an independently protected host directory:
+
+```yaml
+services:
+  backend:
+    volumes:
+      - /absolute/path/to/codey-offsite:/app/backups-mirror
+  backup:
+    volumes:
+      - /absolute/path/to/codey-offsite:/app/backups-mirror
+```
+
+```env
+BACKUP_OFFSITE_REQUIRED=true
+BACKUP_OFFSITE_PROTECTED=true
+```
 
 Run and inspect a manual backup:
 

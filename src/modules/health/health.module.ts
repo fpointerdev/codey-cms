@@ -4,6 +4,7 @@ import { asyncHandler } from "../../core/http/async-handler.js";
 import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
 import { createStorageAdapter } from "../../infrastructure/storage/s3-storage.js";
+import { requirePermission } from "../auth/auth.middleware.js";
 
 type CheckStatus = "pass" | "fail" | "skipped";
 
@@ -15,6 +16,36 @@ type ReadinessCheck = {
 };
 
 type ReadinessChecks = Record<"database" | "storage" | "email" | "backup", ReadinessCheck>;
+
+async function runtimeReadiness(context: ModuleContext) {
+  const [database, storage, email] = await Promise.all([
+    databaseReadinessCheck(context),
+    storageReadinessCheck(context),
+    emailReadinessCheck(context)
+  ]);
+  const checks = { database, storage, email };
+
+  return {
+    ready: Object.values(checks).every(
+      (check) => check.status !== "fail" || !check.blocking
+    ),
+    checks
+  };
+}
+
+async function runtimeDiagnostics(context: ModuleContext) {
+  const [runtime, backup] = await Promise.all([
+    runtimeReadiness(context),
+    readBackupHealth(context.config.backup)
+  ]);
+  const operationallyHealthy = runtime.ready && (backup.status !== "fail" || !backup.blocking);
+
+  return {
+    ready: runtime.ready,
+    operationallyHealthy,
+    checks: { ...runtime.checks, backup } satisfies ReadinessChecks
+  };
+}
 
 async function databaseReadinessCheck(context: ModuleContext): Promise<ReadinessCheck> {
   try {
@@ -124,41 +155,15 @@ export const healthModule: AppModule = {
       "/",
       asyncHandler(async (_req, res) => {
         await context.prisma.$queryRaw`SELECT 1`;
-        return sendSuccess(res, {
-          status: "ok",
-          app: context.config.app.name,
-          mode: context.config.app.mode,
-          env: context.config.env
-        });
+        return sendSuccess(res, { status: "ok" });
       })
     );
 
     router.get(
       "/ready",
       asyncHandler(async (_req, res) => {
-        const [database, storage, email, backup] = await Promise.all([
-          databaseReadinessCheck(context),
-          storageReadinessCheck(context),
-          emailReadinessCheck(context),
-          readBackupHealth(context.config.backup)
-        ]);
-        const checks: ReadinessChecks = {
-          database,
-          storage,
-          email,
-          backup
-        };
-
-        const ready = Object.values(checks).every(
-          (check) => check.status !== "fail" || !check.blocking
-        );
-        const data = {
-          status: ready ? "ready" : "not_ready",
-          app: context.config.app.name,
-          mode: context.config.app.mode,
-          env: context.config.env,
-          checks
-        };
+        const { ready } = await runtimeReadiness(context);
+        const data = { status: ready ? "ready" : "not_ready" };
 
         if (ready) {
           return sendSuccess(res, data);
@@ -170,7 +175,7 @@ export const healthModule: AppModule = {
           error: {
             code: "runtime_not_ready",
             message: "Runtime readiness checks failed.",
-            details: checks
+            details: null
           },
           meta: {
             requestId: res.locals.requestId,
@@ -181,7 +186,45 @@ export const healthModule: AppModule = {
     );
 
     router.get(
+      "/diagnostics",
+      requirePermission(context, "manage", "modules"),
+      asyncHandler(async (_req, res) => {
+        const diagnostics = await runtimeDiagnostics(context);
+        const memory = process.memoryUsage();
+
+        return sendSuccess(res, {
+          status: diagnostics.operationallyHealthy ? "healthy" : "attention",
+          runtime: {
+            status: diagnostics.ready ? "ready" : "not_ready",
+            app: context.config.app.name,
+            mode: context.config.app.mode,
+            env: context.config.env,
+            checks: {
+              database: diagnostics.checks.database,
+              storage: diagnostics.checks.storage,
+              email: diagnostics.checks.email
+            }
+          },
+          operations: {
+            backup: diagnostics.checks.backup
+          },
+          metrics: {
+            uptimeSeconds: Math.round(process.uptime()),
+            memory: {
+              rssBytes: memory.rss,
+              heapTotalBytes: memory.heapTotal,
+              heapUsedBytes: memory.heapUsed,
+              externalBytes: memory.external
+            },
+            node: process.version
+          }
+        });
+      })
+    );
+
+    router.get(
       "/metrics",
+      requirePermission(context, "manage", "modules"),
       asyncHandler(async (_req, res) => {
         const memory = process.memoryUsage();
         const backup = await readBackupHealth(context.config.backup);

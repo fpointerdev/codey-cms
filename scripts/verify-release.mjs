@@ -5,6 +5,7 @@ import {
   sha256File,
   verifyReleaseEnvelope
 } from "./release-contract.mjs";
+import { assertProductionSbom } from "./sbom.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
@@ -21,6 +22,16 @@ const checksum = await verifyFile(artifactPath, payload.artifact, "Release artif
 if (!readArg("artifact") && payload.downloads?.selfHostedZip) {
   const downloadPath = path.join(path.dirname(manifestPath), payload.downloads.selfHostedZip.file);
   await verifyFile(downloadPath, payload.downloads.selfHostedZip, "Self-hosted ZIP");
+}
+if (!readArg("artifact") && payload.supplyChain?.sbom) {
+  const sbomPath = path.join(path.dirname(manifestPath), payload.supplyChain.sbom.file);
+  await verifyFile(sbomPath, payload.supplyChain.sbom, "CycloneDX SBOM");
+  const sbom = JSON.parse(await readFile(sbomPath, "utf8"));
+  assertProductionSbom(sbom, {
+    name: payload.product,
+    version: payload.version,
+    commit: payload.supplyChain.source.commit
+  });
 }
 
 console.log(`Verified CodeY CMS ${payload.version} (${payload.channel}).`);

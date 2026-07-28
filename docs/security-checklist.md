@@ -47,7 +47,8 @@ Use this checklist before a generated site is published.
 ## Launch
 
 - `/api/v1/health/ready` returns ready.
-- `/api/v1/health/metrics` returns process telemetry.
+- Authenticated `/api/v1/health/diagnostics` reports a healthy runtime and protected backup.
+- Anonymous requests to `/api/v1/health/diagnostics` and `/api/v1/health/metrics` are rejected.
 - The primary custom domain is active in `SiteDomain`.
 - Reverse proxy TLS is issued and redirects HTTP to HTTPS.
 - Backup and restore have both been tested against an isolated database.

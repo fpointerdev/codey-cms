@@ -55,7 +55,12 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const readinessBody = await responseJson(readiness);
     assert.equal(readiness.status, 200);
     assert.equal(readinessBody.data?.status, "ready");
-    assert.equal(readinessBody.data?.checks.backup.blocking, false);
+    assert.deepEqual(Object.keys(readinessBody.data || {}), ["status"]);
+
+    const publicDiagnostics = await request("/api/v1/health/diagnostics");
+    assert.equal(publicDiagnostics.status, 401);
+    const publicMetrics = await request("/api/v1/health/metrics");
+    assert.equal(publicMetrics.status, 401);
 
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const failedLogin = await request("/api/v1/auth/login", {
@@ -95,6 +100,17 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const refreshCookie = cookieFrom(refresh);
     const accessToken = String(refreshBody.data?.tokens.accessToken);
     const authorization = { authorization: `Bearer ${accessToken}` };
+
+    const diagnostics = await request("/api/v1/health/diagnostics", { headers: authorization });
+    const diagnosticsBody = await responseJson(diagnostics);
+    assert.equal(diagnostics.status, 200, JSON.stringify(diagnosticsBody));
+    assert.equal(diagnosticsBody.data?.runtime.status, "ready");
+    assert.equal(diagnosticsBody.data?.runtime.checks.database.status, "pass");
+    assert.equal(diagnosticsBody.data?.operations.backup.blocking, false);
+    assert.equal(typeof diagnosticsBody.data?.metrics.uptimeSeconds, "number");
+
+    const metrics = await request("/api/v1/health/metrics", { headers: authorization });
+    assert.equal(metrics.status, 200, JSON.stringify(await responseJson(metrics)));
 
     const replayedRefresh = await request("/api/v1/auth/refresh", {
       method: "POST",
@@ -146,6 +162,11 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     managedUserId = acceptedBody.data?.user.id;
     assert.equal(typeof managedUserId, "string");
     const managedAccessToken = String(acceptedBody.data?.tokens.accessToken);
+
+    const limitedDiagnostics = await request("/api/v1/health/diagnostics", {
+      headers: { authorization: `Bearer ${managedAccessToken}` }
+    });
+    assert.equal(limitedDiagnostics.status, 403);
 
     const users = await request(`/api/v1/users?search=${encodeURIComponent(managedUserEmail)}`, {
       headers: authorization

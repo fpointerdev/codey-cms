@@ -66,6 +66,33 @@ export function assertReleasePayload(payload) {
   ) {
     throw new Error("Release payload has an unsupported runtime contract.");
   }
+  if (payload.contracts.supplyChain !== undefined) {
+    if (
+      payload.contracts.supplyChain !== "1.0" ||
+      payload.contracts.operationalDiagnostics !== "1.0" ||
+      payload.contracts.offsiteBackupReadiness !== "1.0"
+    ) {
+      throw new Error("Release payload has an unsupported hardening contract.");
+    }
+    if (
+      payload.supplyChain?.source?.repository !== "https://github.com/fpointerdev/codey-cms" ||
+      !/^[a-f0-9]{40}$/.test(payload.supplyChain?.source?.commit || "")
+    ) {
+      throw new Error("Release source provenance is invalid.");
+    }
+    const containerImages = payload.supplyChain?.containerImages || {};
+    const images = [containerImages.node, containerImages.postgres];
+    if (
+      images.some((image) => typeof image !== "string" || !/@sha256:[a-f0-9]{64}$/.test(image))
+    ) {
+      throw new Error("Release container image provenance is invalid.");
+    }
+    assertDownload(
+      payload.supplyChain.sbom,
+      `codey-cms-${payload.version}.sbom.cdx.json`,
+      "CycloneDX SBOM"
+    );
+  }
 
   return payload;
 }
