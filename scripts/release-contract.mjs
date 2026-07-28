@@ -58,7 +58,12 @@ export function assertReleasePayload(payload) {
       "Self-hosted ZIP"
     );
   }
-  if (!payload.contracts || payload.contracts.websiteSpec !== "1.0" || payload.contracts.builder !== "1.0") {
+  if (
+    !payload.contracts ||
+    payload.contracts.websiteSpec !== "1.0" ||
+    payload.contracts.builder !== "1.0" ||
+    payload.contracts.exportedSiteAcceptance !== "1.0"
+  ) {
     throw new Error("Release payload has an unsupported runtime contract.");
   }
 

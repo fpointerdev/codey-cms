@@ -18,7 +18,8 @@ function releasePayload() {
     releasedAt: "2026-07-22T00:00:00.000Z",
     contracts: {
       websiteSpec: "1.0",
-      builder: "1.0"
+      builder: "1.0",
+      exportedSiteAcceptance: "1.0"
     },
     artifact: {
       file: "codey-cms-0.9.0.tar.gz",

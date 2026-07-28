@@ -56,6 +56,40 @@ The platform should refine the customer prompt into a strict `WebsiteSpec`.
 
 Run `pnpm validate`, validate the WebsiteSpec with `dryRun: true`, then perform a browser smoke test before publishing generated output.
 
+Applying a `WebsiteSpec` is atomic. Site settings, modules, media placeholders,
+pages, posts, products, and navigation commit together or roll back together.
+
+## Exported-Site Acceptance
+
+Signed releases that support the exported-site acceptance contract advertise
+`contracts.exportedSiteAcceptance: "1.0"` in the release manifest. CodeY should
+always select the latest signed `stable.json` release automatically and must not
+show customers a CMS version selector.
+
+From a trusted checkout of the matching CMS release, run:
+
+```bash
+pnpm run release:qualify -- \
+  --release-dir /absolute/path/to/release-assets \
+  --website-spec /absolute/path/to/website-spec.json \
+  --report /absolute/path/to/codey-cms-acceptance.json
+```
+
+The release directory must contain the signed manifest, public key, runtime
+archive, and self-host ZIP produced by `release:build`. The qualifier verifies
+the signature and checksums before extracting the ZIP. It then starts the
+extracted package through `start-codey.sh --no-open`, reads the readiness and
+installation APIs, completes owner setup, verifies admin login, edits imported
+CMS content, restarts the backend, and requires the edited marker in HTML with
+`data-server-rendered="true"`. Encrypted backup and restore remain part of the
+same qualification.
+
+The report is JSON with contract name `codey-cms.exported-site-acceptance` and
+schema version `1`. CodeY must accept only `status: "passed"` and
+`release.signatureVerified: true`. Explicit unsigned local qualification is
+reported as `passed-local-unsigned` and must never satisfy a platform release
+gate.
+
 ## Builder Registry Contract
 
 The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`.

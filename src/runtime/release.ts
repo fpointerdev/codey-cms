@@ -26,3 +26,4 @@ export const runtimeVersion = readRuntimeVersion();
 export const runtimeReleaseChannel = "stable";
 export const websiteSpecContractVersion = "1.0";
 export const builderContractVersion = "1.0";
+export const exportedSiteAcceptanceContractVersion = "1.0";

@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import {
+  copyFile,
+  mkdir,
   mkdtemp,
   readFile,
-  rm
+  rm,
+  writeFile
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,10 +17,21 @@ const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "
 const version = packageJson.version;
 const releaseDirectory = path.resolve(readArg("release-dir") || process.env.CODEY_RELEASE_OUTPUT_DIR || path.join(root, ".release"));
 const archive = path.join(releaseDirectory, `codey-cms-${version}.zip`);
+const releaseManifestPath = path.join(releaseDirectory, `codey-cms-${version}.manifest.json`);
+const websiteSpecPath = path.resolve(
+  readArg("website-spec") || path.join(root, "scripts", "fixtures", "exported-site-website-spec.json")
+);
+const reportPath = readArg("report") ? path.resolve(readArg("report")) : undefined;
+const websiteSpec = await readJson(websiteSpecPath);
+const generatedPage = websiteSpec.pages?.[0];
+if (websiteSpec.version !== "1.0" || !generatedPage?.slug) {
+  throw new Error("The acceptance WebsiteSpec must use version 1.0 and contain at least one page.");
+}
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "codey-selfhost-qualification-"));
 const extractedRoot = path.join(temporaryRoot, `codey-cms-${version}`);
 const project = `codey-cms-qualification-${process.pid}`;
 const imageTag = `qualification-${version}-${process.pid}`;
+const acceptanceOverrideFile = ".codey-acceptance.override.yml";
 const port = await availablePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const composeEnvironment = {
@@ -26,9 +40,12 @@ const composeEnvironment = {
   APP_PUBLIC_URL: baseUrl,
   CORS_ORIGINS: baseUrl,
   CODEY_AUTO_UPDATE: "false",
-  CODEY_CMS_IMAGE_TAG: imageTag
+  CODEY_CMS_IMAGE_TAG: imageTag,
+  CODEY_COMPOSE_OVERRIDE_FILE: acceptanceOverrideFile,
+  COMPOSE_PROJECT_NAME: project
 };
 let composeStarted = false;
+let signatureVerified = false;
 
 try {
   await run(process.execPath, [
@@ -36,16 +53,23 @@ try {
     "--release-dir",
     releaseDirectory
   ], { cwd: root });
+  const releaseEnvelope = await readJson(releaseManifestPath);
+  signatureVerified = Boolean(releaseEnvelope.signature);
 
   const entries = (await capture("unzip", ["-Z1", archive], { cwd: root }))
     .split(/\r?\n/)
     .filter(Boolean);
   assertSafeArchiveEntries(entries, `codey-cms-${version}`);
   await run("unzip", ["-q", archive, "-d", temporaryRoot], { cwd: root });
-  await assertPackage(extractedRoot, version);
+  await assertPackage(extractedRoot, version, signatureVerified);
+  await prepareWebsiteSpec(extractedRoot, websiteSpecPath, acceptanceOverrideFile);
 
   composeStarted = true;
-  await compose(["up", "-d", "--build", "--wait", "--wait-timeout", "240"]);
+  await run("sh", ["start-codey.sh", "--no-open"], {
+    cwd: extractedRoot,
+    env: composeEnvironment,
+    capture: true
+  });
   const installToken = (await compose([
     "run",
     "--rm",
@@ -56,6 +80,11 @@ try {
     "--print-install-token"
   ], { capture: true })).trim();
   if (installToken.length < 32) throw new Error("The package did not produce a valid installation token.");
+
+  const initialReadiness = await requestJson("/api/v1/health/ready");
+  if (initialReadiness.response.status !== 200 || initialReadiness.body.data?.status !== "ready") {
+    throw new Error(`The extracted package did not report readiness: ${JSON.stringify(initialReadiness.body)}`);
+  }
 
   const initialStatus = await requestJson("/api/v1/install/status");
   if (initialStatus.response.status !== 200 || initialStatus.body.data?.installed !== false) {
@@ -83,6 +112,39 @@ try {
   }
 
   const accessToken = await login(ownerEmail, ownerPassword);
+  const generatedEdit = await editGeneratedContent(
+    accessToken,
+    generatedPage.slug,
+    websiteSpec.project?.locale || "en"
+  );
+
+  await compose(["restart", "backend"]);
+  await waitForHttp(`${baseUrl}/api/v1/health/ready`, 120_000);
+
+  const readinessAfterRestart = await requestJson("/api/v1/health/ready");
+  if (readinessAfterRestart.response.status !== 200 || readinessAfterRestart.body.data?.status !== "ready") {
+    throw new Error(`The restarted package did not report readiness: ${JSON.stringify(readinessAfterRestart.body)}`);
+  }
+  const installationAfterRestart = await requestJson("/api/v1/install/status");
+  if (
+    installationAfterRestart.response.status !== 200 ||
+    installationAfterRestart.body.data?.installed !== true ||
+    installationAfterRestart.body.data?.ownerAvailable !== true
+  ) {
+    throw new Error(`Installation state did not survive restart: ${JSON.stringify(installationAfterRestart.body)}`);
+  }
+
+  const generatedPublicPath = `/${generatedPage.slug}`;
+  const generatedPublicPage = await fetch(`${baseUrl}${generatedPublicPath}`);
+  const generatedPublicHtml = await generatedPublicPage.text();
+  if (
+    generatedPublicPage.status !== 200 ||
+    !generatedPublicHtml.includes('data-server-rendered="true"') ||
+    !generatedPublicHtml.includes(generatedEdit.marker)
+  ) {
+    throw new Error("The restarted package did not server-render the edited generated content.");
+  }
+
   const slug = `release-recovery-${process.pid}`;
   const createPage = await requestJson("/api/v1/cms/pages", {
     method: "POST",
@@ -171,8 +233,70 @@ try {
     throw new Error("The restored self-host package did not recover its public CMS content.");
   }
 
+  const restoredGeneratedPage = await fetch(`${baseUrl}${generatedPublicPath}`);
+  const restoredGeneratedHtml = await restoredGeneratedPage.text();
+  if (
+    restoredGeneratedPage.status !== 200 ||
+    !restoredGeneratedHtml.includes('data-server-rendered="true"') ||
+    !restoredGeneratedHtml.includes(generatedEdit.marker)
+  ) {
+    throw new Error("The encrypted restore did not preserve the edited generated content.");
+  }
+
+  const report = {
+    schemaVersion: 1,
+    contract: "codey-cms.exported-site-acceptance",
+    status: signatureVerified ? "passed" : "passed-local-unsigned",
+    release: {
+      version,
+      channel: "stable",
+      signatureVerified,
+      archive: path.basename(archive)
+    },
+    launcher: {
+      entrypoint: "start-codey.sh",
+      compose: "docker-compose.selfhost.yml"
+    },
+    readiness: {
+      initial: initialReadiness.body.data,
+      afterRestart: readinessAfterRestart.body.data
+    },
+    installation: {
+      initial: initialStatus.body.data,
+      completed: installation.body.data,
+      afterRestart: installationAfterRestart.body.data
+    },
+    websiteSpec: {
+      version: websiteSpec.version,
+      source: path.basename(websiteSpecPath),
+      atomic: true,
+      pageSlug: generatedPage.slug
+    },
+    admin: {
+      login: "passed",
+      edit: generatedEdit
+    },
+    publicPage: {
+      path: generatedPublicPath,
+      status: generatedPublicPage.status,
+      serverRendered: true,
+      editedContentAfterRestart: true
+    },
+    recovery: {
+      encryptedBackup: true,
+      restoredGeneratedEdit: true,
+      restoredRecoveryMarker: true
+    }
+  };
+
+  if (reportPath) {
+    await mkdir(path.dirname(reportPath), { recursive: true });
+    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  }
+
   console.log(`Qualified CodeY CMS ${version} from its downloadable self-host ZIP.`);
-  console.log(`First-run installation, encrypted backup, restore, and public recovery passed on port ${port}.`);
+  console.log(`Generated import, admin edit, restart SSR, encrypted backup, and restore passed on port ${port}.`);
+  console.log(JSON.stringify(report));
 } finally {
   if (composeStarted) {
     await compose(["down", "-v", "--remove-orphans"], { allowFailure: true });
@@ -180,13 +304,103 @@ try {
   await rm(temporaryRoot, { recursive: true, force: true });
 }
 
-async function assertPackage(directory, expectedVersion) {
+async function prepareWebsiteSpec(directory, sourcePath, overrideFile) {
+  const targetPath = path.join(directory, "codey", "export", "website-spec.json");
+  await mkdir(path.dirname(targetPath), { recursive: true });
+  if (sourcePath !== targetPath) await copyFile(sourcePath, targetPath);
+
+  await writeFile(path.join(directory, overrideFile), [
+    "services:",
+    "  backend:",
+    "    environment:",
+    '      CODEY_EXPORT_APPLY_ON_START: "true"',
+    "      CODEY_EXPORT_WEBSITE_SPEC_PATH: /codey-export/website-spec.json",
+    "      CODEY_EXPORT_APPLIED_MARKER_PATH: /app/storage/uploads/.codey-export-applied.json",
+    "    volumes:",
+    "      - type: bind",
+    "        source: ./codey/export/website-spec.json",
+    "        target: /codey-export/website-spec.json",
+    "        read_only: true",
+    ""
+  ].join("\n"), "utf8");
+}
+
+async function editGeneratedContent(accessToken, pageSlug, locale) {
+  const authorization = { authorization: `Bearer ${accessToken}` };
+  const localeQuery = `?locale=${encodeURIComponent(locale)}`;
+  const pageResponse = await requestJson(
+    `/api/v1/cms/pages/${encodeURIComponent(pageSlug)}${localeQuery}`,
+    { headers: authorization }
+  );
+  const page = pageResponse.body.data?.page;
+  if (pageResponse.response.status !== 200 || !page) {
+    throw new Error(`The generated page was not imported: ${JSON.stringify(pageResponse.body)}`);
+  }
+
+  const blocks = Array.isArray(page.sections)
+    ? page.sections.flatMap((section) => Array.isArray(section.blocks) ? section.blocks : [])
+    : [];
+  const textBlock = blocks.find((block) =>
+    block.editable !== false && ["TEXT", "RICH_TEXT"].includes(block.type)
+  );
+  const marker = "CodeY exported edit persisted after restart.";
+
+  if (textBlock) {
+    const edit = await requestJson(
+      `/api/v1/cms/pages/${encodeURIComponent(pageSlug)}/blocks/${encodeURIComponent(textBlock.key)}${localeQuery}`,
+      {
+        method: "PATCH",
+        headers: authorization,
+        body: JSON.stringify({
+          value: textBlock.type === "RICH_TEXT" ? `<p>${marker}</p>` : marker
+        })
+      }
+    );
+    if (edit.response.status !== 200) {
+      throw new Error(`Unable to edit generated content: ${JSON.stringify(edit.body)}`);
+    }
+
+    return {
+      kind: "content-block",
+      pageSlug,
+      blockKey: textBlock.key,
+      marker
+    };
+  }
+
+  const edit = await requestJson(`/api/v1/cms/pages/${encodeURIComponent(pageSlug)}${localeQuery}`, {
+    method: "PATCH",
+    headers: authorization,
+    body: JSON.stringify({
+      title: marker,
+      content: {
+        ...(page.content && typeof page.content === "object" ? page.content : {}),
+        hideTitle: false
+      }
+    })
+  });
+  if (edit.response.status !== 200) {
+    throw new Error(`Unable to edit the generated page: ${JSON.stringify(edit.body)}`);
+  }
+
+  return {
+    kind: "page-title",
+    pageSlug,
+    marker
+  };
+}
+
+async function assertPackage(directory, expectedVersion, requirePublicKey) {
   const [runtime, packaged, license, notice, publicKey] = await Promise.all([
     readJson(path.join(directory, "codey-runtime.json")),
     readJson(path.join(directory, "package.json")),
     readFile(path.join(directory, "LICENSE"), "utf8"),
     readFile(path.join(directory, "NOTICE.md"), "utf8"),
     readFile(path.join(directory, "runtime-meta", "release-public-key.pem"), "utf8")
+      .catch((error) => {
+        if (!requirePublicKey && error.code === "ENOENT") return "";
+        throw error;
+      })
   ]);
 
   if (runtime?.version !== expectedVersion || runtime?.channel !== "stable") {
@@ -198,7 +412,10 @@ async function assertPackage(directory, expectedVersion) {
   if (!license.includes("GNU GENERAL PUBLIC LICENSE") || !notice.includes("CodeY CMS Legal Notice")) {
     throw new Error("The extracted package is missing its legal notices.");
   }
-  if (!publicKey.includes("BEGIN PUBLIC KEY") || publicKey.includes("PRIVATE KEY")) {
+  if (
+    (requirePublicKey && !publicKey.includes("BEGIN PUBLIC KEY")) ||
+    publicKey.includes("PRIVATE KEY")
+  ) {
     throw new Error("The extracted package does not contain a safe release verification key.");
   }
 }

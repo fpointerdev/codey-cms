@@ -693,7 +693,15 @@ function visibleMenuItems(
 }
 
 export class CmsService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: CmsDatabase) {}
+
+  private transaction<T>(operation: (transaction: Prisma.TransactionClient) => Promise<T>) {
+    if ("$transaction" in this.prisma) {
+      return this.prisma.$transaction(operation);
+    }
+
+    return operation(this.prisma);
+  }
 
   private async defaultSiteId() {
     const site = await this.prisma.site.findUnique({
@@ -827,7 +835,7 @@ export class CmsService {
   async createPage(input: CreatePageInput, user?: RequestUser) {
     assertUniqueKeys(input.sections);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const page = await tx.cmsPage.create({
         data: {
           title: input.title,
@@ -865,7 +873,7 @@ export class CmsService {
       throw new AppError(409, "same_translation_locale", "Choose a different target language.");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const sourcePage = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug: sourceSlug,
@@ -927,7 +935,7 @@ export class CmsService {
       assertUniqueKeys(input.sections);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const existingPage = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug,
@@ -953,7 +961,7 @@ export class CmsService {
   async addSection(slug: string, input: PageSectionInput, user?: RequestUser, locale = "en") {
     assertUniqueKeys([input]);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug,
@@ -987,7 +995,7 @@ export class CmsService {
   ) {
     assertValidBlockValue(input);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug,
@@ -1026,7 +1034,7 @@ export class CmsService {
     user?: RequestUser,
     locale = "en"
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug,
@@ -1077,7 +1085,7 @@ export class CmsService {
   }
 
   async publishPage(slug: string, user?: RequestUser, locale = "en") {
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug,
@@ -1100,7 +1108,7 @@ export class CmsService {
   }
 
   async archivePage(slug: string, user?: RequestUser, locale = "en") {
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug,
@@ -1152,7 +1160,7 @@ export class CmsService {
   }
 
   async restoreRevision(slug: string, revisionId: string, user?: RequestUser, locale = "en") {
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
           slug,
@@ -1367,7 +1375,7 @@ export class CmsService {
   }
 
   async createPost(input: CreatePostInput, user?: RequestUser) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const post = await tx.cmsPost.create({
         data: createPostData(input)
       });
@@ -1392,7 +1400,7 @@ export class CmsService {
       throw new AppError(409, "same_translation_locale", "Choose a different target language.");
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const sourcePost = await tx.cmsPost.findFirstOrThrow({
         where: {
           slug: sourceSlug,
@@ -1450,7 +1458,7 @@ export class CmsService {
   }
 
   async updatePost(slug: string, input: UpdatePostInput, user?: RequestUser, locale = "en") {
-    return this.prisma.$transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const post = await tx.cmsPost.findFirstOrThrow({
         where: {
           slug,

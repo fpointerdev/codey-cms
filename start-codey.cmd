@@ -1,6 +1,10 @@
 @echo off
 setlocal
 
+set OPEN_BROWSER=true
+if /I "%CODEY_NO_OPEN%"=="true" set OPEN_BROWSER=false
+if /I "%~1"=="--no-open" set OPEN_BROWSER=false
+
 where docker >nul 2>nul
 if errorlevel 1 (
   echo.
@@ -42,7 +46,8 @@ if not defined CORS_ORIGINS set CORS_ORIGINS=%APP_PUBLIC_URL%
 
 set COMPOSE_FILE=docker-compose.selfhost.yml
 set COMPOSE_FILES=-f %COMPOSE_FILE%
-if exist docker-compose.override.yml set COMPOSE_FILES=%COMPOSE_FILES% -f docker-compose.override.yml
+if not defined CODEY_COMPOSE_OVERRIDE_FILE set CODEY_COMPOSE_OVERRIDE_FILE=docker-compose.override.yml
+if exist %CODEY_COMPOSE_OVERRIDE_FILE% set COMPOSE_FILES=%COMPOSE_FILES% -f %CODEY_COMPOSE_OVERRIDE_FILE%
 
 echo Starting CodeY CMS at %APP_PUBLIC_URL%. The first start can take several minutes.
 docker compose %COMPOSE_FILES% up -d --build --wait --wait-timeout 180
@@ -60,5 +65,10 @@ if not defined INSTALL_TOKEN (
 )
 
 set SETUP_URL=%APP_PUBLIC_URL%/install#token=%INSTALL_TOKEN%
-start "" "%SETUP_URL%"
-echo CodeY CMS is ready. The one-time owner setup opened in your browser.
+if "%OPEN_BROWSER%"=="true" (
+  start "" "%SETUP_URL%"
+  echo CodeY CMS is ready. The one-time owner setup opened in your browser.
+) else (
+  echo CodeY CMS is starting. Open this one-time setup URL:
+  echo %SETUP_URL%
+)

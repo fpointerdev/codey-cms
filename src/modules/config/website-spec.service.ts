@@ -24,6 +24,12 @@ type RequestUser = {
   id: string;
 };
 
+type WebsiteSpecDatabase = ModuleContext["prisma"] | Prisma.TransactionClient;
+
+type WebsiteSpecContext = Omit<ModuleContext, "prisma"> & {
+  prisma: WebsiteSpecDatabase;
+};
+
 type GeneratedMediaPlaceholder = {
   key: string;
   kind: "IMAGE" | "VIDEO" | "DOCUMENT" | "OTHER";
@@ -244,6 +250,21 @@ export async function applyWebsiteSpec(
 ): Promise<ApplyResult> {
   const plan = buildWebsiteGenerationPlan(input);
 
+  return context.prisma.$transaction(
+    (transaction) => applyWebsiteGenerationPlan(
+      { ...context, prisma: transaction },
+      plan,
+      user
+    ),
+    { maxWait: 10_000, timeout: 120_000 }
+  );
+}
+
+async function applyWebsiteGenerationPlan(
+  context: WebsiteSpecContext,
+  plan: WebsiteGenerationPlan,
+  user?: RequestUser
+): Promise<ApplyResult> {
   const site = await context.prisma.site.upsert({
     where: { slug: plan.site.slug },
     update: {
@@ -297,7 +318,7 @@ function buildGeneratedBranding(
 }
 
 async function syncGeneratedSiteSettings(
-  context: ModuleContext,
+  context: WebsiteSpecContext,
   siteId: string,
   plan: WebsiteGenerationPlan
 ) {
@@ -368,7 +389,7 @@ async function syncGeneratedSiteSettings(
 }
 
 async function syncLocalizationSettings(
-  context: ModuleContext,
+  context: WebsiteSpecContext,
   siteId: string,
   plan: WebsiteGenerationPlan
 ) {
@@ -950,7 +971,7 @@ function mapProduct(
   };
 }
 
-async function syncInstalledModules(context: ModuleContext, siteId: string, enabledModules: ModuleId[]) {
+async function syncInstalledModules(context: WebsiteSpecContext, siteId: string, enabledModules: ModuleId[]) {
   const enabled = new Set(enabledModules);
 
   for (const module of Object.values(moduleCatalog)) {
@@ -978,7 +999,7 @@ async function syncInstalledModules(context: ModuleContext, siteId: string, enab
 }
 
 async function syncMediaPlaceholders(
-  context: ModuleContext,
+  context: WebsiteSpecContext,
   siteId: string,
   mediaPlaceholders: GeneratedMediaPlaceholder[]
 ) {
@@ -1034,7 +1055,7 @@ async function syncMediaPlaceholders(
 }
 
 async function syncCmsContent(
-  context: ModuleContext,
+  context: WebsiteSpecContext,
   plan: WebsiteGenerationPlan,
   mediaAssetIds: Map<string, string>,
   user?: RequestUser
@@ -1078,7 +1099,7 @@ async function syncCmsContent(
   return pages;
 }
 
-async function syncGeneratedPostCategories(context: ModuleContext, plan: WebsiteGenerationPlan) {
+async function syncGeneratedPostCategories(context: WebsiteSpecContext, plan: WebsiteGenerationPlan) {
   const categorySlugs = [
     ...new Set(plan.cmsPosts.flatMap((post) => post.categorySlugs))
   ];
@@ -1104,7 +1125,7 @@ async function syncGeneratedPostCategories(context: ModuleContext, plan: Website
 }
 
 async function syncProducts(
-  context: ModuleContext,
+  context: WebsiteSpecContext,
   plan: WebsiteGenerationPlan,
   mediaAssetIds: Map<string, string>
 ) {
@@ -1191,11 +1212,11 @@ async function syncProducts(
 }
 
 export async function replaceGeneratedProduct(
-  database: ModuleContext["prisma"],
+  database: WebsiteSpecDatabase,
   productId: string,
   data: Prisma.ProductUpdateArgs["data"]
 ) {
-  return database.$transaction(async (transaction) => {
+  return withDatabaseTransaction(database, async (transaction) => {
     await transaction.productImage.deleteMany({ where: { productId } });
     await transaction.productOption.deleteMany({ where: { productId } });
     await transaction.productVariant.deleteMany({ where: { productId } });
@@ -1208,11 +1229,11 @@ export async function replaceGeneratedProduct(
 }
 
 export async function replaceGeneratedMainMenu(
-  database: ModuleContext["prisma"],
+  database: WebsiteSpecDatabase,
   locale: string,
   navigation: WebsiteGenerationPlan["navigation"]
 ) {
-  return database.$transaction(async (transaction) => {
+  return withDatabaseTransaction(database, async (transaction) => {
     const menu = await transaction.menu.upsert({
       where: {
         locale_slug: {
@@ -1266,10 +1287,21 @@ export async function replaceGeneratedMainMenu(
   });
 }
 
-async function syncMainMenu(context: ModuleContext, plan: WebsiteGenerationPlan) {
+async function syncMainMenu(context: WebsiteSpecContext, plan: WebsiteGenerationPlan) {
   if (!plan.modules.includes("cms")) return 0;
 
   return replaceGeneratedMainMenu(context.prisma, plan.site.locale, plan.navigation);
+}
+
+function withDatabaseTransaction<T>(
+  database: WebsiteSpecDatabase,
+  operation: (transaction: Prisma.TransactionClient) => Promise<T>
+) {
+  if ("$transaction" in database) {
+    return database.$transaction(operation);
+  }
+
+  return operation(database);
 }
 
 function stripGeneratedBlockFields(page: GeneratedCmsPage, mediaAssetIds: Map<string, string>) {

@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { Prisma } from "@prisma/client";
+import { config } from "../../src/config/index.js";
 import { createApp } from "../../src/core/app.js";
 import { prisma } from "../../src/infrastructure/database/prisma.js";
+import { logger } from "../../src/infrastructure/logging/logger.js";
+import { applyWebsiteSpec } from "../../src/modules/config/website-spec.service.js";
 
 const ownerEmail = "first-owner@example.com";
 const ownerPassword = "FirstOwnerPassword123!";
@@ -135,6 +139,83 @@ test("an empty runtime can be claimed once and used immediately", { timeout: 60_
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await prisma.$disconnect();
   }
+});
+
+test("a late WebsiteSpec failure rolls back every generated record", { timeout: 60_000 }, async () => {
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const pageSlug = `atomic-page-${runId}`;
+  const productSlugs = [`atomic-product-a-${runId}`, `atomic-product-b-${runId}`];
+  const duplicateSku = `ATOMIC-${runId}`;
+  const siteBefore = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const settingsBefore = await prisma.moduleSetting.findUnique({
+    where: {
+      siteId_moduleId_key: {
+        siteId: siteBefore.id,
+        moduleId: "config",
+        key: "site"
+      }
+    }
+  });
+
+  await assert.rejects(
+    applyWebsiteSpec({ config, prisma, logger }, {
+      version: "1.0",
+      intent: "shop",
+      project: {
+        name: `Atomic rollback ${runId}`,
+        slug: `atomic-rollback-${runId}`,
+        summary: "A generated site that must roll back after a late persistence failure.",
+        locale: "en",
+        timezone: "UTC",
+        currency: "EUR"
+      },
+      modules: { cms: true, shop: true },
+      style: {
+        theme: "system",
+        colorPalette: { primary: "#17211b", accent: "#0f766e" }
+      },
+      pages: [{
+        title: "Atomic rollback page",
+        slug: pageSlug,
+        purpose: "content",
+        sections: [{
+          key: "content",
+          type: "richText",
+          body: "This page must not survive the failed import."
+        }]
+      }],
+      products: productSlugs.map((slug, index) => ({
+        name: `Atomic product ${index + 1}`,
+        slug,
+        sku: duplicateSku,
+        priceCents: 1000 + index,
+        currency: "EUR",
+        stockQuantity: 1
+      }))
+    }),
+    (error) => error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
+  );
+
+  const [siteAfter, settingsAfter, pages, products] = await Promise.all([
+    prisma.site.findUniqueOrThrow({ where: { slug: "default" } }),
+    prisma.moduleSetting.findUnique({
+      where: {
+        siteId_moduleId_key: {
+          siteId: siteBefore.id,
+          moduleId: "config",
+          key: "site"
+        }
+      }
+    }),
+    prisma.cmsPage.count({ where: { slug: pageSlug } }),
+    prisma.product.count({ where: { slug: { in: productSlugs } } })
+  ]);
+
+  assert.equal(siteAfter.name, siteBefore.name);
+  assert.deepEqual(settingsAfter?.value, settingsBefore?.value);
+  assert.equal(pages, 0);
+  assert.equal(products, 0);
+  await prisma.$disconnect();
 });
 
 function installationPayload(claimToken: string) {

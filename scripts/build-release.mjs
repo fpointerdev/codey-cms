@@ -77,7 +77,8 @@ try {
     releasedAt,
     contracts: {
       websiteSpec: "1.0",
-      builder: "1.0"
+      builder: "1.0",
+      exportedSiteAcceptance: "1.0"
     },
     requirements: {
       node: ">=24 <25",

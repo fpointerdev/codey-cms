@@ -10,6 +10,10 @@ CodeY CMS is distributed as a signed release and runs on infrastructure controll
 4. Run `start-codey.cmd` on Windows or `./start-codey.sh` on macOS and Linux.
 5. Complete the setup page opened by the launcher.
 
+For headless automation, run `./start-codey.sh --no-open` or set
+`CODEY_NO_OPEN=true`. The launcher starts the same packaged Docker services but
+prints the one-time setup URL instead of opening a browser.
+
 The launcher starts PostgreSQL and CodeY CMS, generates strong secrets, and places the one-time installation token in the URL fragment. URL fragments are not sent in HTTP requests. Setup creates the first owner, initial roles, selected modules, site settings, home page, and main navigation in one database transaction. It then locks permanently.
 
 On a headless Linux server, the launcher prints the one-time setup URL when it cannot open a browser. Open it privately, complete installation, and do not retain the token in shared terminal logs.

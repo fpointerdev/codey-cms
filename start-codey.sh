@@ -2,6 +2,12 @@
 set -eu
 
 compose_file="docker-compose.selfhost.yml"
+override_file="${CODEY_COMPOSE_OVERRIDE_FILE:-docker-compose.override.yml}"
+open_browser=true
+
+if [ "${CODEY_NO_OPEN:-false}" = "true" ] || [ "${1:-}" = "--no-open" ]; then
+  open_browser=false
+fi
 
 fail() {
   printf '\nCodeY CMS could not start: %s\n' "$1" >&2
@@ -64,8 +70,8 @@ CORS_ORIGINS="${CORS_ORIGINS:-$APP_PUBLIC_URL}"
 export API_PORT APP_PUBLIC_URL CORS_ORIGINS
 
 compose() {
-  if [ -f "docker-compose.override.yml" ]; then
-    docker compose -f "$compose_file" -f "docker-compose.override.yml" "$@"
+  if [ -f "$override_file" ]; then
+    docker compose -f "$compose_file" -f "$override_file" "$@"
   else
     docker compose -f "$compose_file" "$@"
   fi
@@ -84,14 +90,16 @@ fi
 install_url="${CODEY_SETUP_URL:-${APP_PUBLIC_URL}/install}#token=${install_token}"
 opened=false
 
-case "$(uname -s)" in
-  Darwin) open "$install_url" && opened=true || true ;;
-  Linux)
-    if command -v xdg-open >/dev/null 2>&1 && xdg-open "$install_url" >/dev/null 2>&1; then
-      opened=true
-    fi
-    ;;
-esac
+if [ "$open_browser" = true ]; then
+  case "$(uname -s)" in
+    Darwin) open "$install_url" && opened=true || true ;;
+    Linux)
+      if command -v xdg-open >/dev/null 2>&1 && xdg-open "$install_url" >/dev/null 2>&1; then
+        opened=true
+      fi
+      ;;
+  esac
+fi
 
 if [ "$opened" = true ]; then
   printf 'CodeY CMS is starting. Complete setup in the opened browser.\n'

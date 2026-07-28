@@ -1,0 +1,54 @@
+{
+  "version": "1.0",
+  "intent": "cms",
+  "project": {
+    "name": "CodeY Export Acceptance",
+    "slug": "codey-export-acceptance",
+    "summary": "A generated site used to qualify the downloadable CodeY CMS runtime.",
+    "locale": "en",
+    "timezone": "UTC",
+    "currency": "EUR"
+  },
+  "modules": {
+    "cms": true
+  },
+  "style": {
+    "theme": "system",
+    "colorPalette": {
+      "primary": "#17211b",
+      "accent": "#0f766e"
+    },
+    "typography": {
+      "heading": "Inter",
+      "body": "Inter"
+    }
+  },
+  "pages": [
+    {
+      "title": "Generated acceptance",
+      "slug": "generated-acceptance",
+      "purpose": "content",
+      "includeInNavigation": true,
+      "seo": {
+        "title": "Generated acceptance",
+        "description": "Server-rendered generated content qualification.",
+        "keywords": []
+      },
+      "sections": [
+        {
+          "key": "acceptance",
+          "type": "richText",
+          "heading": "Generated release acceptance",
+          "body": "<p>Initial generated acceptance content.</p>",
+          "items": [],
+          "galleryMediaKeys": [],
+          "productSlugs": [],
+          "settings": {}
+        }
+      ]
+    }
+  ],
+  "posts": [],
+  "products": [],
+  "media": []
+}

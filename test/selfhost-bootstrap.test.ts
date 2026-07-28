@@ -107,13 +107,15 @@ test("self-host launchers load a generated export override when present", async 
     readFile("docker-compose.selfhost.yml", "utf8")
   ]);
 
-  assert.match(shellLauncher, /-f "docker-compose\.override\.yml"/);
+  assert.match(shellLauncher, /CODEY_COMPOSE_OVERRIDE_FILE:-docker-compose\.override\.yml/);
+  assert.match(shellLauncher, /-f "\$override_file"/);
   assert.match(shellLauncher, /compose run --rm --no-deps secrets/);
   assert.match(shellLauncher, /command -v docker/);
   assert.match(shellLauncher, /docker info/);
   assert.match(shellLauncher, /\.codey-local-port/);
   assert.match(shellLauncher, /APP_PUBLIC_URL="\$\{APP_PUBLIC_URL:-http:\/\/localhost:\$\{API_PORT\}\}"/);
-  assert.match(windowsLauncher, /-f docker-compose\.override\.yml/);
+  assert.match(windowsLauncher, /CODEY_COMPOSE_OVERRIDE_FILE=docker-compose\.override\.yml/);
+  assert.match(windowsLauncher, /-f %CODEY_COMPOSE_OVERRIDE_FILE%/);
   assert.match(windowsLauncher, /docker compose %COMPOSE_FILES% run/);
   assert.match(windowsLauncher, /where docker/);
   assert.match(windowsLauncher, /Get-NetTCPConnection/);
@@ -170,6 +172,23 @@ test("self-host shell launcher selects and remembers an available port", async (
       await readFile(openedUrl, "utf8"),
       "http://localhost:4001/install#token=test-install-token"
     );
+
+    await unlink(openedUrl);
+    const headless = await execFileAsync("sh", ["start-codey.sh", "--no-open"], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        API_PORT: "",
+        APP_PUBLIC_URL: "",
+        CORS_ORIGINS: "",
+        CODEY_SETUP_URL: "",
+        PATH: `${binDirectory}:${process.env.PATH || ""}`,
+        CODEY_DOCKER_LOG: dockerLog,
+        CODEY_OPENED_URL: openedUrl
+      }
+    });
+    assert.match(headless.stdout, /Open this one-time setup URL:[\s\S]*http:\/\/localhost:4001\/install#token=/);
+    await assert.rejects(readFile(openedUrl, "utf8"), { code: "ENOENT" });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
