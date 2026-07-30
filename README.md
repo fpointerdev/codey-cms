@@ -38,6 +38,8 @@ pnpm setup:admin
 pnpm dev
 ```
 
+The default seed creates runtime roles, module settings, and an editable Home page without publishing demo products, posts, coupons, or shipping rules. Set `CODEY_SEED_DEMO_CONTENT=true` only when you intentionally need sample shop and article data for local testing.
+
 Node.js 24 and pnpm 11 are expected.
 
 Release checks:

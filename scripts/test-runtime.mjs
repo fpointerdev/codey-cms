@@ -31,6 +31,7 @@ export function testRuntimeEnvironment(overrides = {}) {
     AUTH_ALLOW_REGISTRATION: "false",
     AUTH_REQUIRE_EMAIL_VERIFICATION: "false",
     AUTH_RECOVERY_TOKEN_DELIVERY: "response",
+    CODEY_SEED_DEMO_CONTENT: "true",
     CODEY_ADMIN_EMAIL: "",
     CODEY_ADMIN_PASSWORD: "",
     EMAIL_DRIVER: "disabled",
