@@ -122,6 +122,7 @@ test("self-host launchers load a generated export override when present", async 
   assert.match(windowsLauncher, /\.codey-local-port/);
   assert.match(windowsLauncher, /%APP_PUBLIC_URL%\/install#token=%INSTALL_TOKEN%/);
   assert.match(composeFile, /backup:[\s\S]*healthcheck:[\s\S]*process\.kill\(1, 0\)/);
+  assert.match(composeFile, /CODEY_SEED_DEMO_CONTENT: \$\{CODEY_SEED_DEMO_CONTENT:-false\}/);
   assert.doesNotMatch(composeFile, /backup:[\s\S]*healthcheck:\s*\n\s*disable:\s*true/);
   assert.match(composeFile, /BACKUP_REQUIRED: \$\{BACKUP_REQUIRED:-true\}/);
   assert.match(composeFile, /BACKUP_OFFSITE_REQUIRED: \$\{BACKUP_OFFSITE_REQUIRED:-true\}/);

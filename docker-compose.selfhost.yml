@@ -27,6 +27,7 @@ x-runtime-environment: &runtime-environment
   STORAGE_KEY_PREFIX: sites/self-hosted
   AUTH_ALLOW_REGISTRATION: "false"
   AUTH_RECOVERY_TOKEN_DELIVERY: disabled
+  CODEY_SEED_DEMO_CONTENT: ${CODEY_SEED_DEMO_CONTENT:-false}
   BACKUP_DIR: /app/backups
   BACKUP_MIRROR_DIR: /app/backups-mirror
   BACKUP_REQUIRE_ENCRYPTION: "true"

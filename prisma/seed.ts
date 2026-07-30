@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { shouldSeedDemoContent } from "../src/core/seed-policy.js";
 import { hashPassword } from "../src/core/security/password.js";
 import {
   deploymentProfiles,
@@ -382,7 +383,7 @@ async function seedShopConfig() {
   });
 }
 
-async function seedCmsContent() {
+async function seedCmsContent(includeDemoContent: boolean) {
   const page = await prisma.cmsPage.upsert({
     where: {
       locale_slug: {
@@ -495,6 +496,8 @@ async function seedCmsContent() {
       }
     });
   }
+
+  if (!includeDemoContent) return;
 
   const category = await prisma.cmsCategory.upsert({
     where: {
@@ -649,6 +652,7 @@ async function seedSiteModules() {
 
 async function main() {
   const profile = deploymentProfiles[resolveDeploymentProfileId()];
+  const includeDemoContent = shouldSeedDemoContent();
 
   await upsertPermissions();
 
@@ -676,16 +680,16 @@ async function main() {
   await seedAdminUser(ownerRole.id);
   await seedSiteModules();
 
-  if (profile.modules.includes("products")) {
+  if (includeDemoContent && profile.modules.includes("products")) {
     await seedProducts();
   }
 
-  if (profile.modules.includes("orders")) {
+  if (includeDemoContent && profile.modules.includes("orders")) {
     await seedShopConfig();
   }
 
   if (profile.modules.includes("cms")) {
-    await seedCmsContent();
+    await seedCmsContent(includeDemoContent);
   }
 }
 
