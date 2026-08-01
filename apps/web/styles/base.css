@@ -1279,6 +1279,7 @@ body:not([data-codey-runtime-theme="true"]) .content-block {
 }
 
 .gallery-item {
+  position: relative;
   margin: 0;
 }
 
@@ -1286,6 +1287,28 @@ body:not([data-codey-runtime-theme="true"]) .content-block {
   display: block;
   color: inherit;
   text-decoration: none;
+}
+
+.gallery-item-stretched-link::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: "";
+}
+
+.gallery-item-stretched-link:focus-visible {
+  outline: none;
+}
+
+.gallery-item-stretched-link:focus-visible::after {
+  border-radius: var(--site-radius);
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.gallery-item figcaption a:not(.gallery-item-stretched-link) {
+  position: relative;
+  z-index: 2;
 }
 
 .gallery-block:not(.slider-block) .block-image {

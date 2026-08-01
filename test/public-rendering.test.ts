@@ -394,6 +394,83 @@ test("legacy slider placeholders recover intrinsic SVG dimensions", () => {
   assert.match(html, /alt="Legacy slide" width="1200" height="700"/);
 });
 
+test("linked gallery items expose the whole item as an accessible destination", () => {
+  const html = renderPageContent({
+    title: "Projects",
+    content: {},
+    sections: [{
+      id: "projects",
+      key: "projects",
+      settings: {},
+      blocks: [{
+        key: "project-gallery",
+        type: "GALLERY",
+        value: {
+          items: [{
+            url: "/uploads/playground.jpg",
+            alt: "Community playground",
+            caption: "<h3>Neighbourhood play space</h3>",
+            link: "/projects/neighbourhood-play-space"
+          }],
+          settings: { displayMode: "gallery", showCaptions: true }
+        },
+        settings: {},
+        editable: true
+      }]
+    }]
+  });
+
+  assert.match(html, /class="gallery-item-stretched-link"/);
+  assert.match(html, /href="\/projects\/neighbourhood-play-space"/);
+  assert.match(html, /aria-label="View Community playground"/);
+  assert.match(html, /<figcaption><h3>Neighbourhood play space<\/h3><\/figcaption>/);
+});
+
+test("section backgrounds receive the same accessible foreground used by generated previews", () => {
+  const html = withPublicRenderContext(
+    {
+      config: {
+        siteSettings: {
+          design: { colors: { primary: "#172145" } }
+        }
+      }
+    },
+    () => renderPageContent({
+      title: "Accessible sections",
+      content: {},
+      sections: [
+        {
+          id: "dark-section",
+          key: "dark-section",
+          settings: {
+            style: { backgroundColor: "#172145" },
+            websiteSpec: { type: "text" }
+          },
+          blocks: []
+        },
+        {
+          id: "light-section",
+          key: "light-section",
+          settings: {
+            style: { background: "#fff8e7" },
+            websiteSpec: { type: "text" }
+          },
+          blocks: []
+        }
+      ]
+    })
+  );
+
+  assert.match(
+    html,
+    /data-section-key="dark-section"[^>]*style="--section-bg:#172145; --section-text:#ffffff"/
+  );
+  assert.match(
+    html,
+    /data-section-key="light-section"[^>]*style="--section-bg:#fff8e7; --section-text:#172145"/
+  );
+});
+
 test("server rendering uses the active locale without client hydration", () => {
   const html = withPublicRenderContext({
     locale: "sq",
