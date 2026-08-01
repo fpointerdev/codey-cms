@@ -973,6 +973,40 @@ function safeHex(value) {
   return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color) ? color : "";
 }
 
+function readableForeground(background, preferred) {
+  const preferredColor = safeHex(preferred);
+  if (preferredColor && contrastRatio(background, preferredColor) >= 4.5) {
+    return preferredColor;
+  }
+
+  return contrastRatio(background, "#111827") >= contrastRatio(background, "#ffffff")
+    ? "#111827"
+    : "#ffffff";
+}
+
+function contrastRatio(left, right) {
+  const leftLuminance = relativeLuminance(left);
+  const rightLuminance = relativeLuminance(right);
+  return (
+    (Math.max(leftLuminance, rightLuminance) + 0.05) /
+    (Math.min(leftLuminance, rightLuminance) + 0.05)
+  );
+}
+
+function relativeLuminance(color) {
+  const normalized = color.slice(1);
+  const hex = normalized.length === 3
+    ? normalized.replace(/./g, (value) => value.repeat(2))
+    : normalized;
+  const channels = [0, 2, 4].map(
+    (offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255
+  );
+  const [red, green, blue] = channels.map((channel) =>
+    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  );
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+}
+
 function safeNumber(value, min, max) {
   if (value === "" || value === null || value === undefined) return "";
 
@@ -1048,10 +1082,16 @@ function sectionStyleAttribute(section) {
   const settings = section.settings || {};
   const style = settings.style || {};
   const decoration = settings.decoration || {};
+  const background = safeHex(style.backgroundColor ?? style.background);
+  const configuredText = safeHex(style.textColor ?? style.foreground);
+  const preferredText = safeHex(state.config?.siteSettings?.design?.colors?.primary);
+  const text = configuredText || (background ? readableForeground(background, preferredText) : "");
   const declarations = [
-    safeHex(style.backgroundColor) ? `--section-bg:${safeHex(style.backgroundColor)}` : "",
-    safeHex(style.textColor) ? `--section-text:${safeHex(style.textColor)}` : "",
-    safeHex(style.accentColor) ? `--section-accent:${safeHex(style.accentColor)}` : "",
+    background ? `--section-bg:${background}` : "",
+    text ? `--section-text:${text}` : "",
+    safeHex(style.accentColor ?? style.accent)
+      ? `--section-accent:${safeHex(style.accentColor ?? style.accent)}`
+      : "",
     safeNumber(style.radius, 0, 48) ? `--section-radius:${safeNumber(style.radius, 0, 48)}px` : "",
     safeNumber(settings.minHeight, 0, 1200) ? `--section-min-height:${safeNumber(settings.minHeight, 0, 1200)}px` : "",
     settings.mediaMode === "background" && safeHex(settings.overlayColor)
@@ -1244,11 +1284,15 @@ export function renderBlock(block, renderContext = {}) {
               if (!src) return "";
               const image = renderImageTag(item, item.alt || `Gallery image ${index + 1}`, "gallery-block", "block-image", renderContext);
               const href = item.link ? safePublicHref(item.link) : settings.lightbox ? src : "";
+              const linkLabel = item.link
+                ? `View ${item.alt || `gallery item ${index + 1}`}`
+                : `Open ${item.alt || `gallery image ${index + 1}`}`;
 
               return `
                 <figure class="gallery-item">
-                  ${href ? `<a href="${escapeHtml(href)}"${href === src ? ' target="_blank" rel="noreferrer"' : ""}>${image}</a>` : image}
+                  ${image}
                   ${settings.showCaptions && item.caption ? `<figcaption>${renderRichText(item.caption)}</figcaption>` : ""}
+                  ${href ? `<a class="gallery-item-stretched-link" href="${escapeHtml(href)}" aria-label="${escapeHtml(linkLabel)}"${href === src ? ' target="_blank" rel="noreferrer"' : ""}><span class="visually-hidden">${escapeHtml(linkLabel)}</span></a>` : ""}
                 </figure>
               `;
             })
