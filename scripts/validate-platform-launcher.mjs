@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -50,17 +50,23 @@ async function validateShellLauncher() {
 }
 
 async function validateWindowsLauncher() {
-  const dockerPath = path.join(directory, "docker.cmd");
-  await writeFile(dockerPath, [
-    "@echo off",
-    "echo %*>>\"%CODEY_DOCKER_LOG%\"",
-    "echo %*| findstr /C:\"--print-install-token\" >nul && <nul set /p =contract-install-token",
-    "exit /b 0"
-  ].join("\r\n"));
+  const dockerPath = path.join(directory, "docker.exe");
+  const preloadPath = path.join(directory, "docker-preload.cjs");
+  await copyFile(process.execPath, dockerPath);
+  await writeFile(preloadPath, [
+    'const fs = require("node:fs");',
+    "const args = process.argv.slice(1);",
+    'fs.appendFileSync(process.env.CODEY_DOCKER_LOG, `${args.join(" ")}\\n`);',
+    'if (args.includes("--print-install-token")) process.stdout.write("contract-install-token");',
+    "process.exit(0);"
+  ].join("\n"));
 
   return execFileAsync(process.env.ComSpec || "cmd.exe", ["/d", "/c", "start-codey.cmd", "--no-open"], {
     cwd: root,
-    env: launcherEnvironment(directory)
+    env: {
+      ...launcherEnvironment(directory),
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${preloadPath}`.trim()
+    }
   });
 }
 
