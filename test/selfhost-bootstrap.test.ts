@@ -100,11 +100,12 @@ test("existing self-host installs derive a stable runtime database password duri
   }
 });
 
-test("self-host launchers load a generated export override when present", async () => {
-  const [shellLauncher, windowsLauncher, composeFile] = await Promise.all([
+test("self-host launchers load generated and public overrides when requested", async () => {
+  const [shellLauncher, windowsLauncher, composeFile, publicComposeFile] = await Promise.all([
     readFile("start-codey.sh", "utf8"),
     readFile("start-codey.cmd", "utf8"),
-    readFile("docker-compose.selfhost.yml", "utf8")
+    readFile("docker-compose.selfhost.yml", "utf8"),
+    readFile("docker-compose.public.yml", "utf8")
   ]);
 
   assert.match(shellLauncher, /CODEY_COMPOSE_OVERRIDE_FILE:-docker-compose\.override\.yml/);
@@ -114,6 +115,8 @@ test("self-host launchers load a generated export override when present", async 
   assert.match(shellLauncher, /docker info/);
   assert.match(shellLauncher, /\.codey-local-port/);
   assert.match(shellLauncher, /APP_PUBLIC_URL="\$\{APP_PUBLIC_URL:-http:\/\/localhost:\$\{API_PORT\}\}"/);
+  assert.match(shellLauncher, /--domain/);
+  assert.match(shellLauncher, /docker-compose\.public\.yml/);
   assert.match(windowsLauncher, /CODEY_COMPOSE_OVERRIDE_FILE=docker-compose\.override\.yml/);
   assert.match(windowsLauncher, /-f %CODEY_COMPOSE_OVERRIDE_FILE%/);
   assert.match(windowsLauncher, /docker compose %COMPOSE_FILES% run/);
@@ -121,6 +124,8 @@ test("self-host launchers load a generated export override when present", async 
   assert.match(windowsLauncher, /Get-NetTCPConnection/);
   assert.match(windowsLauncher, /\.codey-local-port/);
   assert.match(windowsLauncher, /%APP_PUBLIC_URL%\/install#token=%INSTALL_TOKEN%/);
+  assert.match(windowsLauncher, /--domain/);
+  assert.match(windowsLauncher, /docker-compose\.public\.yml/);
   assert.match(composeFile, /backup:[\s\S]*healthcheck:[\s\S]*process\.kill\(1, 0\)/);
   assert.match(composeFile, /CODEY_SEED_DEMO_CONTENT: \$\{CODEY_SEED_DEMO_CONTENT:-false\}/);
   assert.doesNotMatch(composeFile, /backup:[\s\S]*healthcheck:\s*\n\s*disable:\s*true/);
@@ -128,6 +133,10 @@ test("self-host launchers load a generated export override when present", async 
   assert.match(composeFile, /BACKUP_OFFSITE_REQUIRED: \$\{BACKUP_OFFSITE_REQUIRED:-true\}/);
   assert.match(composeFile, /BACKUP_OFFSITE_PROTECTED: \$\{BACKUP_OFFSITE_PROTECTED:-false\}/);
   assert.match(composeFile, /postgres:16-alpine@sha256:[a-f0-9]{64}/);
+  assert.match(composeFile, /127\.0\.0\.1:\$\{API_PORT:-4000\}:4000/);
+  assert.match(publicComposeFile, /caddy:2\.11\.4-alpine@sha256:[a-f0-9]{64}/);
+  assert.match(publicComposeFile, /TRUST_PROXY: "1"/);
+  assert.match(publicComposeFile, /"443:443\/udp"/);
 });
 
 test("self-host shell launcher selects and remembers an available port", async () => {
@@ -194,6 +203,22 @@ test("self-host shell launcher selects and remembers an available port", async (
     });
     assert.match(headless.stdout, /Open this one-time setup URL:[\s\S]*http:\/\/localhost:4001\/install#token=/);
     await assert.rejects(readFile(openedUrl, "utf8"), { code: "ENOENT" });
+
+    const publicResult = await execFileAsync("sh", ["start-codey.sh", "--domain", "cms.example.com", "--no-open"], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        API_PORT: "4001",
+        APP_PUBLIC_URL: "",
+        CORS_ORIGINS: "",
+        CODEY_DOMAIN: "",
+        PATH: `${binDirectory}:${process.env.PATH || ""}`,
+        CODEY_DOCKER_LOG: dockerLog,
+        CODEY_OPENED_URL: openedUrl
+      }
+    });
+    assert.match(publicResult.stdout, /https:\/\/cms\.example\.com\/install#token=/);
+    assert.match(await readFile(dockerLog, "utf8"), /-f docker-compose\.public\.yml up/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -23,9 +23,10 @@ test("admin settings and builder controls complete their primary workflows", asy
 
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/dashboard\/settings$/);
+  await expect(page.locator("[data-launch-readiness]")).toBeVisible();
   await page.getByText("Email", { exact: true }).click();
   await expect(page.locator("[data-email-settings-form]")).toBeVisible();
-  await expect(page.getByLabel("Bearer token")).toHaveAttribute("type", "password");
+  await expect(page.getByLabel("Provider API key")).toHaveAttribute("type", "password");
   await expect(page.getByText(/Transactional email (configured|not configured)/)).toBeVisible();
 
   await page.getByRole("link", { name: "Pages" }).click();
@@ -414,7 +415,7 @@ test("shop customization and product creation keep advanced controls out of the 
   await expect(page.locator("[data-shop-preview]")).toHaveAttribute("data-catalog-layout", "compact");
 
   await page.getByRole("link", { name: "Products", exact: true }).click();
-  await page.getByRole("link", { name: "Create Product", exact: true }).click();
+  await page.getByRole("link", { name: "Create Product", exact: true }).first().click();
   await expect(page).toHaveURL(/\/dashboard\/shop\/products\/new$/);
   await expect(page.getByRole("heading", { name: "Product details", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Product images", exact: true })).toBeVisible();

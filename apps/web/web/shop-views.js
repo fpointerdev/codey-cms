@@ -32,7 +32,7 @@ function productAttributes(product = {}) {
     : [{ name: "", value: "" }];
 }
 
-function editableProductOptionRows(product = {}) {
+function editableProductOptionRows() {
   return [{ name: "", values: [] }];
 }
 
@@ -204,7 +204,7 @@ export function renderProductEditorPage({ product = null, categories = [], messa
               <div class="product-editor-disclosure-body">
                 <div class="builder-card-heading compact-heading"><span></span><button type="button" class="secondary-button" data-add-repeater-row="option">Add option</button></div>
                 ${renderExistingOptionList(product || {})}
-                ${renderRepeaterRows(editableProductOptionRows(product || {}), "option", {
+                ${renderRepeaterRows(editableProductOptionRows(), "option", {
                   nameLabel: "Option",
                   valueLabel: "Values",
                   name: "Size",

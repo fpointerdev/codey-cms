@@ -29,18 +29,23 @@ Docker volumes preserve:
 
 Running the launcher again reuses these values. It does not rotate secrets or create another owner.
 
-## Public Domain
+## Public Domain With Automatic HTTPS
 
-For an internet-facing site, set these values before starting Compose:
+Point the domain's DNS A/AAAA records to the server, allow inbound ports 80 and 443, then run:
 
 ```bash
-APP_PUBLIC_URL=https://www.example.com
-CORS_ORIGINS=https://www.example.com
-CODEY_ALLOW_LOCAL_SETUP_HTTP=false
-API_PORT=4000
+./start-codey.sh --domain www.example.com
 ```
 
-Place a TLS reverse proxy in front of port 4000 and expose only ports 80 and 443 publicly. Keep PostgreSQL, runtime volumes, and Docker control access private. The reverse proxy must preserve the original host and protocol headers.
+On Windows, use:
+
+```bat
+start-codey.cmd --domain www.example.com
+```
+
+The launcher adds the packaged Caddy service, obtains and renews the TLS certificate, configures the HTTPS public URL and CORS origin, and trusts exactly one proxy hop. The direct CodeY port binds only to localhost; PostgreSQL, runtime volumes, and Docker control access remain private. Certificate issuance requires correct public DNS and reachable ports 80 and 443.
+
+Existing reverse-proxy installations can continue setting `APP_PUBLIC_URL`, `CORS_ORIGINS`, `CODEY_ALLOW_LOCAL_SETUP_HTTP=false`, and an exact `TRUST_PROXY` hop count in their environment or Compose override without using `--domain`.
 
 Do not run a production site with the default localhost URL. Do not expose the installation token in chat, screenshots, logs, query parameters, or server configuration.
 
@@ -59,6 +64,8 @@ docker compose -f docker-compose.selfhost.yml down
 # Start existing installation
 docker compose -f docker-compose.selfhost.yml up -d --wait
 ```
+
+For an automatic HTTPS installation, add `-f docker-compose.public.yml` and set `CODEY_DOMAIN` when running Compose commands directly.
 
 Never add `-v` to `docker compose down` unless the database, secrets, uploads, backups, and runtime history are intentionally being deleted.
 

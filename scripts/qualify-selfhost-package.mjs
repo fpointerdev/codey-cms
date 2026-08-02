@@ -391,7 +391,7 @@ async function editGeneratedContent(accessToken, pageSlug, locale) {
 }
 
 async function assertPackage(directory, expectedVersion, requirePublicKey) {
-  const [runtime, packaged, license, notice, publicKey] = await Promise.all([
+  const [runtime, packaged, license, notice, publicKey, caddyfile, publicCompose] = await Promise.all([
     readJson(path.join(directory, "codey-runtime.json")),
     readJson(path.join(directory, "package.json")),
     readFile(path.join(directory, "LICENSE"), "utf8"),
@@ -400,7 +400,9 @@ async function assertPackage(directory, expectedVersion, requirePublicKey) {
       .catch((error) => {
         if (!requirePublicKey && error.code === "ENOENT") return "";
         throw error;
-      })
+      }),
+    readFile(path.join(directory, "Caddyfile"), "utf8"),
+    readFile(path.join(directory, "docker-compose.public.yml"), "utf8")
   ]);
 
   if (runtime?.version !== expectedVersion || runtime?.channel !== "stable") {
@@ -417,6 +419,14 @@ async function assertPackage(directory, expectedVersion, requirePublicKey) {
     publicKey.includes("PRIVATE KEY")
   ) {
     throw new Error("The extracted package does not contain a safe release verification key.");
+  }
+  if (
+    runtime.contracts?.automaticTls !== "1.0" ||
+    runtime.entrypoints?.publicCompose !== "docker-compose.public.yml" ||
+    !caddyfile.includes("reverse_proxy backend:4000") ||
+    !publicCompose.includes(runtime.supplyChain?.containerImages?.caddy || "missing-caddy-image")
+  ) {
+    throw new Error("The extracted package does not satisfy the automatic HTTPS contract.");
   }
 }
 

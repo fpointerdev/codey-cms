@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const images = JSON.parse(await readFile(path.join(root, "runtime-meta", "container-images.json"), "utf8"));
 
-for (const [name, reference] of Object.entries({ node: images.node, postgres: images.postgres })) {
+for (const [name, reference] of Object.entries({ node: images.node, postgres: images.postgres, caddy: images.caddy })) {
   if (typeof reference !== "string" || !/@sha256:[a-f0-9]{64}$/.test(reference)) {
     throw new Error(`${name} container image must be pinned by SHA-256 digest.`);
   }
@@ -15,6 +15,7 @@ await assertContains("Dockerfile", images.node);
 await assertContains("docker-compose.selfhost.yml", images.postgres);
 await assertContains("docker-compose.prod.yml", images.postgres);
 await assertContains(".github/workflows/ci.yml", images.postgres);
+await assertContains("docker-compose.public.yml", images.caddy);
 
 console.log("Container image pins match runtime-meta/container-images.json.");
 

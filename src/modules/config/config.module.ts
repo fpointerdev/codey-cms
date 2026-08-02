@@ -48,6 +48,8 @@ import { normalizeDesignSystemSettings } from "./site-design.js";
 import { RuntimeUpdateService } from "../../runtime/runtime-update.service.js";
 import { runtimeVersion } from "../../runtime/release.js";
 import { verifyAuditLogIntegrity, writeAuditLog } from "../../core/audit/audit-log.js";
+import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
+import { buildLaunchReadiness } from "./launch-readiness.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -237,6 +239,42 @@ export const configModule: AppModule = {
     );
 
     router.get(
+      "/launch-readiness",
+      requirePermission(context, "read", "modules"),
+      asyncHandler(async (_req, res) => {
+        const [siteSettings, email, backup, owner] = await Promise.all([
+          readSiteSettings(context),
+          emailSettingsService.getAdminStatus(),
+          readBackupHealth(context.config.backup),
+          context.prisma.user.findFirst({
+            where: {
+              status: "ACTIVE",
+              roles: { some: { role: { name: "owner" } } }
+            },
+            select: {
+              mfaCredential: { select: { enabledAt: true } }
+            }
+          })
+        ]);
+
+        return sendSuccess(res, {
+          readiness: buildLaunchReadiness({
+            publicUrl: context.config.app.publicUrl,
+            siteUrl: siteSettings.siteUrl,
+            searchIndexing: siteSettings.searchIndexing,
+            sitemapEnabled: siteSettings.sitemapEnabled,
+            metaDescription: siteSettings.metaDescription,
+            storageDriver: context.config.storage.driver,
+            email,
+            backup,
+            ownerMfaEnabled: Boolean(owner?.mfaCredential?.enabledAt),
+            updatesEnabled: context.config.updates.enabled
+          })
+        });
+      })
+    );
+
+    router.get(
       "/email",
       requirePermission(context, "read", "modules"),
       asyncHandler(async (_req, res) => {
@@ -259,6 +297,8 @@ export const configModule: AppModule = {
           requestId: req.requestId,
           metadata: {
             enabled: email.enabled,
+            provider: email.provider,
+            recoveryEnabled: email.recoveryEnabled,
             from: email.from,
             httpEndpoint: email.httpEndpoint,
             bearerTokenConfigured: email.bearerTokenConfigured

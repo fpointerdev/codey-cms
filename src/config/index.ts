@@ -75,7 +75,7 @@ export const config = {
   },
   rateLimits: {
     platform: {
-      enabled: true,
+      enabled: env.PLATFORM_RATE_LIMIT_ENABLED,
       windowMs: 60_000,
       apiMax: 300,
       authMax: 30,
@@ -131,6 +131,7 @@ export const config = {
   },
   email: {
     driver: env.EMAIL_DRIVER,
+    provider: "generic" as const,
     from: env.EMAIL_FROM,
     httpEndpoint: env.EMAIL_HTTP_ENDPOINT,
     httpBearerToken: env.EMAIL_HTTP_BEARER_TOKEN,

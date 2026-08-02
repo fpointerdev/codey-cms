@@ -2,18 +2,36 @@
 set -eu
 
 compose_file="docker-compose.selfhost.yml"
+public_compose_file="docker-compose.public.yml"
 override_file="${CODEY_COMPOSE_OVERRIDE_FILE:-docker-compose.override.yml}"
 open_browser=true
-
-if [ "${CODEY_NO_OPEN:-false}" = "true" ] || [ "${1:-}" = "--no-open" ]; then
-  open_browser=false
-fi
 
 fail() {
   printf '\nCodeY CMS could not start: %s\n' "$1" >&2
   printf 'Keep this window open and follow the instruction above. Your website data was not removed.\n' >&2
   exit 1
 }
+
+if [ "${CODEY_NO_OPEN:-false}" = "true" ]; then
+  open_browser=false
+fi
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-open) open_browser=false ;;
+    --domain)
+      [ "$#" -ge 2 ] || fail "--domain requires a hostname such as example.com."
+      CODEY_DOMAIN="$2"
+      shift
+      ;;
+    *) fail "Unknown option: $1" ;;
+  esac
+  shift
+done
+
+if [ -n "${CODEY_DOMAIN:-}" ] && ! printf '%s' "$CODEY_DOMAIN" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$'; then
+  fail "The public domain is invalid. Use a hostname such as example.com."
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   fail "Docker Desktop is not installed. Install Docker Desktop, open it, and run this launcher again."
@@ -65,12 +83,21 @@ if [ -z "${API_PORT:-}" ]; then
   printf '%s\n' "$API_PORT" > "$port_file"
 fi
 
-APP_PUBLIC_URL="${APP_PUBLIC_URL:-http://localhost:${API_PORT}}"
+if [ -n "${CODEY_DOMAIN:-}" ]; then
+  APP_PUBLIC_URL="${APP_PUBLIC_URL:-https://${CODEY_DOMAIN}}"
+  CODEY_ALLOW_LOCAL_SETUP_HTTP=false
+else
+  APP_PUBLIC_URL="${APP_PUBLIC_URL:-http://localhost:${API_PORT}}"
+fi
 CORS_ORIGINS="${CORS_ORIGINS:-$APP_PUBLIC_URL}"
-export API_PORT APP_PUBLIC_URL CORS_ORIGINS
+export API_PORT APP_PUBLIC_URL CORS_ORIGINS CODEY_ALLOW_LOCAL_SETUP_HTTP CODEY_DOMAIN
 
 compose() {
-  if [ -f "$override_file" ]; then
+  if [ -n "${CODEY_DOMAIN:-}" ] && [ -f "$override_file" ]; then
+    docker compose -f "$compose_file" -f "$public_compose_file" -f "$override_file" "$@"
+  elif [ -n "${CODEY_DOMAIN:-}" ]; then
+    docker compose -f "$compose_file" -f "$public_compose_file" "$@"
+  elif [ -f "$override_file" ]; then
     docker compose -f "$compose_file" -f "$override_file" "$@"
   else
     docker compose -f "$compose_file" "$@"

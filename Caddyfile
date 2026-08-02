@@ -1,0 +1,4 @@
+{$CODEY_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy backend:4000
+}

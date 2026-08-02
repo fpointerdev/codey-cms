@@ -80,6 +80,70 @@ test("email settings encrypt credentials and never return the bearer token", asy
   assert.equal((await harness.service.resolve()).httpBearerToken, "secret-email-token");
 });
 
+test("dashboard email settings can safely enable account recovery", async () => {
+  const harness = emailSettingsHarness({}, true);
+  const status = await harness.service.update({
+    enabled: true,
+    provider: "resend",
+    recoveryEnabled: true,
+    from: "notifications@example.com",
+    bearerToken: "resend-api-key"
+  });
+
+  assert.equal(status.provider, "resend");
+  assert.equal(status.recoveryEnabled, true);
+  assert.equal(status.httpEndpoint, "");
+  assert.equal((await harness.service.resolve()).httpEndpoint, "https://api.resend.com/emails");
+});
+
+test("changing a preset provider requires a fresh API key", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "resend",
+    from: "notifications@example.com",
+    bearerToken: "resend-api-key"
+  });
+
+  await assert.rejects(
+    harness.service.update({ enabled: true, provider: "postmark" }),
+    /new postmark API key/i
+  );
+});
+
+test("saving an unchanged preset preserves its successful provider test", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "resend",
+    recoveryEnabled: true,
+    from: "notifications@example.com",
+    bearerToken: "resend-api-key"
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ id: "resend-message-1" }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+
+  try {
+    await harness.service.test("owner@example.com");
+    const tested = await harness.service.getAdminStatus();
+    assert.equal(tested.lastTestSucceeded, true);
+
+    const saved = await harness.service.update({
+      enabled: true,
+      provider: "resend",
+      recoveryEnabled: true,
+      from: "notifications@example.com"
+    });
+    assert.equal(saved.lastTestSucceeded, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("email connection tests use saved settings and record provider health", async () => {
   const harness = emailSettingsHarness();
   await harness.service.update({
@@ -108,6 +172,77 @@ test("email connection tests use saved settings and record provider health", asy
     assert.equal(requestHeaders?.get("authorization"), "Bearer secret-email-token");
     assert.equal(status.lastTestSucceeded, true);
     assert.ok(status.lastTestedAt);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Postmark preset sends the provider-native request", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "postmark",
+    from: "notifications@example.com",
+    bearerToken: "postmark-server-token"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let requestUrl = "";
+  let requestHeaders: Headers | undefined;
+  let requestBody: Record<string, unknown> = {};
+  globalThis.fetch = async (input, init) => {
+    requestUrl = String(input);
+    requestHeaders = new Headers(init?.headers);
+    requestBody = JSON.parse(String(init?.body || "{}"));
+    return new Response(JSON.stringify({ MessageID: "postmark-message-1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const result = await harness.service.test("owner@example.com");
+    assert.equal(requestUrl, "https://api.postmarkapp.com/email");
+    assert.equal(requestHeaders?.get("x-postmark-server-token"), "postmark-server-token");
+    assert.equal(requestHeaders?.has("authorization"), false);
+    assert.equal(requestBody.To, "owner@example.com");
+    assert.equal(requestBody.MessageStream, "outbound");
+    assert.equal(result.providerMessageId, "postmark-message-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Resend preset sends the provider-native request", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "resend",
+    from: "notifications@example.com",
+    bearerToken: "resend-api-key"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let requestUrl = "";
+  let requestHeaders: Headers | undefined;
+  let requestBody: Record<string, unknown> = {};
+  globalThis.fetch = async (input, init) => {
+    requestUrl = String(input);
+    requestHeaders = new Headers(init?.headers);
+    requestBody = JSON.parse(String(init?.body || "{}"));
+    return new Response(JSON.stringify({ id: "resend-message-1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const result = await harness.service.test("owner@example.com");
+    assert.equal(requestUrl, "https://api.resend.com/emails");
+    assert.equal(requestHeaders?.get("authorization"), "Bearer resend-api-key");
+    assert.deepEqual(requestBody.to, ["owner@example.com"]);
+    assert.equal(requestBody.from, "notifications@example.com");
+    assert.equal(result.providerMessageId, "resend-message-1");
   } finally {
     globalThis.fetch = originalFetch;
   }

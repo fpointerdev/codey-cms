@@ -92,7 +92,7 @@ Production runtimes need `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned c
 
 Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server.
 
-The email form stores the optional HTTP bearer token in an encrypted envelope and provides a provider test. The configured endpoint receives a JSON message containing `to`, `from`, `subject`, `text`, optional `html`, and `metadata`. Email endpoints must use HTTP or HTTPS, and production endpoints must use HTTPS.
+The email form supports Resend and Postmark presets plus a generic HTTP provider. Provider credentials are write-only, stored in an encrypted envelope, and can be tested from the dashboard. Owners can enable account recovery after a provider is configured without editing runtime environment files. Generic endpoints receive a JSON message containing `to`, `from`, `subject`, `text`, optional `html`, and `metadata`. Email endpoints must use HTTP or HTTPS, and production endpoints must use HTTPS.
 
 These environment values are an optional initial fallback for transactional email:
 
@@ -137,6 +137,7 @@ Email verification and password reset tokens are created server-side, delivered 
 - Requests with a valid W3C `traceparent` header also include `meta.traceId` and `x-trace-id`.
 - `GET /api/v1/health/ready` is an unauthenticated, minimal traffic-readiness result.
 - `GET /api/v1/health/diagnostics` returns detailed readiness, backup, and process telemetry to users with `manage:modules`.
+- `GET /api/v1/config/launch-readiness` gives authenticated managers an actionable local/public launch checklist without exposing diagnostics publicly.
 - `GET /api/v1/health/metrics` remains available to users with `manage:modules` for compatibility.
 - `GET /api/v1/config/audit-logs` returns the hash-linked audit trail for sensitive operations with `valid`, `invalid`, `unknown-key`, or `legacy` integrity status.
 

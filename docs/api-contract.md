@@ -144,7 +144,7 @@ PATCH /api/v1/config/email
 POST  /api/v1/config/email/test
 ```
 
-The bearer token is write-only and encrypted at rest. The test endpoint records provider success or failure for readiness checks.
+The provider API key is write-only and encrypted at rest. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
 
 Storefront customization is site-owned and public rendering reads the same validated settings:
 
@@ -157,7 +157,7 @@ The settings contract covers catalog copy, listing and product-detail presentati
 
 ## Contract Source
 
-Express route files and their referenced Zod schemas are the current executable API contract. This repository does not currently generate or commit an OpenAPI document.
+`docs/openapi-v1.json` is a generated OpenAPI 3.1 route inventory with source locations for every module endpoint. `pnpm api:check` fails when route additions, removals, or version changes are not regenerated. Express route files and their referenced Zod schemas remain authoritative for request and response details; the inventory deliberately does not invent schema guarantees that are not generated from those validators.
 
 ## Compatibility Checklist
 

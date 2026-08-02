@@ -7,12 +7,15 @@ export type EmailMessage = {
   metadata?: Record<string, unknown>;
 };
 
+export type EmailProvider = "generic" | "resend" | "postmark";
+
 export type EmailDeliveryResult = {
   providerMessageId?: string;
 };
 
 export type EmailDeliveryConfig = {
   driver: "disabled" | "http";
+  provider?: EmailProvider;
   from?: string;
   httpEndpoint?: string;
   httpBearerToken?: string;

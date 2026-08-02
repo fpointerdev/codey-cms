@@ -3,7 +3,29 @@ setlocal
 
 set OPEN_BROWSER=true
 if /I "%CODEY_NO_OPEN%"=="true" set OPEN_BROWSER=false
+
+:parse_args
+if "%~1"=="" goto args_done
 if /I "%~1"=="--no-open" set OPEN_BROWSER=false
+if /I "%~1"=="--domain" (
+  if "%~2"=="" (
+    echo CodeY CMS could not start: --domain requires a hostname such as example.com.
+    exit /b 1
+  )
+  set CODEY_DOMAIN=%~2
+  shift
+)
+shift
+goto parse_args
+:args_done
+
+if defined CODEY_DOMAIN (
+  powershell -NoProfile -Command "if ($env:CODEY_DOMAIN -notmatch '^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$') { exit 1 }"
+  if errorlevel 1 (
+    echo CodeY CMS could not start: the public domain is invalid. Use a hostname such as example.com.
+    exit /b 1
+  )
+)
 
 where docker >nul 2>nul
 if errorlevel 1 (
@@ -41,11 +63,14 @@ if not defined API_PORT (
 )
 if not exist .codey-local-port >.codey-local-port echo %API_PORT%
 
-if not defined APP_PUBLIC_URL set APP_PUBLIC_URL=http://localhost:%API_PORT%
+if defined CODEY_DOMAIN if not defined APP_PUBLIC_URL set APP_PUBLIC_URL=https://%CODEY_DOMAIN%
+if not defined CODEY_DOMAIN if not defined APP_PUBLIC_URL set APP_PUBLIC_URL=http://localhost:%API_PORT%
 if not defined CORS_ORIGINS set CORS_ORIGINS=%APP_PUBLIC_URL%
+if defined CODEY_DOMAIN set CODEY_ALLOW_LOCAL_SETUP_HTTP=false
 
 set COMPOSE_FILE=docker-compose.selfhost.yml
 set COMPOSE_FILES=-f %COMPOSE_FILE%
+if defined CODEY_DOMAIN set COMPOSE_FILES=%COMPOSE_FILES% -f docker-compose.public.yml
 if not defined CODEY_COMPOSE_OVERRIDE_FILE set CODEY_COMPOSE_OVERRIDE_FILE=docker-compose.override.yml
 if exist %CODEY_COMPOSE_OVERRIDE_FILE% set COMPOSE_FILES=%COMPOSE_FILES% -f %CODEY_COMPOSE_OVERRIDE_FILE%
 

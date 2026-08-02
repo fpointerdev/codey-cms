@@ -101,7 +101,7 @@ services:
       - codey_backup_mirror:/app/backups-mirror
       - codey_runtime:/runtime
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "127.0.0.1:${API_PORT:-4000}:4000"
     depends_on:
       secrets:
         condition: service_completed_successfully

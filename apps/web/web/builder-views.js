@@ -9,7 +9,7 @@ import {
   setStatus,
   state
 } from "./core.js";
-import { adminHref, publicPageHref } from "./routes.js";
+import { publicPageHref } from "./routes.js";
 import { renderBlock, renderFooter, renderMenuItems, renderPageContent, renderRichText } from "./public-renderer.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
 import { designSystemCss } from "./design-system.js";

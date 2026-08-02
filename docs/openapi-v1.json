@@ -1,0 +1,2889 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CodeY CMS API",
+    "version": "0.9.6",
+    "description": "Generated route inventory for the stable /api/v1 contract. Request and response validation remains authoritative in the linked Zod route schemas."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "auth"
+    },
+    {
+      "name": "cms"
+    },
+    {
+      "name": "config"
+    },
+    {
+      "name": "health"
+    },
+    {
+      "name": "installation"
+    },
+    {
+      "name": "localization"
+    },
+    {
+      "name": "notifications"
+    },
+    {
+      "name": "orders"
+    },
+    {
+      "name": "payments"
+    },
+    {
+      "name": "products"
+    },
+    {
+      "name": "roles"
+    },
+    {
+      "name": "users"
+    }
+  ],
+  "paths": {
+    "/auth/email-verification/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_email_verification_confirm",
+        "summary": "POST /auth/email-verification/confirm",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:133",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/email-verification/request": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_email_verification_request",
+        "summary": "POST /auth/email-verification/request",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:124",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/invites": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_get_auth_invites",
+        "summary": "GET /auth/invites",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:156",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_invites",
+        "summary": "POST /auth/invites",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:142",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/invites/{id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_delete_auth_invites_id",
+        "summary": "DELETE /auth/invites/{id}",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:185",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/invites/{id}/resend": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_invites_id_resend",
+        "summary": "POST /auth/invites/{id}/resend",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:171",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/invites/accept": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_invites_accept",
+        "summary": "POST /auth/invites/accept",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:199",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_login",
+        "summary": "POST /auth/login",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:71",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_logout",
+        "summary": "POST /auth/logout",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:94",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_get_auth_me",
+        "summary": "GET /auth/me",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:266",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/mfa": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_delete_auth_mfa",
+        "summary": "DELETE /auth/mfa",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:256",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_get_auth_mfa",
+        "summary": "GET /auth/mfa",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:228",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/mfa/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_mfa_confirm",
+        "summary": "POST /auth/mfa/confirm",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:246",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/mfa/setup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_mfa_setup",
+        "summary": "POST /auth/mfa/setup",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:236",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/password": {
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_patch_auth_password",
+        "summary": "PATCH /auth/password",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:208",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_password_reset_confirm",
+        "summary": "POST /auth/password-reset/confirm",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:114",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/password-reset/request": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_password_reset_request",
+        "summary": "POST /auth/password-reset/request",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:105",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_refresh",
+        "summary": "POST /auth/refresh",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:80",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_post_auth_register",
+        "summary": "POST /auth/register",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:62",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/auth/sessions": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_delete_auth_sessions",
+        "summary": "DELETE /auth/sessions",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:218",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/categories": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_categories",
+        "summary": "GET /cms/categories",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:481",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_categories",
+        "summary": "POST /cms/categories",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:493",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/categories/{categorySlug}": {
+      "delete": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_delete_cms_categories_categorySlug",
+        "summary": "DELETE /cms/categories/{categorySlug}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:516",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_patch_cms_categories_categorySlug",
+        "summary": "PATCH /cms/categories/{categorySlug}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:504",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/forms/contact": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_forms_contact",
+        "summary": "POST /cms/forms/contact",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:680",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/forms/contact/submissions": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_forms_contact_submissions",
+        "summary": "GET /cms/forms/contact/submissions",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:691",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_media",
+        "summary": "GET /cms/media",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:583",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_media",
+        "summary": "POST /cms/media",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:603",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media/{assetId}": {
+      "delete": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_delete_cms_media_assetId",
+        "summary": "DELETE /cms/media/{assetId}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:669",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media/{assetId}/download": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_media_assetId_download",
+        "summary": "GET /cms/media/{assetId}/download",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:658",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media/orphan-cleanup": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_media_orphan_cleanup",
+        "summary": "POST /cms/media/orphan-cleanup",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:647",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media/upload": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_media_upload",
+        "summary": "POST /cms/media/upload",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:636",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media/uploads": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_media_uploads",
+        "summary": "POST /cms/media/uploads",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:614",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media/uploads/complete": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_media_uploads_complete",
+        "summary": "POST /cms/media/uploads/complete",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:625",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/media/usage": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_media_usage",
+        "summary": "GET /cms/media/usage",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:593",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/menus": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_menus",
+        "summary": "POST /cms/menus",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:424",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/menus/{menuSlug}": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_menus_menuSlug",
+        "summary": "GET /cms/menus/{menuSlug}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:409",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/menus/{menuSlug}/items": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_menus_menuSlug_items",
+        "summary": "POST /cms/menus/{menuSlug}/items",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:435",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/menus/{menuSlug}/items/{itemId}": {
+      "delete": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_delete_cms_menus_menuSlug_items_itemId",
+        "summary": "DELETE /cms/menus/{menuSlug}/items/{itemId}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:466",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_patch_cms_menus_menuSlug_items_itemId",
+        "summary": "PATCH /cms/menus/{menuSlug}/items/{itemId}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:450",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_pages",
+        "summary": "GET /cms/pages",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:151",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_pages",
+        "summary": "POST /cms/pages",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:222",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_pages_slug",
+        "summary": "GET /cms/pages/{slug}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:208",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_patch_cms_pages_slug",
+        "summary": "PATCH /cms/pages/{slug}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:252",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/archive": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_pages_slug_archive",
+        "summary": "POST /cms/pages/{slug}/archive",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:279",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/blocks/{blockKey}": {
+      "patch": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_patch_cms_pages_slug_blocks_blockKey",
+        "summary": "PATCH /cms/pages/{slug}/blocks/{blockKey}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:372",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/publish": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_pages_slug_publish",
+        "summary": "POST /cms/pages/{slug}/publish",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:264",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/revisions": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_pages_slug_revisions",
+        "summary": "GET /cms/pages/{slug}/revisions",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:294",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/revisions/{revisionId}/compare": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_pages_slug_revisions_revisionId_compare",
+        "summary": "GET /cms/pages/{slug}/revisions/{revisionId}/compare",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:308",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/revisions/{revisionId}/restore": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_pages_slug_revisions_revisionId_restore",
+        "summary": "POST /cms/pages/{slug}/revisions/{revisionId}/restore",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:323",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/sections": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_pages_slug_sections",
+        "summary": "POST /cms/pages/{slug}/sections",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:339",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/sections/{sectionId}/blocks": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_pages_slug_sections_sectionId_blocks",
+        "summary": "POST /cms/pages/{slug}/sections/{sectionId}/blocks",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:355",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/pages/{slug}/translations": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_pages_slug_translations",
+        "summary": "POST /cms/pages/{slug}/translations",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:233",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/posts": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_posts",
+        "summary": "GET /cms/posts",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:701",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_posts",
+        "summary": "POST /cms/posts",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:734",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/posts/{slug}": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_posts_slug",
+        "summary": "GET /cms/posts/{slug}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:718",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_patch_cms_posts_slug",
+        "summary": "PATCH /cms/posts/{slug}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:767",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/posts/{slug}/translations": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_posts_slug_translations",
+        "summary": "POST /cms/posts/{slug}/translations",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:748",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/publishing/run": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_publishing_run",
+        "summary": "POST /cms/publishing/run",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:399",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/publishing/scheduled": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_publishing_scheduled",
+        "summary": "GET /cms/publishing/scheduled",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:389",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/redirects": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_redirects",
+        "summary": "GET /cms/redirects",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:540",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_redirects",
+        "summary": "POST /cms/redirects",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:550",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/redirects/{redirectId}": {
+      "delete": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_delete_cms_redirects_redirectId",
+        "summary": "DELETE /cms/redirects/{redirectId}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:572",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_patch_cms_redirects_redirectId",
+        "summary": "PATCH /cms/redirects/{redirectId}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:561",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/redirects/resolve": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_redirects_resolve",
+        "summary": "GET /cms/redirects/resolve",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:530",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/robots.txt": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_robots_txt",
+        "summary": "GET /cms/robots.txt",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:144",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/sitemap.xml": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_sitemap_xml",
+        "summary": "GET /cms/sitemap.xml",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:135",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/templates": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_templates",
+        "summary": "GET /cms/templates",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:164",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_templates",
+        "summary": "POST /cms/templates",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:175",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/cms/templates/{templateId}": {
+      "delete": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_delete_cms_templates_templateId",
+        "summary": "DELETE /cms/templates/{templateId}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:197",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_patch_cms_templates_templateId",
+        "summary": "PATCH /cms/templates/{templateId}",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:186",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config",
+        "summary": "GET /config",
+        "x-codey-source": "src/modules/config/config.module.ts:177",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/audit-logs": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_audit_logs",
+        "summary": "GET /config/audit-logs",
+        "x-codey-source": "src/modules/config/config.module.ts:489",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/compatibility": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_compatibility",
+        "summary": "GET /config/compatibility",
+        "x-codey-source": "src/modules/config/config.module.ts:230",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/domains": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_domains",
+        "summary": "GET /config/domains",
+        "x-codey-source": "src/modules/config/config.module.ts:538",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_domains",
+        "summary": "POST /config/domains",
+        "x-codey-source": "src/modules/config/config.module.ts:622",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/domains/{domainId}": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_patch_config_domains_domainId",
+        "summary": "PATCH /config/domains/{domainId}",
+        "x-codey-source": "src/modules/config/config.module.ts:633",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/domains/{domainId}/verify": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_domains_domainId_verify",
+        "summary": "POST /config/domains/{domainId}/verify",
+        "x-codey-source": "src/modules/config/config.module.ts:644",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/email": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_email",
+        "summary": "GET /config/email",
+        "x-codey-source": "src/modules/config/config.module.ts:277",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_patch_config_email",
+        "summary": "PATCH /config/email",
+        "x-codey-source": "src/modules/config/config.module.ts:285",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/email/test": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_email_test",
+        "summary": "POST /config/email/test",
+        "x-codey-source": "src/modules/config/config.module.ts:312",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/generation/apply": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_generation_apply",
+        "summary": "POST /config/generation/apply",
+        "x-codey-source": "src/modules/config/config.module.ts:609",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/generation/contract": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_generation_contract",
+        "summary": "GET /config/generation/contract",
+        "x-codey-source": "src/modules/config/config.module.ts:548",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/generation/validate": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_generation_validate",
+        "summary": "POST /config/generation/validate",
+        "x-codey-source": "src/modules/config/config.module.ts:598",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/launch-readiness": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_launch_readiness",
+        "summary": "GET /config/launch-readiness",
+        "x-codey-source": "src/modules/config/config.module.ts:241",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/maintenance": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_maintenance",
+        "summary": "GET /config/maintenance",
+        "x-codey-source": "src/modules/config/config.module.ts:369",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_patch_config_maintenance",
+        "summary": "PATCH /config/maintenance",
+        "x-codey-source": "src/modules/config/config.module.ts:379",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/modules": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_modules",
+        "summary": "GET /config/modules",
+        "x-codey-source": "src/modules/config/config.module.ts:217",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/modules/{moduleId}": {
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_delete_config_modules_moduleId",
+        "summary": "DELETE /config/modules/{moduleId}",
+        "x-codey-source": "src/modules/config/config.module.ts:691",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/modules/{moduleId}/disable": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_modules_moduleId_disable",
+        "summary": "POST /config/modules/{moduleId}/disable",
+        "x-codey-source": "src/modules/config/config.module.ts:679",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/modules/{moduleId}/enable": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_modules_moduleId_enable",
+        "summary": "POST /config/modules/{moduleId}/enable",
+        "x-codey-source": "src/modules/config/config.module.ts:667",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/modules/{moduleId}/install": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_modules_moduleId_install",
+        "summary": "POST /config/modules/{moduleId}/install",
+        "x-codey-source": "src/modules/config/config.module.ts:655",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/modules/{moduleId}/lifecycle/{hook}": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_modules_moduleId_lifecycle_hook",
+        "summary": "POST /config/modules/{moduleId}/lifecycle/{hook}",
+        "x-codey-source": "src/modules/config/config.module.ts:722",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/modules/{moduleId}/settings": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_patch_config_modules_moduleId_settings",
+        "summary": "PATCH /config/modules/{moduleId}/settings",
+        "x-codey-source": "src/modules/config/config.module.ts:703",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/runtime-update": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_runtime_update",
+        "summary": "GET /config/runtime-update",
+        "x-codey-source": "src/modules/config/config.module.ts:556",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/runtime-update/apply": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_runtime_update_apply",
+        "summary": "POST /config/runtime-update/apply",
+        "x-codey-source": "src/modules/config/config.module.ts:572",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/runtime-update/check": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_post_config_runtime_update_check",
+        "summary": "POST /config/runtime-update/check",
+        "x-codey-source": "src/modules/config/config.module.ts:564",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/config/site-settings": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_patch_config_site_settings",
+        "summary": "PATCH /config/site-settings",
+        "x-codey-source": "src/modules/config/config.module.ts:420",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "operationId": "health_get_health",
+        "summary": "GET /health",
+        "x-codey-source": "src/modules/health/health.module.ts:154",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/health/diagnostics": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "operationId": "health_get_health_diagnostics",
+        "summary": "GET /health/diagnostics",
+        "x-codey-source": "src/modules/health/health.module.ts:188",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/health/metrics": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "operationId": "health_get_health_metrics",
+        "summary": "GET /health/metrics",
+        "x-codey-source": "src/modules/health/health.module.ts:225",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "operationId": "health_get_health_ready",
+        "summary": "GET /health/ready",
+        "x-codey-source": "src/modules/health/health.module.ts:162",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/install/complete": {
+      "post": {
+        "tags": [
+          "installation"
+        ],
+        "operationId": "installation_post_install_complete",
+        "summary": "POST /install/complete",
+        "x-codey-source": "src/modules/installation/installation.routes.ts:33",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/install/status": {
+      "get": {
+        "tags": [
+          "installation"
+        ],
+        "operationId": "installation_get_install_status",
+        "summary": "GET /install/status",
+        "x-codey-source": "src/modules/installation/installation.routes.ts:29",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/localization": {
+      "get": {
+        "tags": [
+          "localization"
+        ],
+        "operationId": "localization_get_localization",
+        "summary": "GET /localization",
+        "x-codey-source": "src/modules/localization/localization.module.ts:11",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "notifications_post_notifications",
+        "summary": "POST /notifications",
+        "x-codey-source": "src/modules/notifications/notifications.routes.ts:24",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/notifications/me": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "notifications_get_notifications_me",
+        "summary": "GET /notifications/me",
+        "x-codey-source": "src/modules/notifications/notifications.routes.ts:10",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_get_orders",
+        "summary": "GET /orders",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:65",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders",
+        "summary": "POST /orders",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:80",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/{id}/checkout-status": {
+      "patch": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_patch_orders_id_checkout_status",
+        "summary": "PATCH /orders/{id}/checkout-status",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:274",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/{id}/status": {
+      "patch": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_patch_orders_id_status",
+        "summary": "PATCH /orders/{id}/status",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:301",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/carts": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_carts",
+        "summary": "POST /orders/carts",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:102",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/carts/{token}": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_get_orders_carts_token",
+        "summary": "GET /orders/carts/{token}",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:113",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/carts/{token}/checkout": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_carts_token_checkout",
+        "summary": "POST /orders/carts/{token}/checkout",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:134",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/carts/{token}/items": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_carts_token_items",
+        "summary": "POST /orders/carts/{token}/items",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:123",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/coupons": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_get_orders_coupons",
+        "summary": "GET /orders/coupons",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:244",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_coupons",
+        "summary": "POST /orders/coupons",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:257",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/lookup": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_lookup",
+        "summary": "POST /orders/lookup",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:92",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/notifications/process": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_notifications_process",
+        "summary": "POST /orders/notifications/process",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:146",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/reservations/release-expired": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_reservations_release_expired",
+        "summary": "POST /orders/reservations/release-expired",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:156",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/shipping/zones": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_get_orders_shipping_zones",
+        "summary": "GET /orders/shipping/zones",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:166",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_shipping_zones",
+        "summary": "POST /orders/shipping/zones",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:184",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/shipping/zones/{id}/rates": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_shipping_zones_id_rates",
+        "summary": "POST /orders/shipping/zones/{id}/rates",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:200",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/tax-rules": {
+      "get": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_get_orders_tax_rules",
+        "summary": "GET /orders/tax-rules",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:216",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_post_orders_tax_rules",
+        "summary": "POST /orders/tax-rules",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:228",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_get_payments",
+        "summary": "GET /payments",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:558",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/intent": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_post_payments_intent",
+        "summary": "POST /payments/intent",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:570",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/manual/{paymentId}/action": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_post_payments_manual_paymentId_action",
+        "summary": "POST /payments/manual/{paymentId}/action",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:752",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/paypal/capture": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_post_payments_paypal_capture",
+        "summary": "POST /payments/paypal/capture",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:656",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/providers": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_get_payments_providers",
+        "summary": "GET /payments/providers",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:472",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/providers/{provider}": {
+      "put": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_put_payments_providers_provider",
+        "summary": "PUT /payments/providers/{provider}",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:480",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/providers/{provider}/test": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_post_payments_providers_provider_test",
+        "summary": "POST /payments/providers/{provider}/test",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:509",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/providers/public": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_get_payments_providers_public",
+        "summary": "GET /payments/providers/public",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:465",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/webhooks/paypal": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_post_payments_webhooks_paypal",
+        "summary": "POST /payments/webhooks/paypal",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:796",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/payments/webhooks/stripe": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "operationId": "payments_post_payments_webhooks_stripe",
+        "summary": "POST /payments/webhooks/stripe",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:776",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products": {
+      "get": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_get_products",
+        "summary": "GET /products",
+        "x-codey-source": "src/modules/products/products.routes.ts:276",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_post_products",
+        "summary": "POST /products",
+        "x-codey-source": "src/modules/products/products.routes.ts:400",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/{slug}": {
+      "get": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_get_products_slug",
+        "summary": "GET /products/{slug}",
+        "x-codey-source": "src/modules/products/products.routes.ts:356",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_patch_products_slug",
+        "summary": "PATCH /products/{slug}",
+        "x-codey-source": "src/modules/products/products.routes.ts:496",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/{slug}/images": {
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_post_products_slug_images",
+        "summary": "POST /products/{slug}/images",
+        "x-codey-source": "src/modules/products/products.routes.ts:473",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/{slug}/options": {
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_post_products_slug_options",
+        "summary": "POST /products/{slug}/options",
+        "x-codey-source": "src/modules/products/products.routes.ts:543",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/{slug}/variants": {
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_post_products_slug_variants",
+        "summary": "POST /products/{slug}/variants",
+        "x-codey-source": "src/modules/products/products.routes.ts:566",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/attributes": {
+      "get": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_get_products_attributes",
+        "summary": "GET /products/attributes",
+        "x-codey-source": "src/modules/products/products.routes.ts:195",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_post_products_attributes",
+        "summary": "POST /products/attributes",
+        "x-codey-source": "src/modules/products/products.routes.ts:211",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/attributes/{attributeSlug}": {
+      "delete": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_delete_products_attributes_attributeSlug",
+        "summary": "DELETE /products/attributes/{attributeSlug}",
+        "x-codey-source": "src/modules/products/products.routes.ts:254",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_patch_products_attributes_attributeSlug",
+        "summary": "PATCH /products/attributes/{attributeSlug}",
+        "x-codey-source": "src/modules/products/products.routes.ts:227",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/categories": {
+      "get": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_get_products_categories",
+        "summary": "GET /products/categories",
+        "x-codey-source": "src/modules/products/products.routes.ts:114",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_post_products_categories",
+        "summary": "POST /products/categories",
+        "x-codey-source": "src/modules/products/products.routes.ts:130",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/categories/{categorySlug}": {
+      "delete": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_delete_products_categories_categorySlug",
+        "summary": "DELETE /products/categories/{categorySlug}",
+        "x-codey-source": "src/modules/products/products.routes.ts:173",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_patch_products_categories_categorySlug",
+        "summary": "PATCH /products/categories/{categorySlug}",
+        "x-codey-source": "src/modules/products/products.routes.ts:146",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/products/settings": {
+      "get": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_get_products_settings",
+        "summary": "GET /products/settings",
+        "x-codey-source": "src/modules/products/products.routes.ts:57",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "products"
+        ],
+        "operationId": "products_patch_products_settings",
+        "summary": "PATCH /products/settings",
+        "x-codey-source": "src/modules/products/products.routes.ts:64",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/roles": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "roles_get_roles",
+        "summary": "GET /roles",
+        "x-codey-source": "src/modules/roles/roles.routes.ts:31",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "roles_post_roles",
+        "summary": "POST /roles",
+        "x-codey-source": "src/modules/roles/roles.routes.ts:44",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/roles/{id}": {
+      "patch": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "roles_patch_roles_id",
+        "summary": "PATCH /roles/{id}",
+        "x-codey-source": "src/modules/roles/roles.routes.ts:58",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/roles/permissions": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "operationId": "roles_get_roles_permissions",
+        "summary": "GET /roles/permissions",
+        "x-codey-source": "src/modules/roles/roles.routes.ts:19",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "users_get_users",
+        "summary": "GET /users",
+        "x-codey-source": "src/modules/users/users.routes.ts:30",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "users_delete_users_id",
+        "summary": "DELETE /users/{id}",
+        "x-codey-source": "src/modules/users/users.routes.ts:72",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "users_get_users_id",
+        "summary": "GET /users/{id}",
+        "x-codey-source": "src/modules/users/users.routes.ts:47",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "users_patch_users_id",
+        "summary": "PATCH /users/{id}",
+        "x-codey-source": "src/modules/users/users.routes.ts:58",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "users_get_users_me",
+        "summary": "GET /users/me",
+        "x-codey-source": "src/modules/users/users.routes.ts:20",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    }
+  }
+}

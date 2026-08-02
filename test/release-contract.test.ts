@@ -78,6 +78,7 @@ test("hardened release manifests require source, image, and SBOM provenance", ()
     ...payload.contracts,
     operationalDiagnostics: "1.0",
     offsiteBackupReadiness: "1.0",
+    automaticTls: "1.0",
     supplyChain: "1.0"
   };
   payload.supplyChain = {
@@ -87,7 +88,8 @@ test("hardened release manifests require source, image, and SBOM provenance", ()
     },
     containerImages: {
       node: `node:24-alpine@sha256:${"b".repeat(64)}`,
-      postgres: `postgres:16-alpine@sha256:${"c".repeat(64)}`
+      postgres: `postgres:16-alpine@sha256:${"c".repeat(64)}`,
+      caddy: `caddy:2.11.4-alpine@sha256:${"e".repeat(64)}`
     },
     sbom: {
       file: "codey-cms-0.9.0.sbom.cdx.json",

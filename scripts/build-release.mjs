@@ -84,6 +84,7 @@ try {
       exportedSiteAcceptance: "1.0",
       operationalDiagnostics: "1.0",
       offsiteBackupReadiness: "1.0",
+      automaticTls: "1.0",
       supplyChain: "1.0"
     },
     requirements: {
@@ -98,6 +99,7 @@ try {
     },
     entrypoints: {
       compose: "docker-compose.selfhost.yml",
+      publicCompose: "docker-compose.public.yml",
       installer: "/install",
       admin: "/cy-admin",
       readiness: "/api/v1/health/ready"
@@ -109,7 +111,8 @@ try {
       },
       containerImages: {
         node: containerImages.node,
-        postgres: containerImages.postgres
+        postgres: containerImages.postgres,
+        caddy: containerImages.caddy
       },
       sbom: "SBOM.cdx.json"
     }
@@ -197,6 +200,7 @@ function releaseFiles() {
   return [
     ".env.production.example",
     ".dockerignore",
+    "Caddyfile",
     "Dockerfile",
     "LICENSE",
     "NOTICE.md",
@@ -204,6 +208,7 @@ function releaseFiles() {
     "apps/web",
     "dist",
     "docker-compose.prod.yml",
+    "docker-compose.public.yml",
     "docker-compose.selfhost.yml",
     "docs",
     "package.json",

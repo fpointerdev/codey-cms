@@ -77,6 +77,12 @@ function createAuthHarness() {
     }
   };
   const database = {
+    site: {
+      upsert: async () => ({ id: "site-default" })
+    },
+    moduleSetting: {
+      findUnique: async () => null
+    },
     user: {
       findUnique: async ({ where }: { where: { email?: string; id?: string } }) =>
         users.find((user) => where.email ? user.email === where.email : user.id === where.id) || null,

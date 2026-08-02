@@ -25,7 +25,7 @@ The launcher opens the setup automatically and prints the exact address. Default
 - CMS admin: http://localhost:4000/cy-admin
 - Setup, before installation: http://localhost:4000/install
 
-For a public domain, TLS, reverse proxy, backup, and recovery instructions, see `docs/self-host-installation.md`.
+For a public domain, run the same launcher with `--domain www.example.com` to enable automatic HTTPS. Backup and recovery instructions are in `docs/self-host-installation.md`.
 
 ## Local Development
 

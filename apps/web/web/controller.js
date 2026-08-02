@@ -405,7 +405,7 @@ export async function loadAdminRoute(route) {
   if (route.view === "settings") {
     const { renderSettingsPage } = await adminViews();
     const config = await api("/config");
-    const [emailResult, updateResult, auditResult, diagnosticsResult] = await Promise.allSettled([
+    const [emailResult, updateResult, auditResult, diagnosticsResult, readinessResult] = await Promise.allSettled([
       api("/config/email"),
       api("/config/runtime-update"),
       hasPermission("read", "audit")
@@ -413,7 +413,8 @@ export async function loadAdminRoute(route) {
         : Promise.resolve({ auditLogs: [] }),
       hasPermission("manage", "modules")
         ? api("/health/diagnostics")
-        : Promise.resolve(null)
+        : Promise.resolve(null),
+      api("/config/launch-readiness")
     ]);
     config.email = emailResult.status === "fulfilled"
       ? emailResult.value.email
@@ -428,6 +429,9 @@ export async function loadAdminRoute(route) {
     config.operationsDiagnostics = diagnosticsResult.status === "fulfilled"
       ? diagnosticsResult.value
       : { error: diagnosticsResult.reason?.message || "Unable to load operational diagnostics." };
+    config.launchReadiness = readinessResult.status === "fulfilled"
+      ? readinessResult.value.readiness
+      : { status: "blocked", error: readinessResult.reason?.message || "Unable to check launch readiness.", checks: [] };
     renderSettingsPage(config);
     return;
   }

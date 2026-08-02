@@ -72,6 +72,23 @@ test("production rejects blanket proxy trust but accepts an exact hop count", as
   assert.equal(exactHop.stdout, "1");
 });
 
+test("production cannot disable platform rate limits", async () => {
+  const inspectRateLimits = () => execFileAsync(process.execPath, [
+    "--import",
+    "tsx",
+    "--input-type=module",
+    "--eval",
+    "import('./src/config/env.ts')"
+  ], {
+    env: { ...productionEnvironment, PLATFORM_RATE_LIMIT_ENABLED: "false" }
+  });
+
+  await assert.rejects(
+    inspectRateLimits(),
+    (error: any) => error.stderr?.includes("PLATFORM_RATE_LIMIT_ENABLED cannot be disabled in production")
+  );
+});
+
 test("off-site backup claims require mandatory backups and a mirror", async () => {
   const inspectBackup = (overrides: Record<string, string>) => execFileAsync(process.execPath, [
     "--import",

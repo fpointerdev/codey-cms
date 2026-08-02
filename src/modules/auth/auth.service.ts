@@ -1397,9 +1397,10 @@ export class AuthService {
   }
 
   private async canEmailRecoveryTokens() {
-    if (this.config.auth.recoveryTokenDelivery !== "email" || !this.config.app.publicUrl) return false;
+    if (!this.config.app.publicUrl) return false;
 
-    return isEmailDeliveryConfigured(await this.emailSettings.resolve());
+    const settings = await this.emailSettings.resolve();
+    return settings.recoveryEnabled && isEmailDeliveryConfigured(settings);
   }
 
   private async assertRecoveryTokenDeliveryConfigured(flowName: string) {

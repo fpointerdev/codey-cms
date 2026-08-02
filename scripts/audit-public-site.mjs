@@ -32,7 +32,7 @@ try {
   if (sitemap.status !== 200) throw new Error(`Sitemap returned HTTP ${sitemap.status}: ${sitemapUrl}`);
 
   const sitemapUrls = await parserPage.evaluate((xml) => {
-    const document = new DOMParser().parseFromString(xml, "application/xml");
+    const document = new globalThis.DOMParser().parseFromString(xml, "application/xml");
     if (document.querySelector("parsererror")) return [];
     return [...document.querySelectorAll("url > loc")].map((element) => element.textContent?.trim()).filter(Boolean);
   }, sitemap.body);
@@ -50,7 +50,7 @@ try {
     }
 
     const result = await parserPage.evaluate(({ html, documentUrl, expectedOrigin }) => {
-      const document = new DOMParser().parseFromString(html, "text/html");
+      const document = new globalThis.DOMParser().parseFromString(html, "text/html");
       const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute("href") || "";
       const alternates = [...document.querySelectorAll('link[rel="alternate"][hreflang]')].map((element) => ({
         hreflang: element.getAttribute("hreflang") || "",

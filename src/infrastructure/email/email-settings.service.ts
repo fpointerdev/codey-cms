@@ -2,11 +2,13 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { decryptSecretEnvelope, encryptSecretEnvelope } from "../../core/security/secret-envelope.js";
-import { createEmailClient, isEmailDeliveryConfigured } from "./http-email.js";
-import type { EmailDeliveryConfig } from "./email.types.js";
+import { createEmailClient, emailProviderEndpoint, isEmailDeliveryConfigured } from "./http-email.js";
+import type { EmailDeliveryConfig, EmailProvider } from "./email.types.js";
 
 type StoredEmailSettings = {
   enabled: boolean;
+  provider?: EmailProvider;
+  recoveryEnabled?: boolean;
   from?: string;
   httpEndpoint?: string;
   encryptedCredentials?: string;
@@ -22,6 +24,8 @@ type EmailCredentials = {
 
 export type UpdateEmailSettingsInput = {
   enabled?: boolean;
+  provider?: EmailProvider;
+  recoveryEnabled?: boolean;
   from?: string;
   httpEndpoint?: string;
   bearerToken?: string;
@@ -30,6 +34,7 @@ export type UpdateEmailSettingsInput = {
 
 export type ResolvedEmailSettings = EmailDeliveryConfig & {
   source: "dashboard" | "environment";
+  recoveryEnabled: boolean;
   lastTestedAt?: string;
   lastTestSucceeded?: boolean;
   lastTestMessage?: string;
@@ -46,6 +51,10 @@ function asStoredSettings(value: Prisma.JsonValue | null | undefined): StoredEma
   const record = value as Record<string, unknown>;
   return {
     enabled: record.enabled === true,
+    provider: ["generic", "resend", "postmark"].includes(String(record.provider))
+      ? record.provider as EmailProvider
+      : "generic",
+    recoveryEnabled: typeof record.recoveryEnabled === "boolean" ? record.recoveryEnabled : undefined,
     from: typeof record.from === "string" ? record.from : undefined,
     httpEndpoint: typeof record.httpEndpoint === "string" ? record.httpEndpoint : undefined,
     encryptedCredentials: typeof record.encryptedCredentials === "string" ? record.encryptedCredentials : undefined,
@@ -67,15 +76,23 @@ export class EmailSettingsService {
     if (!stored) {
       return {
         ...this.config.email,
-        source: "environment"
+        source: "environment",
+        recoveryEnabled: this.config.auth.recoveryTokenDelivery === "email"
       };
     }
 
     const credentials = this.decryptCredentials(stored.encryptedCredentials);
     return {
       driver: stored.enabled ? "http" : "disabled",
+      provider: stored.provider || "generic",
+      recoveryEnabled: stored.recoveryEnabled ?? this.config.auth.recoveryTokenDelivery === "email",
       from: stored.from,
-      httpEndpoint: stored.httpEndpoint,
+      httpEndpoint: emailProviderEndpoint({
+        driver: stored.enabled ? "http" : "disabled",
+        provider: stored.provider,
+        httpEndpoint: stored.httpEndpoint,
+        timeoutMs: this.config.email.timeoutMs
+      }),
       httpBearerToken: credentials.bearerToken,
       timeoutMs: this.config.email.timeoutMs,
       source: "dashboard",
@@ -91,11 +108,12 @@ export class EmailSettingsService {
     return {
       source: settings.source,
       enabled: settings.driver === "http",
+      provider: settings.provider || "generic",
       from: settings.from ?? "",
-      httpEndpoint: settings.httpEndpoint ?? "",
+      httpEndpoint: settings.provider === "generic" ? settings.httpEndpoint ?? "" : "",
       bearerTokenConfigured: Boolean(settings.httpBearerToken),
       configured: isEmailDeliveryConfigured(settings),
-      recoveryEnabled: this.config.auth.recoveryTokenDelivery === "email",
+      recoveryEnabled: settings.recoveryEnabled,
       publicUrlConfigured: Boolean(this.config.app.publicUrl),
       lastTestedAt: settings.lastTestedAt,
       lastTestSucceeded: settings.lastTestSucceeded,
@@ -110,16 +128,29 @@ export class EmailSettingsService {
 
     const current = await this.resolve();
     const enabled = input.enabled ?? (current.driver === "http");
+    const provider = input.provider ?? current.provider ?? "generic";
+    const recoveryEnabled = input.recoveryEnabled ?? current.recoveryEnabled;
     const from = input.from === undefined ? current.from : clean(input.from);
-    const httpEndpoint = input.httpEndpoint === undefined ? current.httpEndpoint : clean(input.httpEndpoint);
+    const httpEndpoint = provider === "generic"
+      ? input.httpEndpoint === undefined ? current.httpEndpoint : clean(input.httpEndpoint)
+      : undefined;
+    const providerChanged = provider !== (current.provider || "generic");
     const bearerToken = input.clearBearerToken
       ? undefined
-      : input.bearerToken === undefined
-        ? current.httpBearerToken
-        : clean(input.bearerToken);
+      : providerChanged && input.bearerToken === undefined
+        ? undefined
+        : input.bearerToken === undefined
+          ? current.httpBearerToken
+          : clean(input.bearerToken);
 
-    if (enabled && (!from || !httpEndpoint)) {
-      throw new AppError(422, "email_settings_incomplete", "Sender address and HTTP endpoint are required before enabling email.");
+    if (enabled && !from) {
+      throw new AppError(422, "email_settings_incomplete", "Sender address is required before enabling email.");
+    }
+    if (enabled && provider === "generic" && !httpEndpoint) {
+      throw new AppError(422, "email_settings_incomplete", "HTTP endpoint is required for the generic email provider.");
+    }
+    if (enabled && provider !== "generic" && !bearerToken) {
+      throw new AppError(422, "email_credentials_required", `A new ${provider} API key is required before enabling email.`);
     }
     if (httpEndpoint) {
       const endpoint = this.parseHttpEndpoint(httpEndpoint);
@@ -128,12 +159,17 @@ export class EmailSettingsService {
       }
     }
 
+    const currentHttpEndpoint = provider === "generic" ? current.httpEndpoint : undefined;
     const changed = current.driver !== (enabled ? "http" : "disabled") ||
+      current.provider !== provider ||
+      current.recoveryEnabled !== recoveryEnabled ||
       current.from !== from ||
-      current.httpEndpoint !== httpEndpoint ||
+      currentHttpEndpoint !== httpEndpoint ||
       current.httpBearerToken !== bearerToken;
     const stored: StoredEmailSettings = {
       enabled,
+      provider,
+      recoveryEnabled,
       from,
       httpEndpoint,
       encryptedCredentials: bearerToken
@@ -224,8 +260,10 @@ export class EmailSettingsService {
   private async recordTestResult(settings: ResolvedEmailSettings, succeeded: boolean, message: string) {
     await this.writeStoredSettings({
       enabled: settings.driver === "http",
+      provider: settings.provider,
+      recoveryEnabled: settings.recoveryEnabled,
       from: settings.from,
-      httpEndpoint: settings.httpEndpoint,
+      httpEndpoint: settings.provider === "generic" ? settings.httpEndpoint : undefined,
       encryptedCredentials: settings.httpBearerToken
         ? encryptSecretEnvelope(this.config.payments.credentialEncryptionKey, { bearerToken: settings.httpBearerToken })
         : undefined,

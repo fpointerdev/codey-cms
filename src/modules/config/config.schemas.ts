@@ -94,6 +94,8 @@ export const maintenanceSettingsSchema = z.object({
 
 export const emailSettingsSchema = z.object({
   enabled: z.boolean().optional(),
+  provider: z.enum(["generic", "resend", "postmark"]).optional(),
+  recoveryEnabled: z.boolean().optional(),
   from: z.string().trim().email().max(320).or(z.literal("")).optional(),
   httpEndpoint: httpEndpointSchema.or(z.literal("")).optional(),
   bearerToken: z.string().trim().max(2_000).optional(),

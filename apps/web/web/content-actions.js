@@ -757,6 +757,8 @@ export async function saveEmailSettings(form) {
       method: "PATCH",
       body: JSON.stringify({
         enabled: formData.get("enabled") === "on",
+        provider: String(formData.get("provider") || "generic"),
+        recoveryEnabled: formData.get("recoveryEnabled") === "on",
         from: String(formData.get("from") || "").trim(),
         httpEndpoint: String(formData.get("httpEndpoint") || "").trim(),
         ...(bearerToken ? { bearerToken } : {}),

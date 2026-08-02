@@ -1673,6 +1673,45 @@ function renderSecurityActivity(config) {
   `;
 }
 
+function renderLaunchReadiness(readiness = {}) {
+  const checks = Array.isArray(readiness.checks) ? readiness.checks : [];
+  const status = readiness.status || "blocked";
+  const title = status === "ready"
+    ? "Ready to publish"
+    : status === "attention"
+      ? "Finish setup before publishing"
+      : "Publishing is blocked";
+  const statusLabel = status === "ready" ? "Ready" : status === "attention" ? "Needs attention" : "Blocked";
+
+  return `
+    <section class="admin-card settings-form launch-readiness" data-launch-readiness>
+      <div class="section-heading-row">
+        <div>
+          <p class="section-label">Launch readiness</p>
+          <h2>${title}</h2>
+          <p class="dashboard-copy compact">${escapeHtml(readiness.target === "public" ? "Public website checks" : "Local installation checks")}</p>
+        </div>
+        <span class="status-pill ${status === "ready" ? "success" : status === "blocked" ? "error" : ""}">${statusLabel}</span>
+      </div>
+      ${readiness.error ? `<p class="form-message error">${escapeHtml(readiness.error)}</p>` : ""}
+      <div class="module-status-list">
+        ${checks.map((check) => `
+          <div class="module-status-row">
+            <div>
+              <strong>${escapeHtml(check.label || check.id)}</strong>
+              <span>${escapeHtml(check.message || "")}</span>
+            </div>
+            <div class="module-status-actions">
+              <span class="status-pill ${check.status === "pass" ? "success" : check.status === "blocked" ? "error" : ""}">${check.status === "pass" ? "Complete" : check.status === "blocked" ? "Required" : "Review"}</span>
+              ${check.settingsTab ? `<button type="button" class="secondary-button" data-open-settings-tab="${escapeHtml(check.settingsTab)}">Open</button>` : ""}
+            </div>
+          </div>
+        `).join("") || '<p class="dashboard-copy compact">Readiness checks are unavailable.</p>'}
+      </div>
+    </section>
+  `;
+}
+
 export function renderSettingsPage(config) {
   const settings = config.siteSettings || {};
   const email = config.email || {};
@@ -1686,6 +1725,7 @@ export function renderSettingsPage(config) {
   const localization = config.localization || localizationModule?.settings?.settings || {};
   const runtimeUpdate = config.runtimeUpdate || {};
   const operationsDiagnostics = config.operationsDiagnostics || {};
+  const launchReadiness = config.launchReadiness || {};
   const locales = Array.isArray(localization.locales) && localization.locales.length
     ? localization.locales
     : [{ code: localization.defaultLocale || "en", label: "English", enabled: true }];
@@ -1707,13 +1747,15 @@ export function renderSettingsPage(config) {
           </div>
         </div>
         <div class="settings-tab-shell">
-          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-general" checked />
+          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-launch" checked />
+          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-general" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-style" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-email" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-multilingual" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-updates" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-security" />
           <nav class="admin-tabs settings-tabs" aria-label="Settings sections">
+            <label for="settings-tab-launch">Launch</label>
             <label for="settings-tab-general">General settings</label>
             <label for="settings-tab-style">Style</label>
             <label for="settings-tab-email">Email</label>
@@ -1721,6 +1763,9 @@ export function renderSettingsPage(config) {
             <label for="settings-tab-updates">Updates</label>
             <label for="settings-tab-security">Security</label>
           </nav>
+          <section class="settings-tab-panel settings-tab-panel-launch" data-settings-panel="launch">
+            ${renderLaunchReadiness(launchReadiness)}
+          </section>
           <section class="settings-tab-panel settings-tab-panel-general" data-settings-panel="general">
             <form class="admin-card settings-form" data-site-settings-form>
               <label><span>Site title</span><input name="title" value="${escapeHtml(settings.title || config.app?.name || "Code Epsylon")}" required /></label>
@@ -1803,15 +1848,25 @@ export function renderSettingsPage(config) {
                 <span>Enable transactional email</span>
               </label>
               <label>
+                <span>Email provider</span>
+                <select name="provider">
+                  ${[
+                    ["resend", "Resend"],
+                    ["postmark", "Postmark"],
+                    ["generic", "Generic HTTP endpoint"]
+                  ].map(([value, label]) => `<option value="${value}"${(email.provider || "generic") === value ? " selected" : ""}>${label}</option>`).join("")}
+                </select>
+              </label>
+              <label>
                 <span>Sender address</span>
                 <input name="from" type="email" value="${escapeHtml(email.from || "")}" placeholder="notifications@example.com" autocomplete="email" />
               </label>
-              <label>
-                <span>HTTP email endpoint</span>
-                <input name="httpEndpoint" type="url" value="${escapeHtml(email.httpEndpoint || "")}" placeholder="https://email-provider.example/send" />
+              <label data-email-generic-endpoint ${email.provider && email.provider !== "generic" ? "hidden" : ""}>
+                <span>HTTP endpoint (generic provider only)</span>
+                <input name="httpEndpoint" type="url" value="${escapeHtml(email.httpEndpoint || "")}" placeholder="https://email-provider.example/send" ${email.provider && email.provider !== "generic" ? "disabled" : ""} />
               </label>
               <label>
-                <span>Bearer token</span>
+                <span>Provider API key</span>
                 <input name="bearerToken" type="password" value="" placeholder="${email.bearerTokenConfigured ? "Saved credential" : "Optional provider credential"}" autocomplete="new-password" />
               </label>
               ${email.bearerTokenConfigured ? `
@@ -1820,6 +1875,10 @@ export function renderSettingsPage(config) {
                   <span>Remove saved bearer token</span>
                 </label>
               ` : ""}
+              <label class="inline-check">
+                <input type="checkbox" name="recoveryEnabled" ${email.recoveryEnabled ? "checked" : ""} />
+                <span>Use this provider for password recovery and invitations</span>
+              </label>
               <label>
                 <span>Test recipient</span>
                 <input name="testRecipient" type="email" value="${escapeHtml(state.user?.email || "")}" placeholder="owner@example.com" />

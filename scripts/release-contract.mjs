@@ -82,6 +82,12 @@ export function assertReleasePayload(payload) {
     }
     const containerImages = payload.supplyChain?.containerImages || {};
     const images = [containerImages.node, containerImages.postgres];
+    if (payload.contracts.automaticTls !== undefined) {
+      if (payload.contracts.automaticTls !== "1.0") {
+        throw new Error("Release payload has an unsupported automatic TLS contract.");
+      }
+      images.push(containerImages.caddy);
+    }
     if (
       images.some((image) => typeof image !== "string" || !/@sha256:[a-f0-9]{64}$/.test(image))
     ) {

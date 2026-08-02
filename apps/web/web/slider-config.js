@@ -475,7 +475,7 @@ export function galleryModalFields(value = {}, options = {}) {
 
 export function sliderValueFromModal(values, currentValue = {}, uploadedItems = []) {
   const galleryItems = [...(values.slides?.existing || []), ...uploadedItems].map((item) => {
-    const { file, ...cleanItem } = item || {};
+    const { file: _file, ...cleanItem } = item || {};
     return cleanItem;
   });
 
@@ -503,7 +503,7 @@ export function sliderValueFromModal(values, currentValue = {}, uploadedItems = 
 
 export function galleryValueFromModal(values, currentValue = {}, uploadedItems = []) {
   const items = [...(values.items?.existing || []), ...uploadedItems].map((item) => {
-    const { file, ...cleanItem } = item || {};
+    const { file: _file, ...cleanItem } = item || {};
     return cleanItem;
   });
 

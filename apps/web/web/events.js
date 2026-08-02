@@ -1,4 +1,4 @@
-import { availableComponentTemplates, elements, escapeHtml, normalizePageLayout, slugFromTitle, state } from "./core.js";
+import { availableComponentTemplates, elements, escapeHtml, normalizePageLayout, setStatus, slugFromTitle, state } from "./core.js";
 import { bootstrap } from "./controller.js";
 import {
   addArticle,
@@ -771,6 +771,18 @@ function bindBuilderClick(event) {
 }
 
 function bindAdminClick(event) {
+  const settingsTabButton = event.target.closest("[data-open-settings-tab]");
+  if (settingsTabButton) {
+    const tab = settingsTabButton.dataset.openSettingsTab;
+    const input = document.querySelector(`#settings-tab-${tab}`);
+    if (input) {
+      input.checked = true;
+      window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}#${tab}`);
+      document.querySelector(`[data-settings-panel="${tab}"]`)?.scrollIntoView?.({ block: "start" });
+    }
+    return true;
+  }
+
   const updateCheckButton = event.target.closest("[data-check-runtime-update]");
   if (updateCheckButton) {
     void checkRuntimeUpdate(updateCheckButton);
@@ -1319,6 +1331,19 @@ function bindShopControlEvents() {
   });
 }
 
+function bindEmailSettingsEvents() {
+  elements.page.addEventListener("change", (event) => {
+    const form = event.target.closest("[data-email-settings-form]");
+    if (!form || event.target.name !== "provider") return;
+
+    const endpointField = form.querySelector("[data-email-generic-endpoint]");
+    const endpointInput = endpointField?.querySelector('input[name="httpEndpoint"]');
+    const generic = event.target.value === "generic";
+    if (endpointField) endpointField.hidden = !generic;
+    if (endpointInput) endpointInput.disabled = !generic;
+  });
+}
+
 function bindDesignSystemEvents() {
   const update = (event) => {
     const form = event.target.closest?.("[data-design-system-form]");
@@ -1562,6 +1587,7 @@ export function bindEvents() {
   bindStructuredTabEvents();
   bindBuilderControlEvents();
   bindShopControlEvents();
+  bindEmailSettingsEvents();
   bindDesignSystemEvents();
   bindVisualEditorFocusEvents();
   bindBuilderKeyboardEvents();

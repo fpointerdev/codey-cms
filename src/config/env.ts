@@ -59,6 +59,7 @@ const envSchema = z.object({
   JWT_REFRESH_TTL: z.string().default("30d"),
   CORS_ORIGINS: z.string().default(""),
   LOG_LEVEL: z.string().default("info"),
+  PLATFORM_RATE_LIMIT_ENABLED: booleanFromEnv.default(true),
   MAINTENANCE_MODE: booleanFromEnv.default(false),
   MAINTENANCE_MESSAGE: z.string().trim().min(1).default("This site is temporarily unavailable for maintenance."),
   MAINTENANCE_ALLOWED_PATHS: z.string().trim().default("/health,/auth,/config"),
@@ -188,6 +189,14 @@ const envSchema = z.object({
   }
 
   if (value.NODE_ENV !== "production") return;
+
+  if (!value.PLATFORM_RATE_LIMIT_ENABLED) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["PLATFORM_RATE_LIMIT_ENABLED"],
+      message: "PLATFORM_RATE_LIMIT_ENABLED cannot be disabled in production."
+    });
+  }
 
   const corsOrigins = value.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean);
   const allowedCorsOrigins = [...corsOrigins, value.APP_PUBLIC_URL].filter(Boolean);

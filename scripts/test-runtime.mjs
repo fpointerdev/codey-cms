@@ -28,6 +28,7 @@ export function testRuntimeEnvironment(overrides = {}) {
     CMS_CREDENTIAL_ENCRYPTION_KEY: "integration-credential-key-with-at-least-32-characters",
     CORS_ORIGINS: "http://127.0.0.1:4173",
     LOG_LEVEL: "silent",
+    PLATFORM_RATE_LIMIT_ENABLED: "false",
     AUTH_ALLOW_REGISTRATION: "false",
     AUTH_REQUIRE_EMAIL_VERIFICATION: "false",
     AUTH_RECOVERY_TOKEN_DELIVERY: "response",

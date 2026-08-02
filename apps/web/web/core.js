@@ -115,7 +115,7 @@ export const adminNavItems = [
 
 function base64Encode(value) {
   if (typeof btoa === "function") return btoa(value);
-  if (typeof Buffer !== "undefined") return Buffer.from(value).toString("base64");
+  if (globalThis.Buffer) return globalThis.Buffer.from(value).toString("base64");
 
   return "";
 }

@@ -36,6 +36,7 @@ try {
     ...runtimeEnv,
     LIGHTHOUSE_URL: `${baseUrl}/`
   });
+  await runCommand(process.execPath, ["scripts/audit-load.mjs", baseUrl], runtimeEnv);
 } finally {
   if (server && server.exitCode === null && !server.killed) {
     server.kill("SIGTERM");

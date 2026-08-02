@@ -520,7 +520,7 @@ export function parseGalleryExisting(formData, fieldName) {
     })
     .filter(Boolean)
     .sort((left, right) => left.sortOrder - right.sortOrder)
-    .map(({ sortOrder, ...item }) => item);
+    .map(({ sortOrder: _sortOrder, ...item }) => item);
 }
 
 function renumberGalleryItems(list) {
