@@ -89,6 +89,7 @@ import {
   copyPaymentWebhook,
   createProductFromDashboard,
   deleteCommerceRule,
+  handleCustomerDataAction,
   openProductEditor,
   removeRepeaterRow,
   savePaymentProvider,
@@ -98,7 +99,8 @@ import {
   testPaymentProvider,
   updateShopSettingsPreview,
   updateManualPayment,
-  updateOrderStatus
+  updateOrderStatus,
+  retryOrderEmail
 } from "./shop-actions.js";
 import {
   deletePostCategory,
@@ -842,6 +844,18 @@ function bindAdminClick(event) {
   const orderStatusButton = event.target.closest("[data-order-status-action]");
   if (orderStatusButton) {
     void updateOrderStatus(orderStatusButton);
+    return true;
+  }
+
+  const orderEmailRetryButton = event.target.closest("[data-order-email-retry]");
+  if (orderEmailRetryButton) {
+    void retryOrderEmail(orderEmailRetryButton);
+    return true;
+  }
+
+  const customerDataButton = event.target.closest("[data-customer-data-action]");
+  if (customerDataButton) {
+    void handleCustomerDataAction(customerDataButton);
     return true;
   }
 

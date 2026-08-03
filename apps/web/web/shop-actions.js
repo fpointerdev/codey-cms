@@ -504,6 +504,78 @@ export async function updateOrderStatus(button) {
   }
 }
 
+export async function retryOrderEmail(button) {
+  const notificationId = button?.dataset?.orderEmailRetry;
+  if (!notificationId) return;
+
+  button.disabled = true;
+  try {
+    await api(`/orders/notifications/${encodeURIComponent(notificationId)}/retry`, {
+      method: "POST"
+    });
+    await loadAdminRoute({ view: "shop-orders" });
+    setStatus("Order email queued for delivery.");
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to retry the order email.", true);
+  }
+}
+
+export async function handleCustomerDataAction(button) {
+  const action = button?.dataset?.customerDataAction;
+  if (!["export", "anonymize"].includes(action)) return;
+  const destructive = action === "anonymize";
+  const values = await getModalFormHandler()({
+    label: "Customer data",
+    title: destructive ? "Anonymize customer data?" : "Export customer data",
+    description: destructive
+      ? "Personal data will be removed permanently. Financial totals and order history will be preserved."
+      : "Download the customer records stored by this shop.",
+    fields: [
+      {
+        name: "email",
+        label: "Customer email",
+        type: "email",
+        help: destructive ? "This action cannot be undone." : "Email matching is case-insensitive."
+      }
+    ],
+    submitLabel: destructive ? "Anonymize data" : "Download export",
+    destructive
+  });
+  if (!values?.email) return;
+
+  button.disabled = true;
+  try {
+    const response = await api(`/orders/customers/${action}`, {
+      method: "POST",
+      body: JSON.stringify({
+        email: String(values.email).trim(),
+        ...(destructive ? { confirmation: "ANONYMIZE" } : {})
+      })
+    });
+    if (destructive) {
+      await loadAdminRoute({ view: "shop-orders" });
+      setStatus(`${response.ordersAnonymized} orders anonymized.`);
+      return;
+    }
+
+    const blob = new Blob([`${JSON.stringify(response.customerData, null, 2)}\n`], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `codey-customer-data-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus("Customer data export downloaded.");
+  } catch (error) {
+    setStatus(error.message || `Unable to ${action} customer data.`, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function commaSeparatedCountries(value) {
   const countries = [...new Set(String(value || "").split(",").map((country) => country.trim().toUpperCase()).filter(Boolean))];
   if (!countries.length || countries.some((country) => !/^[A-Z]{2}$/.test(country))) {

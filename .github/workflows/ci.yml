@@ -25,7 +25,7 @@ jobs:
 
   release-checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -89,7 +89,6 @@ jobs:
       - run: pnpm run test:e2e
       - name: Public SEO and Lighthouse gates
         run: pnpm run audit:quality
-
       - name: Upload browser diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -101,11 +100,45 @@ jobs:
             .lighthouseci
           if-no-files-found: ignore
 
-  publish-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [release-checks, platform-launchers]
+  package-qualification:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 11.3.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build local qualification package
+        env:
+          CODEY_RELEASE_ALLOW_UNSIGNED: "true"
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          pnpm run release:build -- --allow-unsigned
+      - name: Qualify extracted package with Docker
+        env:
+          CODEY_RELEASE_ALLOW_UNSIGNED: "true"
+        run: pnpm run release:qualify -- --report=.release/qualification-report.json
+      - name: Upload qualification diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-qualification
+          path: |
+            .release/qualification-report.json
+            .release/qualification-diagnostics.log
+          if-no-files-found: ignore
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release-checks, platform-launchers, package-qualification]
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 40
     permissions:
       contents: write
     env:
@@ -113,6 +146,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.3.0
@@ -133,6 +168,8 @@ jobs:
       - run: pnpm run release:verify
       - name: Qualify downloadable self-host package
         run: pnpm run release:qualify
+      - name: Qualify previous-stable update and rollback
+        run: pnpm run release:qualify-upgrade
       - name: Publish immutable runtime release
         env:
           GH_TOKEN: ${{ github.token }}

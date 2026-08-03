@@ -32,7 +32,13 @@ CODEY_UPDATE_CHECK_INTERVAL_HOURS=6
 
 Official signed packages contain the public key. A source checkout without that key can build and run, but managed update checks remain deferred until an official key is supplied.
 
-Every hardening release also publishes `codey-cms-<version>.sbom.cdx.json`. Its checksum, source commit, and pinned Node/PostgreSQL image references are covered by the Ed25519 release signature.
+Every hardening release also publishes `codey-cms-<version>.sbom.cdx.json`. Its checksum, source commit, dependency lockfile hash, pinned runtime images, and pinned Alpine package versions are covered by the Ed25519 release signature.
+
+Before publication, the release workflow installs the previous stable ZIP, applies the candidate through the real supervisor, and verifies preserved server-rendered content. A second isolated installation receives an ephemeral-key-signed failure fixture and must restore both the previous runtime and its database backup. The qualification report is generated from the extracted artifacts; the failure fixture and its key are never published.
+
+## Updater bootstrap
+
+Packages through `v0.9.6` placed Corepack's cache outside the writable runtime volume. Those installations must download the latest self-host ZIP and run `start-codey.sh --no-open` (or `start-codey.cmd --no-open`) once. The fixed launcher reuses the existing named database, media, backup, and secret volumes; it does not require setup or a version choice. Releases declare `requirements.automaticUpdatesFrom` in their signed runtime metadata. Automatic supervisor updates are qualified from that bootstrap version onward.
 
 ## Recovery
 

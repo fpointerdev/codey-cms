@@ -993,7 +993,12 @@ function orderDetailRow(order) {
               <div><span><strong>${escapeHtml(item.productName)}</strong>${item.variantName ? `<small>${escapeHtml(item.variantName)}</small>` : ""}</span><span>${escapeHtml(item.quantity)} &times; ${escapeHtml(formatMoney(item.unitPriceCents, order.currency || "EUR"))}</span></div>
             `).join("")}
           </div>
-          ${notification ? `<p class="dashboard-copy compact">Latest email: ${escapeHtml(notification.status.toLowerCase())}</p>` : ""}
+          ${notification ? `
+            <p class="dashboard-copy compact">Latest email: ${escapeHtml(notification.status.toLowerCase())}</p>
+            ${notification.status === "FAILED" && hasPermission("update", "orders")
+              ? `<button type="button" class="link-button" data-order-email-retry="${escapeHtml(notification.id)}">Retry email</button>`
+              : ""}
+          ` : ""}
         </div>
       </td>
     </tr>
@@ -1005,7 +1010,13 @@ export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
     "shop-orders",
     `
       <section class="admin-section">
-        <div class="section-heading-row"><div><p class="section-label">Fulfillment</p><h2>Orders</h2></div></div>
+        <div class="section-heading-row">
+          <div><p class="section-label">Fulfillment</p><h2>Orders</h2></div>
+          <div class="table-action-row">
+            ${hasPermission("read", "orders") ? '<button type="button" class="secondary-button" data-customer-data-action="export">Export customer data</button>' : ""}
+            ${hasPermission("update", "orders") ? '<button type="button" class="secondary-button danger" data-customer-data-action="anonymize">Anonymize customer</button>' : ""}
+          </div>
+        </div>
         ${errorMessage ? `<p class="form-message error">Orders are not available yet: ${escapeHtml(errorMessage)}</p>` : ""}
         <div class="admin-card table-card">
           <table class="admin-table">

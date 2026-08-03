@@ -30,6 +30,12 @@ export function assertReleasePayload(payload) {
   if (payload.version.includes("-")) {
     throw new Error("Stable releases cannot use a prerelease version.");
   }
+  if (payload.requirements?.automaticUpdatesFrom !== undefined) {
+    assertSemver(payload.requirements.automaticUpdatesFrom, "Automatic update bootstrap version");
+    if (compareSemver(payload.requirements.automaticUpdatesFrom, payload.version) > 0) {
+      throw new Error("Automatic update bootstrap version cannot be newer than the release.");
+    }
+  }
   if (!Number.isFinite(Date.parse(payload.releasedAt))) {
     throw new Error("Release timestamp is invalid.");
   }
@@ -92,6 +98,20 @@ export function assertReleasePayload(payload) {
       images.some((image) => typeof image !== "string" || !/@sha256:[a-f0-9]{64}$/.test(image))
     ) {
       throw new Error("Release container image provenance is invalid.");
+    }
+    if (payload.supplyChain.dependencyLockSha256 !== undefined &&
+      !/^[a-f0-9]{64}$/.test(payload.supplyChain.dependencyLockSha256)) {
+      throw new Error("Release dependency lockfile provenance is invalid.");
+    }
+    if (payload.supplyChain.apkPackages !== undefined && (
+      !payload.supplyChain.apkPackages ||
+      typeof payload.supplyChain.apkPackages !== "object" ||
+      Array.isArray(payload.supplyChain.apkPackages) ||
+      Object.entries(payload.supplyChain.apkPackages).some(([name, version]) =>
+        !/^[A-Za-z0-9+_.-]+$/.test(name) || !/^\d[0-9A-Za-z.+_-]*-r\d+$/.test(version)
+      )
+    )) {
+      throw new Error("Release Alpine package provenance is invalid.");
     }
     assertDownload(
       payload.supplyChain.sbom,

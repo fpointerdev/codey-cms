@@ -8,6 +8,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const expectedTag = `v${packageJson.version}`;
 const tag = process.env.GITHUB_REF_NAME?.trim() || expectedTag;
+const isGitHubRelease = process.env.GITHUB_ACTIONS === "true" &&
+  process.env.GITHUB_REF?.startsWith("refs/tags/v");
 
 if (tag !== expectedTag) {
   throw new Error(`Release tag ${tag} does not match package version ${packageJson.version}.`);
@@ -15,19 +17,24 @@ if (tag !== expectedTag) {
 if (packageJson.license !== "GPL-2.0-or-later") {
   throw new Error("CodeY CMS release metadata must declare GPL-2.0-or-later.");
 }
-if (
-  process.env.GITHUB_ACTIONS === "true" &&
-  process.env.GITHUB_REPOSITORY !== "fpointerdev/codey-cms"
-) {
+if (isGitHubRelease && process.env.GITHUB_REPOSITORY !== "fpointerdev/codey-cms") {
   throw new Error("Official releases can only be published from fpointerdev/codey-cms.");
 }
-if (process.env.GITHUB_ACTIONS === "true") {
+if (isGitHubRelease) {
   const checkoutCommit = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: root,
     encoding: "utf8"
   }).trim();
   if (!/^[a-f0-9]{40}$/.test(checkoutCommit) || checkoutCommit !== process.env.GITHUB_SHA) {
     throw new Error("Release checkout does not match the GitHub tag commit.");
+  }
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", checkoutCommit, "origin/main"], {
+      cwd: root,
+      stdio: "ignore"
+    });
+  } catch {
+    throw new Error("Official release tags must point to a commit on origin/main.");
   }
 }
 

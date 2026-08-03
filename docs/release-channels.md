@@ -27,8 +27,9 @@ The stable pointer is not trusted by itself. Consumers verify the embedded signe
 2. Add reviewed release notes at `docs/releases/v<version>.md`.
 3. Run `pnpm run test:release` against the qualification database.
 4. Run `pnpm run release:preflight` with the production signing key available.
-5. Create and push the matching tag, for example `v0.9.0`.
-6. GitHub Actions builds the release from that exact tag and refuses a tag/package mismatch.
-7. The release job signs with the protected `CODEY_RELEASE_PRIVATE_KEY` secret and publishes immutable files with the checked-in notes.
+5. Merge the reviewed release commit to protected `main`.
+6. Create and push the matching protected tag, for example `v0.9.0`.
+7. GitHub Actions verifies the tag is on `main`, then waits for approval in the protected `release` environment.
+8. The approved release job signs with `CODEY_RELEASE_PRIVATE_KEY` and publishes immutable files with the checked-in notes.
 
 The private signing key must never enter this repository, a runtime image, a generated website, or a downloadable package. Rotating the release key requires a separately authenticated trust migration for installed runtimes and UseCodeY.

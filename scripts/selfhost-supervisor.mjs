@@ -242,8 +242,27 @@ async function prepareRelease(previousRelease, request) {
     throw new Error("Extracted package version does not match the staged update.");
   }
 
-  await run(extractedRoot, "pnpm", ["install", "--prod", "--frozen-lockfile"]);
-  await run(extractedRoot, "pnpm", ["prisma:generate"]);
+  const corepackHome = path.join(runtimeRoot, "corepack");
+  const pnpmHome = path.join(runtimeRoot, "pnpm");
+  const xdgCacheHome = path.join(runtimeRoot, "xdg-cache");
+  const xdgConfigHome = path.join(runtimeRoot, "xdg-config");
+  const xdgDataHome = path.join(runtimeRoot, "xdg-data");
+  await Promise.all([corepackHome, pnpmHome, xdgCacheHome, xdgConfigHome, xdgDataHome]
+    .map((directory) => mkdir(directory, { recursive: true })));
+  const packageManagerEnvironment = {
+    ...process.env,
+    COREPACK_HOME: corepackHome,
+    PNPM_HOME: pnpmHome,
+    XDG_CACHE_HOME: xdgCacheHome,
+    XDG_CONFIG_HOME: xdgConfigHome,
+    XDG_DATA_HOME: xdgDataHome
+  };
+  await run(extractedRoot, "pnpm", ["install", "--prod", "--frozen-lockfile"], {
+    env: packageManagerEnvironment
+  });
+  await run(extractedRoot, "pnpm", ["prisma:generate"], {
+    env: packageManagerEnvironment
+  });
 
   const target = releaseDirectory(request.toVersion);
   await rm(target, { recursive: true, force: true });

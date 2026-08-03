@@ -1,4 +1,5 @@
-import type { OrderNotificationEvent, OrderStatus, Prisma } from "@prisma/client";
+import { Prisma, type OrderNotification, type OrderNotificationEvent, type OrderStatus } from "@prisma/client";
+import { AppError } from "../../core/errors/app-error.js";
 import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { createEmailClient, isEmailDeliveryConfigured } from "../../infrastructure/email/http-email.js";
 import type { ModuleContext } from "../../core/types/module.js";
@@ -18,8 +19,17 @@ type QueueOrderEmailOptions = {
 
 type DeliverQueuedOrderEmailsOptions = {
   orderId?: string;
+  notificationId?: string;
   limit?: number;
 };
+
+const maximumDeliveryAttempts = 6;
+const staleClaimAgeMs = 5 * 60 * 1000;
+const maximumRetryDelayMs = 60 * 60 * 1000;
+
+export function orderEmailRetryDelayMs(attempts: number) {
+  return Math.min(maximumRetryDelayMs, 60_000 * (2 ** Math.max(0, attempts - 1)));
+}
 
 function formatMoney(cents: number, currency: string) {
   return new Intl.NumberFormat("en", {
@@ -160,13 +170,60 @@ export async function deliverQueuedOrderEmails(
   }
 
   const emailClient = createEmailClient(emailSettings);
-  const notifications = await context.prisma.orderNotification.findMany({
-    where: {
-      status: "QUEUED",
-      ...(options.orderId ? { orderId: options.orderId } : {})
-    },
-    orderBy: { createdAt: "asc" },
-    take: options.limit ?? 25
+  const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
+  const staleBefore = new Date(Date.now() - staleClaimAgeMs);
+  const orderFilter = options.orderId
+    ? Prisma.sql`AND "orderId" = ${options.orderId}`
+    : Prisma.empty;
+  const notificationFilter = options.notificationId
+    ? Prisma.sql`AND "id" = ${options.notificationId}`
+    : Prisma.empty;
+  const notifications = await context.prisma.$transaction(async (tx) => {
+    await tx.orderNotification.updateMany({
+      where: {
+        status: "PROCESSING",
+        attempts: { gte: maximumDeliveryAttempts },
+        lastAttemptAt: { lte: staleBefore }
+      },
+      data: {
+        status: "FAILED",
+        failureReason: "Delivery worker stopped before the final attempt completed. Retry manually."
+      }
+    });
+
+    return tx.$queryRaw<OrderNotification[]>(Prisma.sql`
+      WITH candidates AS (
+        SELECT "id"
+        FROM "OrderNotification"
+        WHERE "attempts" < ${maximumDeliveryAttempts}
+          ${orderFilter}
+          ${notificationFilter}
+          AND (
+            "status" = 'QUEUED'::"OrderNotificationStatus"
+            OR (
+              "status" = 'FAILED'::"OrderNotificationStatus"
+              AND "nextAttemptAt" <= NOW()
+            )
+            OR (
+              "status" = 'PROCESSING'::"OrderNotificationStatus"
+              AND "lastAttemptAt" <= ${staleBefore}
+            )
+          )
+        ORDER BY "createdAt" ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT ${limit}
+      )
+      UPDATE "OrderNotification" AS notification
+      SET
+        "status" = 'PROCESSING'::"OrderNotificationStatus",
+        "attempts" = notification."attempts" + 1,
+        "lastAttemptAt" = NOW(),
+        "updatedAt" = NOW()
+      FROM candidates
+      WHERE notification."id" = candidates."id"
+      RETURNING notification.*
+    `
+    );
   });
   let sent = 0;
   let failed = 0;
@@ -191,8 +248,7 @@ export async function deliverQueuedOrderEmails(
         data: {
           status: "SENT",
           sentAt: new Date(),
-          attempts: { increment: 1 },
-          lastAttemptAt: new Date(),
+          nextAttemptAt: new Date(),
           failureReason: null
         }
       });
@@ -202,8 +258,7 @@ export async function deliverQueuedOrderEmails(
         where: { id: notification.id },
         data: {
           status: "FAILED",
-          attempts: { increment: 1 },
-          lastAttemptAt: new Date(),
+          nextAttemptAt: new Date(Date.now() + orderEmailRetryDelayMs(notification.attempts)),
           failureReason: error instanceof Error ? error.message.slice(0, 500) : "Unknown error"
         }
       });
@@ -216,4 +271,35 @@ export async function deliverQueuedOrderEmails(
     failed,
     skipped: false
   };
+}
+
+export async function requeueOrderEmail(context: ModuleContext, notificationId: string) {
+  const queued = await context.prisma.orderNotification.updateMany({
+    where: { id: notificationId, status: "FAILED" },
+    data: {
+      status: "QUEUED",
+      attempts: 0,
+      nextAttemptAt: new Date(),
+      lastAttemptAt: null,
+      failureReason: null
+    }
+  });
+  if (queued.count === 1) {
+    return deliverQueuedOrderEmails(context, { notificationId, limit: 1 });
+  }
+
+  const notification = await context.prisma.orderNotification.findUnique({
+    where: { id: notificationId },
+    select: { status: true }
+  });
+  if (!notification) {
+    throw new AppError(404, "order_notification_not_found", "Order email was not found.");
+  }
+  if (notification.status === "SENT") {
+    throw new AppError(409, "order_notification_already_sent", "This order email has already been sent.");
+  }
+  if (notification.status === "PROCESSING") {
+    throw new AppError(409, "order_notification_in_progress", "This order email is already being delivered.");
+  }
+  throw new AppError(409, "order_notification_already_queued", "This order email is already queued for delivery.");
 }

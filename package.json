@@ -1,6 +1,6 @@
 {
   "name": "codey-cms",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "author": "Fatlum Prekadini",
   "license": "GPL-2.0-or-later",
   "repository": {
@@ -42,6 +42,7 @@
     "release:build": "pnpm run build && node scripts/build-release.mjs",
     "release:verify": "node scripts/verify-release.mjs",
     "release:qualify": "node scripts/qualify-selfhost-package.mjs",
+    "release:qualify-upgrade": "node scripts/qualify-runtime-upgrade.mjs",
     "lint": "eslint apps/web/web scripts",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
     "audit": "pnpm audit --prod --audit-level high",

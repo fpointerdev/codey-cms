@@ -37,11 +37,16 @@ for (const filePath of files) {
     const basePath = basePaths.get(module);
     if (!basePath) throw new Error(`No API base path is declared for module ${module}.`);
     const position = source.getLineAndCharacterOfPosition(node.getStart(source));
+    const validation = validationSchemas(node, source);
     routes.push({
       method,
       module,
       path: openApiPath(`${basePath}${routeArgument.text === "/" ? "" : routeArgument.text}`),
-      source: `${path.relative(root, filePath)}:${position.line + 1}`
+      source: `${path.relative(root, filePath)}:${position.line + 1}`,
+      protected: containsCall(node, new Set(["requireAuth", "requirePermission"])),
+      permission: permissionContract(node),
+      validation,
+      created: containsCall(node, new Set(["sendCreated"]))
     });
   });
 }
@@ -51,14 +56,45 @@ const paths = {};
 for (const route of routes) {
   paths[route.path] ||= {};
   if (paths[route.path][route.method]) throw new Error(`Duplicate route inventory entry: ${route.method.toUpperCase()} ${route.path}.`);
+  const successStatus = route.created ? "201" : "200";
   paths[route.path][route.method] = {
     tags: [route.module],
     operationId: operationId(route),
     summary: `${route.method.toUpperCase()} ${route.path}`,
     "x-codey-source": route.source,
+    ...(Object.keys(route.validation).length ? { "x-codey-validation": route.validation } : {}),
+    ...(route.permission ? { "x-codey-permission": route.permission } : {}),
+    ...(route.protected ? { security: [{ bearerAuth: [] }] } : { security: [] }),
+    ...(pathParameters(route.path).length ? { parameters: pathParameters(route.path) } : {}),
+    ...(route.validation.body ? {
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              description: `Validated at runtime by ${route.validation.body}.`,
+              "x-codey-zod-schema": route.validation.body
+            }
+          }
+        }
+      }
+    } : {}),
     responses: {
-      "200": { description: "Successful response using the CodeY API envelope." },
-      default: { description: "Error response using the CodeY API envelope." }
+      [successStatus]: {
+        description: route.created ? "Resource created." : "Successful response.",
+        content: {
+          "application/json": { schema: { $ref: "#/components/schemas/SuccessEnvelope" } }
+        }
+      },
+      "400": { $ref: "#/components/responses/BadRequest" },
+      ...(route.protected ? {
+        "401": { $ref: "#/components/responses/Unauthorized" },
+        "403": { $ref: "#/components/responses/Forbidden" }
+      } : {}),
+      "422": { $ref: "#/components/responses/ValidationError" },
+      "429": { $ref: "#/components/responses/RateLimited" },
+      default: { $ref: "#/components/responses/Error" }
     }
   };
 }
@@ -69,11 +105,63 @@ const document = {
   info: {
     title: "CodeY CMS API",
     version: packageJson.version,
-    description: "Generated route inventory for the stable /api/v1 contract. Request and response validation remains authoritative in the linked Zod route schemas."
+    description: "Generated stable /api/v1 contract. Each operation identifies its authentication, permission, path parameter, and authoritative Zod validation source."
   },
   servers: [{ url: "/api/v1" }],
   tags: [...new Set(routes.map((route) => route.module))].sort().map((name) => ({ name })),
-  paths
+  paths,
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT"
+      }
+    },
+    schemas: {
+      SuccessEnvelope: {
+        type: "object",
+        required: ["success", "data", "error", "meta"],
+        properties: {
+          success: { const: true },
+          data: {},
+          error: { type: "null" },
+          meta: { oneOf: [{ type: "object" }, { type: "null" }] }
+        }
+      },
+      ErrorEnvelope: {
+        type: "object",
+        required: ["success", "data", "error", "meta"],
+        properties: {
+          success: { const: false },
+          data: { type: "null" },
+          error: {
+            type: "object",
+            required: ["code", "message"],
+            properties: {
+              code: { type: "string" },
+              message: { type: "string" },
+              details: {}
+            }
+          },
+          meta: { oneOf: [{ type: "object" }, { type: "null" }] }
+        }
+      }
+    },
+    responses: Object.fromEntries([
+      ["BadRequest", "Bad request."],
+      ["Unauthorized", "Authentication is required."],
+      ["Forbidden", "The authenticated user lacks the required permission."],
+      ["ValidationError", "Request validation failed."],
+      ["RateLimited", "Request rate limit exceeded."],
+      ["Error", "Error response using the CodeY API envelope."]
+    ].map(([name, description]) => [name, {
+      description,
+      content: {
+        "application/json": { schema: { $ref: "#/components/schemas/ErrorEnvelope" } }
+      }
+    }]))
+  }
 };
 const output = `${JSON.stringify(document, null, 2)}\n`;
 
@@ -123,4 +211,61 @@ function openApiPath(value) {
 function operationId(route) {
   const suffix = route.path.replace(/[{}]/g, "").split("/").filter(Boolean).join("_").replace(/[^A-Za-z0-9_]/g, "_");
   return `${route.module}_${route.method}_${suffix}`;
+}
+
+function containsCall(node, names) {
+  let found = false;
+  visit(node, (child) => {
+    if (ts.isCallExpression(child) && ts.isIdentifier(child.expression) && names.has(child.expression.text)) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+function validationSchemas(node, source) {
+  const validation = {};
+  visit(node, (child) => {
+    if (
+      !ts.isCallExpression(child) ||
+      !ts.isIdentifier(child.expression) ||
+      child.expression.text !== "validateRequest" ||
+      !ts.isObjectLiteralExpression(child.arguments[0])
+    ) return;
+
+    for (const property of child.arguments[0].properties) {
+      if (!ts.isPropertyAssignment(property)) continue;
+      const name = propertyName(property.name);
+      if (!["body", "params", "query"].includes(name)) continue;
+      validation[name] = property.initializer.getText(source);
+    }
+  });
+  return validation;
+}
+
+function permissionContract(node) {
+  let permission;
+  visit(node, (child) => {
+    if (
+      permission ||
+      !ts.isCallExpression(child) ||
+      !ts.isIdentifier(child.expression) ||
+      child.expression.text !== "requirePermission"
+    ) return;
+    const action = child.arguments[1];
+    const subject = child.arguments[2];
+    if (ts.isStringLiteralLike(action) && ts.isStringLiteralLike(subject)) {
+      permission = { action: action.text, subject: subject.text };
+    }
+  });
+  return permission;
+}
+
+function pathParameters(routePath) {
+  return [...routePath.matchAll(/\{([A-Za-z0-9_]+)\}/g)].map((match) => ({
+    name: match[1],
+    in: "path",
+    required: true,
+    schema: { type: "string", minLength: 1 }
+  }));
 }

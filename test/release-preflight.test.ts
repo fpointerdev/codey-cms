@@ -59,3 +59,13 @@ test("release workflow pins actions and scopes the signing key to signing steps"
     2
   );
 });
+
+test("release ancestry enforcement is limited to official tag jobs with full history", () => {
+  const preflight = readFileSync(new URL("../scripts/release-preflight.mjs", import.meta.url), "utf8");
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const publishJob = workflow.split("  publish-release:")[1] ?? "";
+
+  assert.match(preflight, /GITHUB_REF\?\.startsWith\("refs\/tags\/v"\)/);
+  assert.match(preflight, /if \(isGitHubRelease\)/);
+  assert.match(publishJob, /fetch-depth: 0/);
+});
