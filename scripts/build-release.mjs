@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cp,
   mkdir,
@@ -49,6 +50,7 @@ const sbomFile = `codey-cms-${version}.sbom.cdx.json`;
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "codey-cms-release-"));
 const stageRoot = path.join(temporaryRoot, `codey-cms-${version}`);
 const containerImages = JSON.parse(await readFile(path.join(root, "runtime-meta", "container-images.json"), "utf8"));
+const dependencyLockSha256 = sha256Content(await readFile(path.join(root, "pnpm-lock.yaml")));
 
 try {
   assertSafeOutputDirectory();
@@ -91,7 +93,8 @@ try {
       node: ">=24 <25",
       pnpm: ">=11 <12",
       postgres: ">=16",
-      containerRuntime: "Docker Compose v2"
+      containerRuntime: "Docker Compose v2",
+      automaticUpdatesFrom: version
     },
     migrations: {
       count: migrations.length,
@@ -114,6 +117,8 @@ try {
         postgres: containerImages.postgres,
         caddy: containerImages.caddy
       },
+      apkPackages: containerImages.apkPackages,
+      dependencyLockSha256,
       sbom: "SBOM.cdx.json"
     }
   };
@@ -123,9 +128,26 @@ try {
     name: packageJson.name,
     version,
     timestamp: releasedAt,
-    commit: gitSha
+    commit: gitSha,
+    containerImages: {
+      node: containerImages.node,
+      postgres: containerImages.postgres,
+      caddy: containerImages.caddy
+    },
+    apkPackages: containerImages.apkPackages
   }, root);
-  assertProductionSbom(sbom, { name: packageJson.name, version, commit: gitSha });
+  assertProductionSbom(sbom, {
+    name: packageJson.name,
+    version,
+    commit: gitSha,
+    containerImages: {
+      node: containerImages.node,
+      postgres: containerImages.postgres,
+      caddy: containerImages.caddy
+    },
+    apkPackages: containerImages.apkPackages,
+    lockfileSha256: dependencyLockSha256
+  });
   const sbomPath = path.join(outputDir, sbomFile);
   await writeJson(sbomPath, sbom);
   await cp(sbomPath, path.join(stageRoot, "SBOM.cdx.json"));
@@ -226,7 +248,11 @@ function releaseFiles() {
 }
 
 function run(command, args, cwd = root) {
-  const result = spawnSync(command, args, { cwd, stdio: "inherit" });
+  const result = spawnSync(command, args, {
+    cwd,
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+    stdio: "inherit"
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} exited with code ${result.status}.`);
 }
@@ -268,4 +294,8 @@ function hasArg(name) {
 
 async function writeJson(filePath, value) {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function sha256Content(value) {
+  return createHash("sha256").update(value).digest("hex");
 }

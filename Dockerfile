@@ -2,7 +2,13 @@ FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl postgresql16-client \
+ENV COREPACK_HOME=/runtime/corepack
+ENV PNPM_HOME=/runtime/pnpm
+ENV XDG_CACHE_HOME=/runtime/xdg-cache
+ENV XDG_CONFIG_HOME=/runtime/xdg-config
+ENV XDG_DATA_HOME=/runtime/xdg-data
+
+RUN apk add --no-cache openssl=3.5.7-r0 postgresql16-client=16.14-r0 \
   && corepack enable \
   && corepack prepare pnpm@11.3.0 --activate
 
@@ -49,7 +55,7 @@ COPY --from=builder --chown=api:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=api:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=api:nodejs /app/runtime-meta ./runtime-meta
 
-RUN mkdir -p storage/uploads backups backups-mirror /runtime \
+RUN mkdir -p storage/uploads backups backups-mirror /runtime/corepack /runtime/pnpm /runtime/xdg-cache /runtime/xdg-config /runtime/xdg-data \
   && chown -R api:nodejs storage backups backups-mirror /runtime
 
 USER api

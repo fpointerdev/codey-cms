@@ -30,7 +30,10 @@ if (!readArg("artifact") && payload.supplyChain?.sbom) {
   assertProductionSbom(sbom, {
     name: payload.product,
     version: payload.version,
-    commit: payload.supplyChain.source.commit
+    commit: payload.supplyChain.source.commit,
+    containerImages: payload.supplyChain.containerImages,
+    apkPackages: payload.supplyChain.apkPackages,
+    lockfileSha256: payload.supplyChain.dependencyLockSha256
   });
 }
 

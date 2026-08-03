@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
-export function createProductionSbom({ name, version, timestamp, commit }, cwd) {
+export function createProductionSbom({ name, version, timestamp, commit, containerImages, apkPackages }, cwd) {
   const licenses = JSON.parse(execFileSync(
     "pnpm",
     ["licenses", "list", "--prod", "--json"],
@@ -34,6 +36,22 @@ export function createProductionSbom({ name, version, timestamp, commit }, cwd) 
       licenses: component.licenses.sort((left, right) => left.license.name.localeCompare(right.license.name))
     }))
     .sort((left, right) => left.purl.localeCompare(right.purl));
+  const lockfileSha256 = createHash("sha256")
+    .update(readFileSync(`${cwd}/pnpm-lock.yaml`))
+    .digest("hex");
+  const supplyChainProperties = [
+    { name: "codey:source:repository", value: "https://github.com/fpointerdev/codey-cms" },
+    { name: "codey:source:commit", value: commit },
+    { name: "codey:dependencies:pnpm-lock-sha256", value: lockfileSha256 },
+    ...Object.entries(containerImages || {}).map(([image, reference]) => ({
+      name: `codey:container:${image}`,
+      value: reference
+    })),
+    ...Object.entries(apkPackages || {}).map(([name, packageVersion]) => ({
+      name: `codey:apk:${name}`,
+      value: packageVersion
+    }))
+  ].sort((left, right) => left.name.localeCompare(right.name));
 
   return {
     bomFormat: "CycloneDX",
@@ -46,17 +64,14 @@ export function createProductionSbom({ name, version, timestamp, commit }, cwd) 
         name,
         version,
         purl: npmPurl(name, version),
-        properties: [
-          { name: "codey:source:repository", value: "https://github.com/fpointerdev/codey-cms" },
-          { name: "codey:source:commit", value: commit }
-        ]
+        properties: supplyChainProperties
       }
     },
     components: sortedComponents
   };
 }
 
-export function assertProductionSbom(sbom, { name, version, commit }) {
+export function assertProductionSbom(sbom, { name, version, commit, containerImages, apkPackages, lockfileSha256 }) {
   if (sbom?.bomFormat !== "CycloneDX" || sbom.specVersion !== "1.6" || sbom.version !== 1) {
     throw new Error("Release SBOM must use CycloneDX 1.6.");
   }
@@ -71,6 +86,20 @@ export function assertProductionSbom(sbom, { name, version, commit }) {
   )?.value;
   if (sourceCommit !== commit) {
     throw new Error("Release SBOM source commit does not match the signed manifest.");
+  }
+  const properties = new Map((sbom.metadata.component.properties || []).map((property) => [property.name, property.value]));
+  if (lockfileSha256 && properties.get("codey:dependencies:pnpm-lock-sha256") !== lockfileSha256) {
+    throw new Error("Release SBOM dependency lockfile hash does not match the release.");
+  }
+  for (const [image, reference] of Object.entries(containerImages || {})) {
+    if (properties.get(`codey:container:${image}`) !== reference) {
+      throw new Error(`Release SBOM container image ${image} does not match the release.`);
+    }
+  }
+  for (const [packageName, packageVersion] of Object.entries(apkPackages || {})) {
+    if (properties.get(`codey:apk:${packageName}`) !== packageVersion) {
+      throw new Error(`Release SBOM Alpine package ${packageName} does not match the release.`);
+    }
   }
   if (!Array.isArray(sbom.components) || sbom.components.length === 0) {
     throw new Error("Release SBOM does not contain production dependencies.");

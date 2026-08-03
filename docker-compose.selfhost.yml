@@ -41,6 +41,11 @@ x-runtime-environment: &runtime-environment
   CODEY_UPDATE_DIR: /runtime/updates
   CODEY_UPDATE_CONTROL_FILE: /runtime/control/pending-update.json
   CODEY_RUNTIME_ROOT: /runtime
+  COREPACK_HOME: /runtime/corepack
+  PNPM_HOME: /runtime/pnpm
+  XDG_CACHE_HOME: /runtime/xdg-cache
+  XDG_CONFIG_HOME: /runtime/xdg-config
+  XDG_DATA_HOME: /runtime/xdg-data
   LOG_LEVEL: ${LOG_LEVEL:-info}
 
 services:
@@ -48,6 +53,8 @@ services:
     <<: *codey-image
     user: "0:0"
     command: ["node", "scripts/init-selfhost-secrets.mjs"]
+    healthcheck:
+      disable: true
     environment:
       CODEY_SECRET_DIR: /run/codey-secrets
     volumes:

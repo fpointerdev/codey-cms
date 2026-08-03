@@ -11,6 +11,16 @@ for (const [name, reference] of Object.entries({ node: images.node, postgres: im
   }
 }
 
+for (const [name, version] of Object.entries(images.apkPackages || {})) {
+  if (!/^[A-Za-z0-9+_.-]+$/.test(name) || !/^\d[0-9A-Za-z.+_-]*-r\d+$/.test(version)) {
+    throw new Error(`Alpine package pin is invalid: ${name}=${version}.`);
+  }
+  await assertContains("Dockerfile", `${name}=${version}`);
+}
+if (!images.apkPackages?.openssl || !images.apkPackages?.["postgresql16-client"]) {
+  throw new Error("OpenSSL and PostgreSQL client packages must be pinned.");
+}
+
 await assertContains("Dockerfile", images.node);
 await assertContains("docker-compose.selfhost.yml", images.postgres);
 await assertContains("docker-compose.prod.yml", images.postgres);

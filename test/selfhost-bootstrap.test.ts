@@ -101,11 +101,12 @@ test("existing self-host installs derive a stable runtime database password duri
 });
 
 test("self-host launchers load generated and public overrides when requested", async () => {
-  const [shellLauncher, windowsLauncher, composeFile, publicComposeFile] = await Promise.all([
+  const [shellLauncher, windowsLauncher, composeFile, publicComposeFile, supervisor] = await Promise.all([
     readFile("start-codey.sh", "utf8"),
     readFile("start-codey.cmd", "utf8"),
     readFile("docker-compose.selfhost.yml", "utf8"),
-    readFile("docker-compose.public.yml", "utf8")
+    readFile("docker-compose.public.yml", "utf8"),
+    readFile("scripts/selfhost-supervisor.mjs", "utf8")
   ]);
 
   assert.match(shellLauncher, /CODEY_COMPOSE_OVERRIDE_FILE:-docker-compose\.override\.yml/);
@@ -127,11 +128,15 @@ test("self-host launchers load generated and public overrides when requested", a
   assert.match(windowsLauncher, /--domain/);
   assert.match(windowsLauncher, /docker-compose\.public\.yml/);
   assert.match(composeFile, /backup:[\s\S]*healthcheck:[\s\S]*process\.kill\(1, 0\)/);
+  assert.match(composeFile, /secrets:[\s\S]*healthcheck:\s*\n\s*disable:\s*true/);
   assert.match(composeFile, /CODEY_SEED_DEMO_CONTENT: \$\{CODEY_SEED_DEMO_CONTENT:-false\}/);
   assert.doesNotMatch(composeFile, /backup:[\s\S]*healthcheck:\s*\n\s*disable:\s*true/);
   assert.match(composeFile, /BACKUP_REQUIRED: \$\{BACKUP_REQUIRED:-true\}/);
   assert.match(composeFile, /BACKUP_OFFSITE_REQUIRED: \$\{BACKUP_OFFSITE_REQUIRED:-true\}/);
   assert.match(composeFile, /BACKUP_OFFSITE_PROTECTED: \$\{BACKUP_OFFSITE_PROTECTED:-false\}/);
+  assert.match(composeFile, /COREPACK_HOME: \/runtime\/corepack/);
+  assert.match(composeFile, /XDG_DATA_HOME: \/runtime\/xdg-data/);
+  assert.match(supervisor, /COREPACK_HOME: corepackHome/);
   assert.match(composeFile, /postgres:16-alpine@sha256:[a-f0-9]{64}/);
   assert.match(composeFile, /127\.0\.0\.1:\$\{API_PORT:-4000\}:4000/);
   assert.match(publicComposeFile, /caddy:2\.11\.4-alpine@sha256:[a-f0-9]{64}/);

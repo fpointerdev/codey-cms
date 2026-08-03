@@ -29,6 +29,14 @@ if (process.env.GITHUB_ACTIONS === "true") {
   if (!/^[a-f0-9]{40}$/.test(checkoutCommit) || checkoutCommit !== process.env.GITHUB_SHA) {
     throw new Error("Release checkout does not match the GitHub tag commit.");
   }
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", checkoutCommit, "origin/main"], {
+      cwd: root,
+      stdio: "ignore"
+    });
+  } catch {
+    throw new Error("Official release tags must point to a commit on origin/main.");
+  }
 }
 
 const notesFile = path.join(root, "docs", "releases", `${tag}.md`);

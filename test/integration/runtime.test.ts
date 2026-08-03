@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { config } from "../../src/config/index.js";
 import { createApp } from "../../src/core/app.js";
 import { prisma } from "../../src/infrastructure/database/prisma.js";
+import { EmailSettingsService } from "../../src/infrastructure/email/email-settings.service.js";
+import { logger } from "../../src/infrastructure/logging/logger.js";
 import { createTotpCode } from "../../src/modules/auth/mfa.js";
+import { deliverQueuedOrderEmails } from "../../src/modules/orders/order-email.service.js";
 import { runtimeVersion } from "../../src/runtime/release.js";
 
 type ApiEnvelope = {
@@ -567,5 +572,71 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
       server.close((error) => error ? reject(error) : resolve());
     });
     await prisma.$disconnect();
+  }
+});
+
+test("concurrent order email workers claim a notification once", async () => {
+  let requests = 0;
+  const emailServer = createHttpServer((_request, response) => {
+    requests += 1;
+    setTimeout(() => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ messageId: "integration-email" }));
+    }, 100);
+  });
+  await new Promise<void>((resolve) => emailServer.listen(0, "127.0.0.1", resolve));
+  const emailAddress = emailServer.address() as AddressInfo;
+  const site = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const settingKey = {
+    siteId_moduleId_key: { siteId: site.id, moduleId: "config", key: "email" }
+  };
+  const previousSetting = await prisma.moduleSetting.findUnique({
+    where: settingKey,
+    select: { value: true }
+  });
+  const order = await prisma.order.create({
+    data: {
+      orderNumber: `EMAIL-${Date.now()}`,
+      customerEmail: "email-worker@example.com",
+      subtotalCents: 1200,
+      totalCents: 1200,
+      notifications: {
+        create: {
+          recipient: "email-worker@example.com",
+          subject: "Order received",
+          body: "Your order was received."
+        }
+      }
+    },
+    include: { notifications: true }
+  });
+
+  try {
+    await new EmailSettingsService(prisma, config).update({
+      enabled: true,
+      provider: "generic",
+      from: "orders@example.com",
+      httpEndpoint: `http://127.0.0.1:${emailAddress.port}`
+    });
+    const context = { config, prisma, logger };
+    await Promise.all([
+      deliverQueuedOrderEmails(context, { orderId: order.id }),
+      deliverQueuedOrderEmails(context, { orderId: order.id })
+    ]);
+
+    const notification = await prisma.orderNotification.findUniqueOrThrow({
+      where: { id: order.notifications[0].id }
+    });
+    assert.equal(requests, 1);
+    assert.equal(notification.status, "SENT");
+    assert.equal(notification.attempts, 1);
+  } finally {
+    await prisma.order.delete({ where: { id: order.id } }).catch(() => undefined);
+    if (previousSetting) {
+      await prisma.moduleSetting.update({ where: settingKey, data: { value: previousSetting.value } });
+    } else {
+      await prisma.moduleSetting.delete({ where: settingKey }).catch(() => undefined);
+    }
+    await new Promise<void>((resolve, reject) => emailServer.close((error) => error ? reject(error) : resolve()));
   }
 });

@@ -33,6 +33,7 @@ enum OrderNotificationChannel {
 
 enum OrderNotificationStatus {
   QUEUED
+  PROCESSING
   SENT
   FAILED
 }
@@ -204,11 +205,12 @@ model OrderNotification {
   attempts  Int                @default(0)
   failureReason String?
   lastAttemptAt DateTime?
+  nextAttemptAt DateTime       @default(now())
   sentAt    DateTime?
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
   @@index([orderId])
   @@index([eventType, createdAt])
-  @@index([status, createdAt])
+  @@index([status, nextAttemptAt, createdAt])
 }

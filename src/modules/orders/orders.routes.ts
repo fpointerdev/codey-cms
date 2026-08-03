@@ -14,11 +14,14 @@ import {
   commerceResourceParams,
   createCartSchema,
   createCouponSchema,
+  customerDataAnonymizeSchema,
+  customerDataExportSchema,
   createOrderSchema,
   createShippingRateSchema,
   createShippingZoneSchema,
   createTaxRuleSchema,
   lookupOrderSchema,
+  orderNotificationIdParams,
   orderIdParams,
   shippingZoneIdParams,
   updateCheckoutStatusSchema,
@@ -39,7 +42,12 @@ import {
   releaseOrderInventoryReservation,
   updateCartItem
 } from "./checkout.service.js";
-import { deliverQueuedOrderEmails, queueOrderEmail } from "./order-email.service.js";
+import {
+  anonymizeCustomerData,
+  auditCustomerDataExport,
+  exportCustomerData
+} from "./customer-data.service.js";
+import { deliverQueuedOrderEmails, queueOrderEmail, requeueOrderEmail } from "./order-email.service.js";
 
 function createCheckoutLimiter() {
   return rateLimit({
@@ -69,6 +77,12 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     });
   }, 60_000);
   cleanupTimer.unref();
+  const emailDeliveryTimer = setInterval(() => {
+    void deliverQueuedOrderEmails(context).catch((error) => {
+      context.logger.error({ err: error }, "Unable to process queued order emails");
+    });
+  }, 60_000);
+  emailDeliveryTimer.unref();
 
   router.get(
     "/",
@@ -77,7 +91,10 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       await releaseExpiredOrderReservations(context);
       const orders = await context.prisma.order.findMany({
         orderBy: { createdAt: "desc" },
-        include: { items: true, notifications: true },
+        include: {
+          items: true,
+          notifications: { orderBy: { createdAt: "asc" } }
+        },
         take: 100
       });
 
@@ -185,6 +202,55 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       const delivery = await deliverQueuedOrderEmails(context);
 
       return sendSuccess(res, { delivery });
+    })
+  );
+
+  router.post(
+    "/notifications/:notificationId/retry",
+    requirePermission(context, "update", "orders"),
+    validateRequest({ params: orderNotificationIdParams }),
+    asyncHandler(async (req, res) => {
+      const delivery = await requeueOrderEmail(context, req.params.notificationId);
+
+      return sendSuccess(res, { delivery });
+    })
+  );
+
+  router.post(
+    "/customers/export",
+    requirePermission(context, "read", "orders"),
+    validateRequest({ body: customerDataExportSchema }),
+    asyncHandler(async (req, res) => {
+      const customerData = await exportCustomerData(context, req.body.email);
+      await auditCustomerDataExport(context, req.body.email, {
+        actorUserId: req.user!.id,
+        ipAddress: req.ip,
+        userAgent: req.header("user-agent"),
+        requestId: req.header("x-request-id")
+      }, {
+        orders: customerData.orders.length,
+        carts: customerData.carts.length,
+        payments: customerData.payments.length,
+        paymentWebhooks: customerData.paymentWebhooks.length
+      });
+
+      return sendSuccess(res, { customerData });
+    })
+  );
+
+  router.post(
+    "/customers/anonymize",
+    requirePermission(context, "update", "orders"),
+    validateRequest({ body: customerDataAnonymizeSchema }),
+    asyncHandler(async (req, res) => {
+      const result = await anonymizeCustomerData(context, req.body.email, {
+        actorUserId: req.user!.id,
+        ipAddress: req.ip,
+        userAgent: req.header("user-agent"),
+        requestId: req.header("x-request-id")
+      });
+
+      return sendSuccess(res, { anonymized: true, ...result });
     })
   );
 

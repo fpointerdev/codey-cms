@@ -4,6 +4,10 @@ export const orderIdParams = z.object({
   id: z.string().cuid()
 });
 
+export const orderNotificationIdParams = z.object({
+  notificationId: z.string().cuid()
+});
+
 export const cartTokenParams = z.object({
   token: z.string().trim().min(16).max(160)
 });
@@ -111,6 +115,14 @@ export const checkoutCartSchema = z.object({
 export const lookupOrderSchema = z.object({
   orderNumber: z.string().trim().min(1).max(80),
   customerEmail: z.string().email()
+});
+
+export const customerDataExportSchema = z.object({
+  email: z.string().email()
+});
+
+export const customerDataAnonymizeSchema = customerDataExportSchema.extend({
+  confirmation: z.literal("ANONYMIZE")
 });
 
 export const createShippingZoneSchema = z.object({

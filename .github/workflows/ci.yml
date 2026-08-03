@@ -25,7 +25,7 @@ jobs:
 
   release-checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -89,6 +89,16 @@ jobs:
       - run: pnpm run test:e2e
       - name: Public SEO and Lighthouse gates
         run: pnpm run audit:quality
+      - name: Build local qualification package
+        env:
+          CODEY_RELEASE_ALLOW_UNSIGNED: "true"
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          pnpm run release:build -- --allow-unsigned
+      - name: Qualify extracted package with Docker
+        env:
+          CODEY_RELEASE_ALLOW_UNSIGNED: "true"
+        run: pnpm run release:qualify -- --report=.release/qualification-report.json
 
       - name: Upload browser diagnostics
         if: failure()
@@ -99,13 +109,15 @@ jobs:
             playwright-report
             test-results
             .lighthouseci
+            .release/qualification-report.json
           if-no-files-found: ignore
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [release-checks, platform-launchers]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    environment: release
+    timeout-minutes: 40
     permissions:
       contents: write
     env:
@@ -113,6 +125,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 11.3.0
@@ -133,6 +147,8 @@ jobs:
       - run: pnpm run release:verify
       - name: Qualify downloadable self-host package
         run: pnpm run release:qualify
+      - name: Qualify previous-stable update and rollback
+        run: pnpm run release:qualify-upgrade
       - name: Publish immutable runtime release
         env:
           GH_TOKEN: ${{ github.token }}

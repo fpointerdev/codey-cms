@@ -1,0 +1,8 @@
+* @fprekadini
+
+/.github/workflows/ @fprekadini
+/scripts/build-release.mjs @fprekadini
+/scripts/release-contract.mjs @fprekadini
+/scripts/release-preflight.mjs @fprekadini
+/scripts/verify-release.mjs @fprekadini
+/runtime-meta/ @fprekadini
