@@ -297,6 +297,25 @@ try {
   console.log(`Qualified CodeY CMS ${version} from its downloadable self-host ZIP.`);
   console.log(`Generated import, admin edit, restart SSR, encrypted backup, and restore passed on port ${port}.`);
   console.log(JSON.stringify(report));
+} catch (error) {
+  if (composeStarted) {
+    const diagnostics = [
+      await compose(["ps", "-a"], { capture: true, allowFailure: true }),
+      await compose(
+        ["logs", "--no-color", "--tail", "200", "secrets", "postgres", "backend", "backup"],
+        { capture: true, allowFailure: true }
+      )
+    ].filter(Boolean).join("\n");
+    if (diagnostics) {
+      console.error(diagnostics);
+      if (reportPath) {
+        const diagnosticsPath = path.join(path.dirname(reportPath), "qualification-diagnostics.log");
+        await mkdir(path.dirname(diagnosticsPath), { recursive: true });
+        await writeFile(diagnosticsPath, diagnostics, "utf8");
+      }
+    }
+  }
+  throw error;
 } finally {
   if (composeStarted) {
     await compose(["down", "-v", "--remove-orphans"], { allowFailure: true });
