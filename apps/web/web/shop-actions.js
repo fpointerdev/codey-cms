@@ -131,6 +131,7 @@ function productMetadataPayload(formData, existingProduct = null) {
 
   return {
     ...existingMetadata,
+    purchaseMode: String(formData.get("purchaseMode") || "buy") === "quote" ? "quote" : "buy",
     attributes: attributeRows(formData)
   };
 }
@@ -468,5 +469,149 @@ export async function updateManualPayment(button) {
   } catch (error) {
     button.disabled = false;
     setStatus(error.message || "Unable to update manual payment.", true);
+  }
+}
+
+export async function updateOrderStatus(button) {
+  const orderId = button?.dataset?.orderId;
+  const status = button?.dataset?.orderStatusAction;
+  if (!orderId || !["CANCELLED", "FULFILLED"].includes(status)) return;
+
+  const fulfilment = status === "FULFILLED";
+  const confirmation = await getModalFormHandler()({
+    label: fulfilment ? "Fulfillment" : "Order",
+    title: fulfilment ? "Mark order fulfilled?" : "Cancel this order?",
+    description: fulfilment
+      ? "The customer will be notified that the order is fulfilled."
+      : "Reserved stock will be returned and the customer will be notified.",
+    fields: [],
+    submitLabel: fulfilment ? "Mark fulfilled" : "Cancel order",
+    destructive: !fulfilment
+  });
+  if (!confirmation) return;
+
+  button.disabled = true;
+  try {
+    await api(`/orders/${encodeURIComponent(orderId)}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+    await loadAdminRoute({ view: "shop-orders" });
+    setStatus(fulfilment ? "Order marked fulfilled." : "Order cancelled and stock restored.");
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to update order.", true);
+  }
+}
+
+function commaSeparatedCountries(value) {
+  const countries = [...new Set(String(value || "").split(",").map((country) => country.trim().toUpperCase()).filter(Boolean))];
+  if (!countries.length || countries.some((country) => !/^[A-Z]{2}$/.test(country))) {
+    throw new Error("Use two-letter country codes separated by commas, for example DE, FR, IT.");
+  }
+  return countries;
+}
+
+export async function saveCommerceRule(form) {
+  const type = form?.dataset?.commerceRuleForm;
+  if (!type) return;
+  const formData = new FormData(form);
+  setFormDisabled(form, true);
+  setFormMessage(form, "Saving...");
+
+  try {
+    if (type === "shipping") {
+      const zoneResponse = await api("/orders/shipping/zones", {
+        method: "POST",
+        body: JSON.stringify({
+          name: String(formData.get("name") || "").trim(),
+          countries: commaSeparatedCountries(formData.get("countries")),
+          active: true
+        })
+      });
+      try {
+        await api(`/orders/shipping/zones/${encodeURIComponent(zoneResponse.zone.id)}/rates`, {
+          method: "POST",
+          body: JSON.stringify({
+            name: String(formData.get("rateName") || "").trim(),
+            minSubtotalCents: 0,
+            priceCents: normalizePriceCents(formData.get("price")),
+            active: true,
+            sortOrder: 0
+          })
+        });
+      } catch (error) {
+        await api(`/orders/shipping/zones/${encodeURIComponent(zoneResponse.zone.id)}`, { method: "DELETE" }).catch(() => undefined);
+        throw error;
+      }
+    } else if (type === "tax") {
+      const country = String(formData.get("country") || "").trim().toUpperCase();
+      await api("/orders/tax-rules", {
+        method: "POST",
+        body: JSON.stringify({
+          name: String(formData.get("name") || "").trim(),
+          country: country || undefined,
+          rateBps: Math.round(Number(formData.get("rate") || 0) * 100),
+          active: true,
+          priority: 0
+        })
+      });
+    } else if (type === "coupon") {
+      const discountType = String(formData.get("discountType") || "PERCENTAGE");
+      const minimum = String(formData.get("minSubtotal") || "").trim();
+      const usageLimit = String(formData.get("usageLimit") || "").trim();
+      await api("/orders/coupons", {
+        method: "POST",
+        body: JSON.stringify({
+          code: String(formData.get("code") || "").trim().toUpperCase(),
+          discountType,
+          amount: discountType === "FIXED"
+            ? normalizePriceCents(formData.get("amount"))
+            : Math.round(Number(formData.get("amount") || 0)),
+          currency: discountType === "FIXED" ? String(formData.get("currency") || "EUR") : undefined,
+          minSubtotalCents: minimum ? normalizePriceCents(minimum) : undefined,
+          usageLimit: usageLimit ? Number.parseInt(usageLimit, 10) : undefined,
+          active: true
+        })
+      });
+    }
+
+    await loadAdminRoute({ view: "shop-configuration" });
+    setStatus("Commerce rule saved.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to save commerce rule.", true);
+    setStatus(error.message || "Unable to save commerce rule.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function deleteCommerceRule(button) {
+  const type = button?.dataset?.deleteCommerceRule;
+  const id = button?.dataset?.commerceRuleId;
+  const paths = {
+    shipping: "/orders/shipping/zones",
+    tax: "/orders/tax-rules",
+    coupon: "/orders/coupons"
+  };
+  if (!id || !paths[type]) return;
+
+  const confirmation = await getModalFormHandler()({
+    label: "Commerce rule",
+    title: "Remove this rule?",
+    description: "New checkouts will stop using it immediately. Existing orders are unchanged.",
+    fields: [],
+    submitLabel: "Remove rule",
+    destructive: true
+  });
+  if (!confirmation) return;
+
+  button.disabled = true;
+  try {
+    await api(`${paths[type]}/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadAdminRoute({ view: "shop-configuration" });
+    setStatus("Commerce rule removed.");
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to remove commerce rule.", true);
   }
 }

@@ -1,5 +1,6 @@
 import type { Router } from "express";
 import rateLimit from "express-rate-limit";
+import { Prisma } from "@prisma/client";
 import type { ModuleContext } from "../../core/types/module.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
@@ -7,8 +8,10 @@ import { validateRequest } from "../../core/http/validation.middleware.js";
 import { requirePermission } from "../auth/auth.middleware.js";
 import {
   addCartItemSchema,
+  cartItemParams,
   cartTokenParams,
   checkoutCartSchema,
+  commerceResourceParams,
   createCartSchema,
   createCouponSchema,
   createOrderSchema,
@@ -19,17 +22,22 @@ import {
   orderIdParams,
   shippingZoneIdParams,
   updateCheckoutStatusSchema,
+  updateCartItemSchema,
   updateOrderStatusSchema
 } from "./orders.schemas.js";
 import {
   addCartItem,
+  assertMerchantCheckoutTransition,
+  assertMerchantOrderTransition,
   checkoutCart,
   createCart,
   createOrder,
   getCart,
   lookupOrder,
+  removeCartItem,
   releaseExpiredOrderReservations,
-  releaseOrderInventoryReservation
+  releaseOrderInventoryReservation,
+  updateCartItem
 } from "./checkout.service.js";
 import { deliverQueuedOrderEmails, queueOrderEmail } from "./order-email.service.js";
 
@@ -131,6 +139,33 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     })
   );
 
+  router.patch(
+    "/carts/:token/items/:itemId",
+    checkoutLimiter,
+    validateRequest({ params: cartItemParams, body: updateCartItemSchema }),
+    asyncHandler(async (req, res) => {
+      const cart = await updateCartItem(
+        context,
+        req.params.token,
+        req.params.itemId,
+        req.body.quantity
+      );
+
+      return sendSuccess(res, { cart });
+    })
+  );
+
+  router.delete(
+    "/carts/:token/items/:itemId",
+    checkoutLimiter,
+    validateRequest({ params: cartItemParams }),
+    asyncHandler(async (req, res) => {
+      const cart = await removeCartItem(context, req.params.token, req.params.itemId);
+
+      return sendSuccess(res, { cart });
+    })
+  );
+
   router.post(
     "/carts/:token/checkout",
     checkoutLimiter,
@@ -213,6 +248,16 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     })
   );
 
+  router.delete(
+    "/shipping/zones/:id",
+    requirePermission(context, "update", "orders"),
+    validateRequest({ params: commerceResourceParams }),
+    asyncHandler(async (req, res) => {
+      await context.prisma.shippingZone.delete({ where: { id: req.params.id } });
+      return sendSuccess(res, { deleted: true });
+    })
+  );
+
   router.get(
     "/tax-rules",
     requirePermission(context, "read", "orders"),
@@ -233,11 +278,22 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       const taxRule = await context.prisma.taxRule.create({
         data: {
           ...req.body,
-          country: req.body.country?.toUpperCase()
+          country: req.body.country?.toUpperCase(),
+          region: req.body.region?.toUpperCase()
         }
       });
 
       return sendCreated(res, { taxRule });
+    })
+  );
+
+  router.delete(
+    "/tax-rules/:id",
+    requirePermission(context, "update", "orders"),
+    validateRequest({ params: commerceResourceParams }),
+    asyncHandler(async (req, res) => {
+      await context.prisma.taxRule.delete({ where: { id: req.params.id } });
+      return sendSuccess(res, { deleted: true });
     })
   );
 
@@ -271,12 +327,27 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     })
   );
 
+  router.delete(
+    "/coupons/:id",
+    requirePermission(context, "update", "orders"),
+    validateRequest({ params: commerceResourceParams }),
+    asyncHandler(async (req, res) => {
+      await context.prisma.coupon.delete({ where: { id: req.params.id } });
+      return sendSuccess(res, { deleted: true });
+    })
+  );
+
   router.patch(
     "/:id/checkout-status",
     requirePermission(context, "update", "orders"),
     validateRequest({ params: orderIdParams, body: updateCheckoutStatusSchema }),
     asyncHandler(async (req, res) => {
       const order = await context.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "Order" WHERE "id" = ${req.params.id} FOR UPDATE`
+        );
+        const currentOrder = await tx.order.findUniqueOrThrow({ where: { id: req.params.id } });
+        assertMerchantCheckoutTransition(currentOrder.checkoutStatus, req.body.checkoutStatus);
         if (req.body.checkoutStatus === "ABANDONED") {
           const released = await releaseOrderInventoryReservation(tx, req.params.id);
           if (released) {
@@ -304,12 +375,18 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     validateRequest({ params: orderIdParams, body: updateOrderStatusSchema }),
     asyncHandler(async (req, res) => {
       const order = await context.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "Order" WHERE "id" = ${req.params.id} FOR UPDATE`
+        );
         const currentOrder = await tx.order.findUniqueOrThrow({
           where: { id: req.params.id },
           include: { items: true }
         });
+        assertMerchantOrderTransition(currentOrder.status, req.body.status);
         const released = req.body.status === "CANCELLED"
-          ? await releaseOrderInventoryReservation(tx, req.params.id)
+          ? await releaseOrderInventoryReservation(tx, req.params.id, {
+              orderStatuses: ["PENDING", "CONFIRMED"]
+            })
           : false;
         const updatedOrder = released
           ? await tx.order.findUniqueOrThrow({

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Prisma } from "@prisma/client";
-import { releaseOrderInventoryReservation } from "../src/modules/orders/checkout.service.js";
+import { AppError } from "../src/core/errors/app-error.js";
+import {
+  assertMerchantCheckoutTransition,
+  assertMerchantOrderTransition,
+  releaseOrderInventoryReservation
+} from "../src/modules/orders/checkout.service.js";
 
 test("releasing an order restores grouped stock and coupon usage once", async () => {
   const variantUpdates: unknown[] = [];
@@ -74,4 +79,63 @@ test("completed orders cannot release inventory again", async () => {
 
   assert.equal(await releaseOrderInventoryReservation(tx, "order-2"), false);
   assert.equal(claimed, false);
+});
+
+test("merchant order actions cannot bypass payment state", () => {
+  assert.doesNotThrow(() => assertMerchantOrderTransition("PENDING", "CANCELLED"));
+  assert.doesNotThrow(() => assertMerchantOrderTransition("PAID", "FULFILLED"));
+  assert.throws(
+    () => assertMerchantOrderTransition("PENDING", "PAID"),
+    (error) => error instanceof AppError && error.code === "invalid_order_status_transition"
+  );
+  assert.throws(
+    () => assertMerchantOrderTransition("PAID", "REFUNDED"),
+    (error) => error instanceof AppError && error.code === "invalid_order_status_transition"
+  );
+});
+
+test("merchant checkout actions cannot bypass payment authorization", () => {
+  assert.doesNotThrow(() => assertMerchantCheckoutTransition("PAYMENT_PENDING", "ABANDONED"));
+  assert.doesNotThrow(() => assertMerchantCheckoutTransition("COMPLETE", "COMPLETE"));
+  assert.throws(
+    () => assertMerchantCheckoutTransition("PAYMENT_PENDING", "COMPLETE"),
+    (error) => error instanceof AppError && error.code === "invalid_checkout_status_transition"
+  );
+  assert.throws(
+    () => assertMerchantCheckoutTransition("PAYMENT_AUTHORIZED", "ABANDONED"),
+    (error) => error instanceof AppError && error.code === "invalid_checkout_status_transition"
+  );
+});
+
+test("confirmed unpaid orders can restore reserved inventory when cancelled", async () => {
+  const claims: unknown[] = [];
+  const tx = {
+    order: {
+      findUnique: async () => ({
+        id: "order-confirmed",
+        status: "CONFIRMED",
+        checkoutStatus: "PAYMENT_PENDING",
+        couponCode: null,
+        items: [{ productId: "product-1", variantId: null, quantity: 2 }]
+      }),
+      updateMany: async (args: unknown) => {
+        claims.push(args);
+        return { count: 1 };
+      }
+    },
+    product: { updateMany: async () => ({ count: 1 }) },
+    coupon: { updateMany: async () => ({ count: 0 }) }
+  } as unknown as Prisma.TransactionClient;
+
+  assert.equal(await releaseOrderInventoryReservation(tx, "order-confirmed", {
+    orderStatuses: ["PENDING", "CONFIRMED"]
+  }), true);
+  assert.deepEqual(claims, [{
+    where: {
+      id: "order-confirmed",
+      status: { in: ["PENDING", "CONFIRMED"] },
+      checkoutStatus: "PAYMENT_PENDING"
+    },
+    data: { status: "CANCELLED", checkoutStatus: "ABANDONED" }
+  }]);
 });

@@ -1948,7 +1948,7 @@
         ],
         "operationId": "orders_get_orders",
         "summary": "GET /orders",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:65",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:73",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -1964,7 +1964,7 @@
         ],
         "operationId": "orders_post_orders",
         "summary": "POST /orders",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:80",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:88",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -1982,7 +1982,7 @@
         ],
         "operationId": "orders_patch_orders_id_checkout_status",
         "summary": "PATCH /orders/{id}/checkout-status",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:274",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:340",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2000,7 +2000,7 @@
         ],
         "operationId": "orders_patch_orders_id_status",
         "summary": "PATCH /orders/{id}/status",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:301",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:372",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2018,7 +2018,7 @@
         ],
         "operationId": "orders_post_orders_carts",
         "summary": "POST /orders/carts",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:102",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:110",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2036,7 +2036,7 @@
         ],
         "operationId": "orders_get_orders_carts_token",
         "summary": "GET /orders/carts/{token}",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:113",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:121",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2054,7 +2054,7 @@
         ],
         "operationId": "orders_post_orders_carts_token_checkout",
         "summary": "POST /orders/carts/{token}/checkout",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:134",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:169",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2072,7 +2072,41 @@
         ],
         "operationId": "orders_post_orders_carts_token_items",
         "summary": "POST /orders/carts/{token}/items",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:123",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:131",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/carts/{token}/items/{itemId}": {
+      "delete": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_delete_orders_carts_token_items_itemId",
+        "summary": "DELETE /orders/carts/{token}/items/{itemId}",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:158",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_patch_orders_carts_token_items_itemId",
+        "summary": "PATCH /orders/carts/{token}/items/{itemId}",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:142",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2090,7 +2124,7 @@
         ],
         "operationId": "orders_get_orders_coupons",
         "summary": "GET /orders/coupons",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:244",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:300",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2106,7 +2140,25 @@
         ],
         "operationId": "orders_post_orders_coupons",
         "summary": "POST /orders/coupons",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:257",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:313",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/coupons/{id}": {
+      "delete": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_delete_orders_coupons_id",
+        "summary": "DELETE /orders/coupons/{id}",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:330",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2124,7 +2176,7 @@
         ],
         "operationId": "orders_post_orders_lookup",
         "summary": "POST /orders/lookup",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:92",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:100",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2142,7 +2194,7 @@
         ],
         "operationId": "orders_post_orders_notifications_process",
         "summary": "POST /orders/notifications/process",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:146",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:181",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2160,7 +2212,7 @@
         ],
         "operationId": "orders_post_orders_reservations_release_expired",
         "summary": "POST /orders/reservations/release-expired",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:156",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:191",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2178,7 +2230,7 @@
         ],
         "operationId": "orders_get_orders_shipping_zones",
         "summary": "GET /orders/shipping/zones",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:166",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:201",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2194,7 +2246,25 @@
         ],
         "operationId": "orders_post_orders_shipping_zones",
         "summary": "POST /orders/shipping/zones",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:184",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:219",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/shipping/zones/{id}": {
+      "delete": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_delete_orders_shipping_zones_id",
+        "summary": "DELETE /orders/shipping/zones/{id}",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:251",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2212,7 +2282,7 @@
         ],
         "operationId": "orders_post_orders_shipping_zones_id_rates",
         "summary": "POST /orders/shipping/zones/{id}/rates",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:200",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:235",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2230,7 +2300,7 @@
         ],
         "operationId": "orders_get_orders_tax_rules",
         "summary": "GET /orders/tax-rules",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:216",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:261",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."
@@ -2246,7 +2316,25 @@
         ],
         "operationId": "orders_post_orders_tax_rules",
         "summary": "POST /orders/tax-rules",
-        "x-codey-source": "src/modules/orders/orders.routes.ts:228",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:273",
+        "responses": {
+          "200": {
+            "description": "Successful response using the CodeY API envelope."
+          },
+          "default": {
+            "description": "Error response using the CodeY API envelope."
+          }
+        }
+      }
+    },
+    "/orders/tax-rules/{id}": {
+      "delete": {
+        "tags": [
+          "orders"
+        ],
+        "operationId": "orders_delete_orders_tax_rules_id",
+        "summary": "DELETE /orders/tax-rules/{id}",
+        "x-codey-source": "src/modules/orders/orders.routes.ts:290",
         "responses": {
           "200": {
             "description": "Successful response using the CodeY API envelope."

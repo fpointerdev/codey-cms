@@ -402,6 +402,57 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.match(productHtml, /Starter Product/);
     assert.match(productHtml, /Starter product image/);
     assert.match(productHtml, /shop-detail-layout-immersive shop-detail-style-premium/);
+    assert.match(productHtml, /name="variantId"/);
+
+    const starterProduct = await prisma.product.findUniqueOrThrow({
+      where: { locale_slug: { locale: "en", slug: "starter-product" } },
+      include: { variants: { where: { active: true }, take: 1 } }
+    });
+    const shippingRate = await prisma.shippingRate.findFirstOrThrow({
+      where: { active: true, zone: { active: true } },
+      orderBy: { priceCents: "asc" }
+    });
+    const createCart = await request("/api/v1/orders/carts", {
+      method: "POST",
+      body: "{}"
+    });
+    const createCartBody = await responseJson(createCart);
+    const cartToken = String(createCartBody.data?.cart.sessionToken);
+    assert.equal(createCart.status, 201, JSON.stringify(createCartBody));
+    const addCartItem = await request(`/api/v1/orders/carts/${cartToken}/items`, {
+      method: "POST",
+      body: JSON.stringify({
+        productId: starterProduct.id,
+        variantId: starterProduct.variants[0]?.id,
+        quantity: 1
+      })
+    });
+    assert.equal(addCartItem.status, 200, JSON.stringify(await responseJson(addCartItem)));
+
+    const checkoutBody = JSON.stringify({
+      customerEmail: `commerce-${runId}@example.com`,
+      customerName: "Commerce Integration",
+      shippingCountry: "US",
+      shippingAddress: {
+        line1: "1 Integration Way",
+        city: "New York",
+        region: "NY",
+        postalCode: "10001"
+      },
+      shippingRateId: shippingRate.id
+    });
+    const checkoutResponses = await Promise.all([
+      request(`/api/v1/orders/carts/${cartToken}/checkout`, { method: "POST", body: checkoutBody }),
+      request(`/api/v1/orders/carts/${cartToken}/checkout`, { method: "POST", body: checkoutBody })
+    ]);
+    assert.deepEqual(
+      checkoutResponses.map((response) => response.status).sort((left, right) => left - right),
+      [201, 404]
+    );
+    const completedCheckout = checkoutResponses.find((response) => response.status === 201)!;
+    const completedCheckoutBody = await responseJson(completedCheckout);
+    assert.equal(completedCheckoutBody.data?.order.items.length, 1);
+    assert.equal(completedCheckoutBody.data?.order.shippingCents, shippingRate.priceCents);
 
     const createRedirect = await request("/api/v1/cms/redirects", {
       method: "POST",

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
 import { queueOrderEmail } from "./order-email.service.js";
@@ -14,7 +14,15 @@ type OrderItemInput = {
 export type CreateOrderInput = {
   customerEmail: string;
   customerName?: string;
+  customerPhone?: string;
   shippingCountry?: string;
+  shippingAddress?: {
+    line1: string;
+    line2?: string;
+    city: string;
+    region?: string;
+    postalCode: string;
+  };
   shippingRateId?: string;
   couponCode?: string;
   metadata?: Record<string, unknown>;
@@ -37,8 +45,45 @@ export type LookupOrderInput = {
 };
 
 type ShopTransaction = Prisma.TransactionClient;
+type CartWithItems = Prisma.CartGetPayload<{ include: { items: true } }>;
+type OrderStatus = "PENDING" | "CONFIRMED" | "PAID" | "FULFILLED" | "CANCELLED" | "REFUNDED";
+type CheckoutStatus = "STARTED" | "SHIPPING_SELECTED" | "PAYMENT_PENDING" | "PAYMENT_AUTHORIZED" | "COMPLETE" | "ABANDONED";
 
 export const orderReservationTtlMs = 30 * 60 * 1000;
+
+const merchantOrderTransitions: Partial<Record<OrderStatus, OrderStatus[]>> = {
+  PENDING: ["CANCELLED"],
+  CONFIRMED: ["CANCELLED"],
+  PAID: ["FULFILLED"]
+};
+
+export function assertMerchantOrderTransition(currentStatus: OrderStatus, nextStatus: OrderStatus) {
+  if (currentStatus === nextStatus) return;
+  if (merchantOrderTransitions[currentStatus]?.includes(nextStatus)) return;
+
+  throw new AppError(
+    409,
+    "invalid_order_status_transition",
+    "This order status can only be changed by the payment or fulfillment workflow."
+  );
+}
+
+export function assertMerchantCheckoutTransition(
+  currentStatus: CheckoutStatus,
+  nextStatus: CheckoutStatus
+) {
+  if (currentStatus === nextStatus) return;
+  if (
+    ["STARTED", "SHIPPING_SELECTED", "PAYMENT_PENDING"].includes(currentStatus) &&
+    nextStatus === "ABANDONED"
+  ) return;
+
+  throw new AppError(
+    409,
+    "invalid_checkout_status_transition",
+    "Checkout authorization and completion are controlled by the payment workflow."
+  );
+}
 
 type ReservedOrderItem = {
   productId: string | null;
@@ -62,8 +107,29 @@ function normalizeCountry(country?: string) {
   return country?.trim().toUpperCase();
 }
 
+function normalizeRegion(region?: string) {
+  return region?.trim().toUpperCase();
+}
+
+function checkoutMetadata(input: CreateOrderInput) {
+  const metadata = { ...(input.metadata ?? {}) };
+  if (input.customerPhone) metadata.customerPhone = input.customerPhone;
+  if (input.shippingAddress) metadata.shippingAddress = input.shippingAddress;
+  return Object.keys(metadata).length ? metadata : undefined;
+}
+
 function itemKey(item: Pick<OrderItemInput, "productId" | "variantId">) {
   return `${item.productId}:${item.variantId ?? ""}`;
+}
+
+function productRequiresQuote(product: { metadata?: Prisma.JsonValue | null }) {
+  const metadata = product.metadata;
+  return Boolean(
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    metadata.purchaseMode === "quote"
+  );
 }
 
 function activeCartWhere(token: string) {
@@ -71,6 +137,90 @@ function activeCartWhere(token: string) {
     sessionToken: token,
     status: "ACTIVE" as const,
     OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }]
+  };
+}
+
+async function lockCart(tx: ShopTransaction, token: string) {
+  await tx.$queryRaw(
+    Prisma.sql`SELECT "id" FROM "Cart" WHERE "sessionToken" = ${token} FOR UPDATE`
+  );
+}
+
+async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
+  const productIds = [...new Set(cart.items.map((item) => item.productId))];
+  const products = productIds.length
+    ? await context.prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          status: true,
+          priceCents: true,
+          currency: true,
+          metadata: true,
+          stockQuantity: true,
+          images: {
+            orderBy: { sortOrder: "asc" },
+            take: 1,
+            select: { url: true, alt: true }
+          },
+          variants: {
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              priceCents: true,
+              stockQuantity: true,
+              active: true
+            }
+          }
+        }
+      })
+    : [];
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const items = cart.items.map((item) => {
+    const product = productsById.get(item.productId);
+    const variant = item.variantId
+      ? product?.variants.find((candidate) => candidate.id === item.variantId)
+      : undefined;
+    const availableStock = variant?.stockQuantity ?? product?.stockQuantity ?? 0;
+    const unitPriceCents = variant?.priceCents ?? product?.priceCents ?? 0;
+    const available = Boolean(
+      product?.status === "ACTIVE" &&
+      !productRequiresQuote(product) &&
+      (!item.variantId || variant?.active) &&
+      item.quantity <= availableStock
+    );
+
+    return {
+      ...item,
+      product: product
+        ? {
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            status: product.status,
+            currency: product.currency,
+            stockQuantity: product.stockQuantity,
+            image: product.images[0] ?? null
+          }
+        : null,
+      variant: variant ?? null,
+      available,
+      availableStock,
+      unitPriceCents,
+      lineTotalCents: unitPriceCents * item.quantity
+    };
+  });
+
+  return {
+    ...cart,
+    items,
+    subtotalCents: items.reduce(
+      (total, item) => total + (item.available ? item.lineTotalCents : 0),
+      0
+    )
   };
 }
 
@@ -194,18 +344,35 @@ async function resolveShipping(
     orderBy: [{ priceCents: "asc" }, { sortOrder: "asc" }]
   });
 
+  if (!rate) {
+    throw new AppError(422, "shipping_destination_unavailable", "Delivery is not available for this country.");
+  }
+
   return {
-    shippingRateId: rate?.id,
-    shippingCents: rate?.priceCents ?? 0
+    shippingRateId: rate.id,
+    shippingCents: rate.priceCents
   };
 }
 
-async function resolveTax(tx: ShopTransaction, country: string | undefined, taxableCents: number) {
+async function resolveTax(
+  tx: ShopTransaction,
+  country: string | undefined,
+  region: string | undefined,
+  taxableCents: number
+) {
   const normalizedCountry = normalizeCountry(country);
+  const normalizedRegion = normalizeRegion(region);
+  const locations = normalizedCountry
+    ? [
+        ...(normalizedRegion ? [{ country: normalizedCountry, region: normalizedRegion }] : []),
+        { country: normalizedCountry, region: null },
+        { country: null, region: null }
+      ]
+    : [{ country: null, region: null }];
   const taxRule = await tx.taxRule.findFirst({
     where: {
       active: true,
-      OR: normalizedCountry ? [{ country: normalizedCountry }, { country: null }] : [{ country: null }]
+      OR: locations
     },
     orderBy: [{ priority: "desc" }, { createdAt: "desc" }]
   });
@@ -241,6 +408,9 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
 
   if (products.length !== productIds.length) {
     throw new AppError(422, "invalid_order_item", "One or more products are unavailable.");
+  }
+  if (products.some(productRequiresQuote)) {
+    throw new AppError(422, "quote_product_not_purchasable", "Request a quote for this product instead.");
   }
 
   const productsById = new Map(products.map((product) => [product.id, product]));
@@ -331,7 +501,12 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
     subtotalCents
   );
   const taxableCents = Math.max(subtotalCents - discountCents + shippingCents, 0);
-  const taxCents = await resolveTax(tx, shippingCountry, taxableCents);
+  const taxCents = await resolveTax(
+    tx,
+    shippingCountry,
+    input.shippingAddress?.region,
+    taxableCents
+  );
   const totalCents = taxableCents + taxCents;
   const order = await tx.order.create({
     data: {
@@ -348,7 +523,7 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
       couponCode: code,
       shippingCountry,
       shippingRateId,
-      metadata: input.metadata as Prisma.InputJsonValue | undefined,
+      metadata: checkoutMetadata(input) as Prisma.InputJsonValue | undefined,
       items: {
         create: orderItems
       }
@@ -415,11 +590,12 @@ export async function getCart(context: ModuleContext, token: string) {
     throw new AppError(404, "cart_not_found", "Cart not found.");
   }
 
-  return cart;
+  return hydrateCart(context, cart);
 }
 
 export async function addCartItem(context: ModuleContext, token: string, input: OrderItemInput) {
-  return context.prisma.$transaction(async (tx) => {
+  const cart = await context.prisma.$transaction(async (tx) => {
+    await lockCart(tx, token);
     const cart = await tx.cart.findFirst({
       where: activeCartWhere(token)
     });
@@ -444,7 +620,7 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
     });
     const variant = input.variantId ? product?.variants[0] : undefined;
 
-    if (!product || (input.variantId && !variant)) {
+    if (!product || productRequiresQuote(product) || (input.variantId && !variant)) {
       throw new AppError(422, "invalid_cart_item", "Product is unavailable.");
     }
 
@@ -504,12 +680,80 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
       }
     });
   });
+
+  return hydrateCart(context, cart);
+}
+
+export async function updateCartItem(
+  context: ModuleContext,
+  token: string,
+  itemId: string,
+  quantity: number
+) {
+  const cart = await context.prisma.$transaction(async (tx) => {
+    await lockCart(tx, token);
+    const activeCart = await tx.cart.findFirst({ where: activeCartWhere(token) });
+    if (!activeCart) throw new AppError(404, "cart_not_found", "Cart not found.");
+
+    const item = await tx.cartItem.findFirst({
+      where: { id: itemId, cartId: activeCart.id }
+    });
+    if (!item) throw new AppError(404, "cart_item_not_found", "Cart item not found.");
+
+    const product = await tx.product.findFirst({
+      where: { id: item.productId, status: "ACTIVE" },
+      include: {
+        variants: {
+          where: { id: { in: item.variantId ? [item.variantId] : [] }, active: true }
+        }
+      }
+    });
+    const variant = item.variantId ? product?.variants[0] : undefined;
+    const availableStock = variant?.stockQuantity ?? product?.stockQuantity ?? 0;
+    if (!product || productRequiresQuote(product) || item.variantId && !variant) {
+      throw new AppError(422, "invalid_cart_item", "Product is unavailable.");
+    }
+    if (quantity > availableStock) {
+      throw new AppError(409, "insufficient_stock", "The requested quantity is not available.");
+    }
+
+    await tx.cartItem.update({ where: { id: item.id }, data: { quantity } });
+    return tx.cart.findUniqueOrThrow({
+      where: { id: activeCart.id },
+      include: { items: { orderBy: { createdAt: "asc" } } }
+    });
+  });
+
+  return hydrateCart(context, cart);
+}
+
+export async function removeCartItem(context: ModuleContext, token: string, itemId: string) {
+  const cart = await context.prisma.$transaction(async (tx) => {
+    await lockCart(tx, token);
+    const activeCart = await tx.cart.findFirst({ where: activeCartWhere(token) });
+    if (!activeCart) throw new AppError(404, "cart_not_found", "Cart not found.");
+
+    const removed = await tx.cartItem.deleteMany({
+      where: { id: itemId, cartId: activeCart.id }
+    });
+    if (removed.count !== 1) {
+      throw new AppError(404, "cart_item_not_found", "Cart item not found.");
+    }
+
+    return tx.cart.findUniqueOrThrow({
+      where: { id: activeCart.id },
+      include: { items: { orderBy: { createdAt: "asc" } } }
+    });
+  });
+
+  return hydrateCart(context, cart);
 }
 
 export async function checkoutCart(context: ModuleContext, token: string, input: CheckoutCartInput) {
   await releaseExpiredOrderReservations(context);
 
   return context.prisma.$transaction(async (tx) => {
+    await lockCart(tx, token);
     const cart = await tx.cart.findFirst({
       where: activeCartWhere(token),
       include: { items: true }
@@ -567,9 +811,13 @@ export async function lookupOrder(context: ModuleContext, input: LookupOrderInpu
 export async function releaseOrderInventoryReservation(
   tx: ShopTransaction,
   orderId: string,
-  options: { checkoutStatuses?: Array<"PAYMENT_PENDING" | "PAYMENT_AUTHORIZED"> } = {}
+  options: {
+    checkoutStatuses?: Array<"PAYMENT_PENDING" | "PAYMENT_AUTHORIZED">;
+    orderStatuses?: Array<"PENDING" | "CONFIRMED">;
+  } = {}
 ) {
   const checkoutStatuses = options.checkoutStatuses ?? ["PAYMENT_PENDING", "PAYMENT_AUTHORIZED"];
+  const orderStatuses = options.orderStatuses ?? ["PENDING"];
   const order = await tx.order.findUnique({
     where: { id: orderId },
     include: { items: true }
@@ -577,7 +825,7 @@ export async function releaseOrderInventoryReservation(
 
   if (
     !order ||
-    order.status !== "PENDING" ||
+    !orderStatuses.includes(order.status as "PENDING" | "CONFIRMED") ||
     !checkoutStatuses.includes(order.checkoutStatus as "PAYMENT_PENDING" | "PAYMENT_AUTHORIZED")
   ) {
     return false;
@@ -586,7 +834,7 @@ export async function releaseOrderInventoryReservation(
   const claimed = await tx.order.updateMany({
     where: {
       id: order.id,
-      status: "PENDING",
+      status: { in: orderStatuses },
       checkoutStatus: order.checkoutStatus
     },
     data: {

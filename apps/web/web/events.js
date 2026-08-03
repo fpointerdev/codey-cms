@@ -88,14 +88,17 @@ import {
   addRepeaterRow,
   copyPaymentWebhook,
   createProductFromDashboard,
+  deleteCommerceRule,
   openProductEditor,
   removeRepeaterRow,
   savePaymentProvider,
+  saveCommerceRule,
   saveProductEditor,
   saveShopSettings,
   testPaymentProvider,
   updateShopSettingsPreview,
-  updateManualPayment
+  updateManualPayment,
+  updateOrderStatus
 } from "./shop-actions.js";
 import {
   deletePostCategory,
@@ -319,6 +322,13 @@ function bindSubmitEvents() {
     if (paymentProviderForm) {
       event.preventDefault();
       void savePaymentProvider(paymentProviderForm);
+      return;
+    }
+
+    const commerceRuleForm = event.target.closest("[data-commerce-rule-form]");
+    if (commerceRuleForm) {
+      event.preventDefault();
+      void saveCommerceRule(commerceRuleForm);
     }
   });
 }
@@ -816,6 +826,28 @@ function bindAdminClick(event) {
   const manualPaymentButton = event.target.closest("[data-manual-payment-action]");
   if (manualPaymentButton) {
     void updateManualPayment(manualPaymentButton);
+    return true;
+  }
+
+  const orderDetailsButton = event.target.closest("[data-order-details-toggle]");
+  if (orderDetailsButton) {
+    const detailRow = document.querySelector(`#order-details-${CSS.escape(orderDetailsButton.dataset.orderDetailsToggle)}`);
+    if (detailRow) {
+      detailRow.hidden = !detailRow.hidden;
+      orderDetailsButton.setAttribute("aria-expanded", String(!detailRow.hidden));
+    }
+    return true;
+  }
+
+  const orderStatusButton = event.target.closest("[data-order-status-action]");
+  if (orderStatusButton) {
+    void updateOrderStatus(orderStatusButton);
+    return true;
+  }
+
+  const deleteCommerceRuleButton = event.target.closest("[data-delete-commerce-rule]");
+  if (deleteCommerceRuleButton) {
+    void deleteCommerceRule(deleteCommerceRuleButton);
     return true;
   }
 
@@ -1320,6 +1352,12 @@ function bindShopControlEvents() {
   });
 
   elements.page.addEventListener("change", (event) => {
+    const purchaseMode = event.target.closest('input[name="purchaseMode"]');
+    if (purchaseMode) {
+      const editor = purchaseMode.closest("[data-product-editor-form]");
+      if (editor) editor.dataset.purchaseMode = purchaseMode.value;
+    }
+
     const categorySelect = event.target.closest("[data-product-category-select]");
     if (categorySelect) {
       const fields = categorySelect.closest("form")?.querySelector("[data-new-category-fields]");

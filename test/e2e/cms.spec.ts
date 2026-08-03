@@ -86,6 +86,50 @@ test("account protection stays discoverable without interrupting normal login", 
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 });
 
+test("customers can complete the real storefront journey", async ({ page }) => {
+  const apiLogin = await page.request.post("/api/v1/auth/login", {
+    data: { email: adminEmail, password: adminPassword }
+  });
+  expect(apiLogin.ok()).toBeTruthy();
+  const apiLoginBody = await apiLogin.json();
+  const manualProvider = await page.request.put("/api/v1/payments/providers/manual", {
+    headers: { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` },
+    data: {
+      enabled: true,
+      instructions: "Use the order number when arranging payment."
+    }
+  });
+  expect(manualProvider.ok()).toBeTruthy();
+
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  await page.goto("/product/starter-product");
+  await expect(page.getByRole("heading", { name: "Starter Product" })).toBeVisible();
+  await page.getByLabel("Option").selectOption({ index: 0 });
+  await page.getByRole("button", { name: "Add to cart" }).click();
+
+  const cartDialog = page.locator("[data-commerce-dialog]");
+  await expect(cartDialog).toBeVisible();
+  await expect(cartDialog.getByText("Starter Product", { exact: true })).toBeVisible();
+  await cartDialog.getByRole("button", { name: "Checkout" }).click();
+  await cartDialog.getByLabel("Name", { exact: true }).fill("Commerce Customer");
+  await cartDialog.getByLabel("Email", { exact: true }).fill(`browser-commerce-${Date.now()}@example.com`);
+  await cartDialog.getByLabel("Delivery country", { exact: true }).selectOption("US");
+  await expect(cartDialog.getByText("Standard shipping", { exact: true })).toBeVisible();
+  await cartDialog.getByLabel("Address", { exact: true }).fill("1 Browser Way");
+  await cartDialog.getByLabel("City", { exact: true }).fill("New York");
+  await cartDialog.getByLabel("Region", { exact: true }).fill("NY");
+  await cartDialog.getByLabel("Postal code", { exact: true }).fill("10001");
+  await cartDialog.getByLabel("Coupon code", { exact: true }).fill("WELCOME10");
+  await expect(cartDialog.getByText("Manual payment", { exact: true })).toBeVisible();
+  await cartDialog.getByRole("button", { name: "Review and pay" }).click();
+
+  await expect(cartDialog.getByRole("heading", { name: "Order received" })).toBeVisible();
+  await expect(cartDialog.getByText(/Use the order number/)).toBeVisible();
+  await expect(page.locator("[data-commerce-cart-count]")).toHaveText("0");
+  expect(browserErrors).toEqual([]);
+});
+
 test("login asks for a verification code only when the API requires it", async ({ page }) => {
   await page.route("**/api/v1/auth/login", async (route) => {
     await route.fulfill({
