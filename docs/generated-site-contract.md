@@ -146,8 +146,44 @@ Products:
 
 - Use active product records only when the shop module is enabled.
 - Keep prices in cents and currency as ISO 4217 codes.
+- Set `purchaseMode: "buy"` for checkout products or `purchaseMode: "quote"` for custom/high-value products. Omitted values default to `buy`.
 - Let checkout calculate totals server-side.
 - Do not trust totals submitted by frontend code.
+
+## Public Commerce Acceptance
+
+The canonical customer journey is rendered on `/shop`, filtered shop routes, and
+`/product/:slug`. Cart and checkout use an in-context dialog so customers do not
+lose the catalog or product page. CodeY must not generate decorative `/cart` or
+`/checkout` pages or accept explanatory cards as a commerce implementation.
+
+Server-rendered shop markup exposes these runtime hooks:
+
+- `[data-commerce-root]` on every shop listing and product detail.
+- `[data-commerce-cart-toggle]` and `[data-commerce-cart-count]` for the persistent cart.
+- `[data-commerce-add][data-product-id]` for a simple product card.
+- `[data-commerce-quote][data-product-id][data-product-name]` for quote products.
+- `[data-commerce-product-form]` with `data-product-id`, `data-product-currency`, and `data-purchase-mode` on product details.
+- `select[name="variantId"]` options with `data-price-cents` and `data-stock`, plus `input[name="quantity"]`, for variant purchases.
+
+`public-runtime.js` loads `public-commerce.js` only when `[data-commerce-root]`
+exists. A platform smoke test must click the rendered controls and verify the API
+envelopes instead of checking for commerce-related words in HTML.
+
+The real journey uses these `/api/v1` contracts:
+
+1. `POST /orders/carts`, then persist the returned opaque `cart.sessionToken`.
+2. `POST /orders/carts/:token/items`; use `PATCH` or `DELETE` on `.../items/:itemId` for cart edits.
+3. `GET /orders/carts/:token` for current products, availability, unit prices, line totals, and subtotal.
+4. `GET /orders/shipping/zones` and `GET /payments/providers/public` before checkout.
+5. `POST /orders/carts/:token/checkout`; the server rechecks stock and calculates discount, shipping, tax, and total atomically.
+6. `POST /payments/intent`, then complete Stripe, PayPal, or manual payment using the returned provider payload. PayPal returns through `POST /payments/paypal/capture`.
+7. Quote products submit through `POST /cms/forms/contact` with `formKey: "product-quote"` and product metadata; they are rejected by cart/order services.
+
+Acceptance must prove add, reload persistence, quantity change, checkout
+validation, payment or manual-order confirmation, and the resulting admin order.
+Payment-owned `PAID` and `REFUNDED` states cannot be set through the generic
+merchant order-status endpoint.
 
 Site settings:
 

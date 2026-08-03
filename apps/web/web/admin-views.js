@@ -621,14 +621,69 @@ function orderNeedsAttention(order = {}) {
   return ["PENDING", "CONFIRMED", "PAID"].includes(order.status) || order.checkoutStatus === "PAYMENT_PENDING";
 }
 
-export function renderShopPage({ products = [], orders = [], categories = [], attributes = [], errorMessage = "" } = {}) {
+function productPurchaseMode(product = {}) {
+  return product.metadata?.purchaseMode === "quote" ? "quote" : "buy";
+}
+
+function productAvailableStock(product = {}) {
+  const variants = Array.isArray(product.variants) ? product.variants.filter((variant) => variant.active !== false) : [];
+  return variants.length
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.stockQuantity || 0)), 0)
+    : Math.max(0, Number(product.stockQuantity || 0));
+}
+
+function commerceReadiness(products, commerce) {
+  const activeProducts = products.filter((product) => product.status === "ACTIVE");
+  const buyProducts = activeProducts.filter((product) => productPurchaseMode(product) === "buy");
+  const incompleteProducts = activeProducts.filter((product) => (
+    !product.name || !product.images?.length ||
+    (productPurchaseMode(product) === "buy" && (Number(product.priceCents || 0) <= 0 || productAvailableStock(product) <= 0))
+  ));
+  const providers = commerce.providers || [];
+  const shippingZones = commerce.shippingZones || [];
+  const checks = [
+    {
+      complete: activeProducts.length > 0,
+      label: "Publish a product",
+      detail: activeProducts.length ? `${activeProducts.length} products are visible` : "Customers need at least one active product",
+      href: activeProducts.length ? "/dashboard/shop/products" : "/dashboard/shop/products/new"
+    },
+    {
+      complete: activeProducts.length > 0 && incompleteProducts.length === 0,
+      label: "Complete sellable details",
+      detail: incompleteProducts.length ? `${incompleteProducts.length} active products need an image, price, or stock` : "Active products are ready for customers",
+      href: "/dashboard/shop/products"
+    },
+    {
+      complete: buyProducts.length === 0 || providers.length > 0,
+      label: "Enable checkout",
+      detail: buyProducts.length === 0
+        ? "Quote-only catalogs do not need online payment"
+        : providers.length
+          ? `${providers.length} payment method${providers.length === 1 ? "" : "s"} available`
+          : "Connect card, PayPal, or manual payment",
+      href: "/dashboard/shop/configuration"
+    }
+  ];
+
+  return {
+    checks,
+    complete: checks.filter((check) => check.complete).length,
+    shippingZones: shippingZones.length
+  };
+}
+
+export function renderShopPage({ products = [], orders = [], categories = [], attributes = [], commerce = {}, errorMessage = "" } = {}) {
   const activeProducts = products.filter((product) => product.status === "ACTIVE");
   const draftProducts = products.filter((product) => product.status === "DRAFT");
-  const lowStockProducts = products.filter((product) => Number(product.stockQuantity || 0) <= 3);
+  const lowStockProducts = activeProducts.filter((product) => (
+    productPurchaseMode(product) === "buy" && productAvailableStock(product) <= 3
+  ));
   const openOrders = orders.filter(orderNeedsAttention);
   const revenueCents = orders
     .filter((order) => ["PAID", "FULFILLED"].includes(order.status))
     .reduce((total, order) => total + Number(order.totalCents || 0), 0);
+  const readiness = commerceReadiness(products, commerce);
   const actions = [
     {
       href: "/dashboard/shop/products",
@@ -671,6 +726,21 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
     "shop",
     `
       ${errorMessage ? `<p class="form-message error">${escapeHtml(errorMessage)}</p>` : ""}
+      <section class="admin-section shop-readiness${readiness.complete === readiness.checks.length ? " is-ready" : ""}">
+        <div class="shop-readiness-heading">
+          <div><p class="section-label">Sellability</p><h2>${readiness.complete === readiness.checks.length ? "Ready to sell" : "Finish store setup"}</h2><p class="dashboard-copy">${readiness.complete} of ${readiness.checks.length} essentials complete${readiness.shippingZones ? ` · ${readiness.shippingZones} delivery zone${readiness.shippingZones === 1 ? "" : "s"}` : " · Delivery is optional"}</p></div>
+          <span class="shop-readiness-score" aria-label="${readiness.complete} of ${readiness.checks.length} complete">${readiness.complete}/${readiness.checks.length}</span>
+        </div>
+        <div class="shop-readiness-list">
+          ${readiness.checks.map((check) => `
+            <a href="${escapeHtml(check.href)}" data-dashboard-link class="${check.complete ? "complete" : ""}">
+              <span class="shop-readiness-mark" aria-hidden="true">${check.complete ? "&#10003;" : ""}</span>
+              <span><strong>${escapeHtml(check.label)}</strong><small>${escapeHtml(check.detail)}</small></span>
+              <span aria-hidden="true">&#8594;</span>
+            </a>
+          `).join("")}
+        </div>
+      </section>
       <section class="admin-section admin-panel">
         <div class="section-heading-row"><div><p class="section-label">Overview</p><h2>Shop metrics</h2></div></div>
         <div class="shop-overview-grid">
@@ -890,6 +960,46 @@ function manualPaymentActions(payment) {
   return "";
 }
 
+function merchantOrderAction(order) {
+  if (!hasPermission("update", "orders")) return "";
+  if (["PENDING", "CONFIRMED"].includes(order.status)) {
+    return `<button type="button" class="link-button danger" data-order-status-action="CANCELLED" data-order-id="${escapeHtml(order.id)}">Cancel order</button>`;
+  }
+  if (order.status === "PAID") {
+    return `<button type="button" class="link-button" data-order-status-action="FULFILLED" data-order-id="${escapeHtml(order.id)}">Mark fulfilled</button>`;
+  }
+  return "";
+}
+
+function orderDetailRow(order) {
+  const notification = order.notifications?.at?.(-1);
+  const metadata = order.metadata && typeof order.metadata === "object" ? order.metadata : {};
+  const address = metadata.shippingAddress && typeof metadata.shippingAddress === "object" ? metadata.shippingAddress : null;
+  const delivery = address
+    ? [address.line1, address.line2, address.city, address.region, address.postalCode, order.shippingCountry].filter(Boolean).join(", ")
+    : order.shippingCountry || "Not required";
+  return `
+    <tr class="shop-order-detail-row" id="order-details-${escapeHtml(order.id)}" hidden>
+      <td colspan="7">
+        <div class="shop-order-detail">
+          <div class="shop-order-detail-summary">
+            <div><span>Email</span><strong>${escapeHtml(order.customerEmail)}</strong></div>
+            <div><span>Delivery</span><strong>${escapeHtml(delivery)}</strong>${metadata.customerPhone ? `<small>${escapeHtml(metadata.customerPhone)}</small>` : ""}</div>
+            <div><span>Subtotal</span><strong>${escapeHtml(formatMoney(order.subtotalCents, order.currency || "EUR"))}</strong></div>
+            <div><span>Shipping / tax</span><strong>${escapeHtml(formatMoney(Number(order.shippingCents || 0) + Number(order.taxCents || 0), order.currency || "EUR"))}</strong></div>
+          </div>
+          <div class="shop-order-items">
+            ${(order.items || []).map((item) => `
+              <div><span><strong>${escapeHtml(item.productName)}</strong>${item.variantName ? `<small>${escapeHtml(item.variantName)}</small>` : ""}</span><span>${escapeHtml(item.quantity)} &times; ${escapeHtml(formatMoney(item.unitPriceCents, order.currency || "EUR"))}</span></div>
+            `).join("")}
+          </div>
+          ${notification ? `<p class="dashboard-copy compact">Latest email: ${escapeHtml(notification.status.toLowerCase())}</p>` : ""}
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
   renderShopShell(
     "shop-orders",
@@ -906,6 +1016,7 @@ export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
                   ? orders
                       .map((order) => {
                         const payment = paymentForOrder(payments, order.id);
+                        const orderAction = merchantOrderAction(order);
                         return `
                           <tr>
                             <td><strong>${escapeHtml(order.orderNumber || order.id)}</strong></td>
@@ -916,8 +1027,15 @@ export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
                               : escapeHtml(order.checkoutStatus)}</td>
                             <td>${escapeHtml(formatMoney(order.totalCents, order.currency || "EUR"))}</td>
                             <td>${escapeHtml(formatDate(order.createdAt))}</td>
-                            <td>${manualPaymentActions(payment)}</td>
+                            <td>
+                              <div class="table-action-row">
+                                <button type="button" class="link-button" data-order-details-toggle="${escapeHtml(order.id)}" aria-controls="order-details-${escapeHtml(order.id)}" aria-expanded="false">Details</button>
+                                ${orderAction}
+                                ${hasPermission("update", "payments") ? manualPaymentActions(payment) : ""}
+                              </div>
+                            </td>
                           </tr>
+                          ${orderDetailRow(order)}
                         `;
                       })
                       .join("")
@@ -1156,7 +1274,76 @@ function renderStorefrontSettings(settings, canUpdate) {
   `;
 }
 
-export function renderShopConfigurationPage(config, shopSettings = {}, paymentConfig = {}, errorMessage = "") {
+function renderCommerceRules(commerce, canRead, canUpdate) {
+  if (!canRead) return '<p class="form-message error">You do not have permission to view checkout rules.</p>';
+  const zones = commerce.shippingZones || [];
+  const taxRules = commerce.taxRules || [];
+  const coupons = commerce.coupons || [];
+
+  return `
+    <div class="commerce-rules-grid">
+      <section class="commerce-rule-section">
+        <header><div><p class="section-label">Delivery</p><h3>Where and how you ship</h3><p class="dashboard-copy">Add a delivery area and its default rate in one step.</p></div></header>
+        <div class="commerce-rule-list">
+          ${zones.length ? zones.map((zone) => `
+            <div><span><strong>${escapeHtml(zone.name)}</strong><small>${escapeHtml((zone.countries || []).join(", ") || "No countries")}${zone.rates?.length ? ` · ${zone.rates.map((rate) => `${rate.name}: ${formatMoney(rate.priceCents, "EUR")}`).join(", ")}` : " · No rate"}</small></span>${canUpdate ? `<button type="button" class="link-button danger" data-delete-commerce-rule="shipping" data-commerce-rule-id="${escapeHtml(zone.id)}">Remove</button>` : ""}</div>
+          `).join("") : '<p class="dashboard-copy compact">No delivery areas. Checkout will not ask for shipping.</p>'}
+        </div>
+        ${canUpdate ? `
+          <form class="commerce-rule-form" data-commerce-rule-form="shipping">
+            <label><span>Area name</span><input name="name" maxlength="120" placeholder="Europe" required /></label>
+            <label><span>Countries</span><input name="countries" placeholder="DE, FR, IT" required /><small>Two-letter country codes, separated by commas.</small></label>
+            <label><span>Delivery method</span><input name="rateName" maxlength="120" placeholder="Standard delivery" required /></label>
+            <label><span>Price</span><input name="price" type="number" min="0" step="0.01" value="0.00" required /></label>
+            <button type="submit">Add delivery area</button>
+            ${renderFormMessage()}
+          </form>
+        ` : ""}
+      </section>
+
+      <section class="commerce-rule-section">
+        <header><div><p class="section-label">Tax</p><h3>Automatic order tax</h3><p class="dashboard-copy">Use a country code, or leave it empty for a default rule.</p></div></header>
+        <div class="commerce-rule-list">
+          ${taxRules.length ? taxRules.map((rule) => `
+            <div><span><strong>${escapeHtml(rule.name)}</strong><small>${escapeHtml(rule.country || "Default")} · ${escapeHtml((Number(rule.rateBps || 0) / 100).toFixed(2))}%</small></span>${canUpdate ? `<button type="button" class="link-button danger" data-delete-commerce-rule="tax" data-commerce-rule-id="${escapeHtml(rule.id)}">Remove</button>` : ""}</div>
+          `).join("") : '<p class="dashboard-copy compact">No tax rules. Orders currently have no added tax.</p>'}
+        </div>
+        ${canUpdate ? `
+          <form class="commerce-rule-form" data-commerce-rule-form="tax">
+            <label><span>Rule name</span><input name="name" maxlength="120" placeholder="Germany VAT" required /></label>
+            <label><span>Country</span><input name="country" minlength="2" maxlength="2" placeholder="DE" /></label>
+            <label><span>Tax rate</span><input name="rate" type="number" min="0" max="100" step="0.01" placeholder="19" required /></label>
+            <button type="submit">Add tax rule</button>
+            ${renderFormMessage()}
+          </form>
+        ` : ""}
+      </section>
+
+      <section class="commerce-rule-section">
+        <header><div><p class="section-label">Promotions</p><h3>Coupon codes</h3><p class="dashboard-copy">Create a simple percentage or fixed-amount discount.</p></div></header>
+        <div class="commerce-rule-list">
+          ${coupons.length ? coupons.map((coupon) => `
+            <div><span><strong>${escapeHtml(coupon.code)}</strong><small>${escapeHtml(coupon.discountType === "PERCENTAGE" ? `${coupon.amount}% off` : `${formatMoney(coupon.amount, coupon.currency || "EUR")} off`)} · used ${escapeHtml(coupon.usageCount || 0)}${coupon.usageLimit ? `/${escapeHtml(coupon.usageLimit)}` : ""}</small></span>${canUpdate ? `<button type="button" class="link-button danger" data-delete-commerce-rule="coupon" data-commerce-rule-id="${escapeHtml(coupon.id)}">Remove</button>` : ""}</div>
+          `).join("") : '<p class="dashboard-copy compact">No coupon codes yet.</p>'}
+        </div>
+        ${canUpdate ? `
+          <form class="commerce-rule-form" data-commerce-rule-form="coupon">
+            <label><span>Code</span><input name="code" maxlength="80" placeholder="WELCOME10" required /></label>
+            <label><span>Discount</span><select name="discountType"><option value="PERCENTAGE">Percentage</option><option value="FIXED">Fixed amount</option></select></label>
+            <label><span>Amount</span><input name="amount" type="number" min="0.01" step="0.01" placeholder="10" required /></label>
+            <label><span>Currency</span><select name="currency">${["EUR", "USD", "GBP", "CHF"].map((currency) => `<option value="${currency}">${currency}</option>`).join("")}</select></label>
+            <label><span>Minimum order</span><input name="minSubtotal" type="number" min="0" step="0.01" placeholder="0.00" /></label>
+            <label><span>Usage limit</span><input name="usageLimit" type="number" min="1" step="1" placeholder="Unlimited" /></label>
+            <button type="submit">Create coupon</button>
+            ${renderFormMessage()}
+          </form>
+        ` : ""}
+      </section>
+    </div>
+  `;
+}
+
+export function renderShopConfigurationPage(config, shopSettings = {}, paymentConfig = {}, errorMessage = "", commerce = {}) {
   const providers = paymentConfig.providers || [];
   const urls = paymentConfig.webhookUrls || {};
   const stripe = paymentProviderConfig(providers, "STRIPE");
@@ -1166,6 +1353,8 @@ export function renderShopConfigurationPage(config, shopSettings = {}, paymentCo
   const canUpdateShop = hasPermission("update", "products");
   const canReadPayments = hasPermission("read", "payments");
   const canUpdatePayments = hasPermission("update", "payments");
+  const canReadOrders = hasPermission("read", "orders");
+  const canUpdateOrders = hasPermission("update", "orders");
 
   renderShopShell(
     "shop-configuration",
@@ -1174,16 +1363,23 @@ export function renderShopConfigurationPage(config, shopSettings = {}, paymentCo
         <div class="section-heading-row"><div><p class="section-label">Customize</p><h2>Shop experience</h2><p class="dashboard-copy">Set the storefront once. Individual products only contain product-specific information.</p></div></div>
         <div class="shop-settings-tab-shell">
           <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-storefront" checked />
+          <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-rules" />
           <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-payments" />
           <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-system" />
           <nav class="admin-tabs shop-settings-tabs" aria-label="Shop settings sections">
             <label for="shop-tab-storefront">Storefront</label>
+            <label for="shop-tab-rules">Commerce rules</label>
             <label for="shop-tab-payments">Payments</label>
             <label for="shop-tab-system">System</label>
           </nav>
 
           <section class="shop-settings-tab-panel shop-settings-tab-panel-storefront">
             ${renderStorefrontSettings(settings, canUpdateShop)}
+          </section>
+
+          <section class="shop-settings-tab-panel shop-settings-tab-panel-rules">
+            <div class="section-heading-row"><div><p class="section-label">Checkout</p><h2>Commerce rules</h2><p class="dashboard-copy">Configure delivery, tax, and promotions without leaving this page.</p></div></div>
+            ${renderCommerceRules(commerce, canReadOrders, canUpdateOrders)}
           </section>
 
           <section class="shop-settings-tab-panel shop-settings-tab-panel-payments payment-configuration-section">

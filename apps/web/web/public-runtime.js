@@ -80,6 +80,11 @@ export async function startPublicRuntime() {
   const loadSliderRuntime = () => sliderRuntimePromise ??= import("./slider-runtime.js");
   const loadTabsRuntime = () => tabsRuntimePromise ??= import("./structured-tabs.js");
 
+  if (document.querySelector("[data-commerce-root]")) {
+    const { enhanceCommerce } = await import("./public-commerce.js");
+    await enhanceCommerce();
+  }
+
   if (tabsRuntimePromise) (await tabsRuntimePromise).enhanceStructuredTabs(page);
 
   document.addEventListener("click", (event) => {

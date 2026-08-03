@@ -1020,6 +1020,13 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
           category: true,
           images: {
             orderBy: { sortOrder: "asc" }
+          },
+          options: {
+            orderBy: { sortOrder: "asc" }
+          },
+          variants: {
+            where: { active: true },
+            orderBy: { createdAt: "asc" }
           }
         }
       });

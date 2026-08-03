@@ -8,7 +8,15 @@ export const cartTokenParams = z.object({
   token: z.string().trim().min(16).max(160)
 });
 
+export const cartItemParams = cartTokenParams.extend({
+  itemId: z.string().cuid()
+});
+
 export const shippingZoneIdParams = z.object({
+  id: z.string().cuid()
+});
+
+export const commerceResourceParams = z.object({
   id: z.string().cuid()
 });
 
@@ -19,15 +27,46 @@ const orderItemSchema = z.object({
   metadata: z.record(z.unknown()).optional()
 });
 
+const shippingAddressSchema = z.object({
+  line1: z.string().trim().min(1).max(160),
+  line2: z.string().trim().max(160).optional(),
+  city: z.string().trim().min(1).max(120),
+  region: z.string().trim().max(120).optional(),
+  postalCode: z.string().trim().min(1).max(40)
+}).strict();
+
+function validateShippingSelection(
+  checkout: { shippingCountry?: string; shippingAddress?: unknown; shippingRateId?: string },
+  context: z.RefinementCtx
+) {
+  if ((checkout.shippingCountry || checkout.shippingRateId) && !checkout.shippingAddress) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["shippingAddress"],
+      message: "A delivery address is required when shipping is selected."
+    });
+  }
+
+  if ((checkout.shippingAddress || checkout.shippingRateId) && !checkout.shippingCountry) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["shippingCountry"],
+      message: "A delivery country is required when shipping is selected."
+    });
+  }
+}
+
 export const createOrderSchema = z.object({
   customerEmail: z.string().email(),
   customerName: z.string().trim().max(120).optional(),
+  customerPhone: z.string().trim().max(80).optional(),
   shippingCountry: z.string().trim().length(2).optional(),
+  shippingAddress: shippingAddressSchema.optional(),
   shippingRateId: z.string().cuid().optional(),
   couponCode: z.string().trim().min(1).max(80).optional(),
   metadata: z.record(z.unknown()).optional(),
   items: z.array(orderItemSchema).min(1).max(100)
-});
+}).superRefine(validateShippingSelection);
 
 export const updateOrderStatusSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "PAID", "FULFILLED", "CANCELLED", "REFUNDED"])
@@ -54,14 +93,20 @@ export const createCartSchema = z.object({
 
 export const addCartItemSchema = orderItemSchema;
 
+export const updateCartItemSchema = z.object({
+  quantity: z.number().int().positive().max(999)
+});
+
 export const checkoutCartSchema = z.object({
   customerEmail: z.string().email(),
   customerName: z.string().trim().max(120).optional(),
+  customerPhone: z.string().trim().max(80).optional(),
   shippingCountry: z.string().trim().length(2).optional(),
+  shippingAddress: shippingAddressSchema.optional(),
   shippingRateId: z.string().cuid().optional(),
   couponCode: z.string().trim().min(1).max(80).optional(),
   metadata: z.record(z.unknown()).optional()
-});
+}).superRefine(validateShippingSelection);
 
 export const lookupOrderSchema = z.object({
   orderNumber: z.string().trim().min(1).max(80),

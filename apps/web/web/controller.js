@@ -116,14 +116,16 @@ export async function loadAdminRoute(route) {
     try {
       const canReadProducts = hasPermission("read", "products");
       const canReadOrders = hasPermission("read", "orders");
-      const [config, draftProducts, activeProducts, archivedProducts, orders, categories, attributes] = await Promise.all([
+      const [config, draftProducts, activeProducts, archivedProducts, orders, categories, attributes, providers, shippingZones] = await Promise.all([
         api("/config"),
         canReadProducts ? api(adminLocaleUrl("/products", { status: "DRAFT" })) : Promise.resolve({ products: [] }),
         canReadProducts ? api(adminLocaleUrl("/products", { status: "ACTIVE" })) : Promise.resolve({ products: [] }),
         canReadProducts ? api(adminLocaleUrl("/products", { status: "ARCHIVED" })) : Promise.resolve({ products: [] }),
         canReadOrders ? api("/orders") : Promise.resolve({ orders: [] }),
         canReadProducts ? api(adminLocaleUrl("/products/categories")) : Promise.resolve({ categories: [] }),
-        canReadProducts ? api(adminLocaleUrl("/products/attributes")) : Promise.resolve({ attributes: [] })
+        canReadProducts ? api(adminLocaleUrl("/products/attributes")) : Promise.resolve({ attributes: [] }),
+        moduleEnabled("payments") ? api("/payments/providers/public") : Promise.resolve({ providers: [] }),
+        canReadOrders ? api("/orders/shipping/zones") : Promise.resolve({ zones: [] })
       ]);
       renderShopPage({
         config,
@@ -134,7 +136,11 @@ export async function loadAdminRoute(route) {
         ],
         orders: orders.orders || [],
         categories: categories.categories || [],
-        attributes: attributes.attributes || []
+        attributes: attributes.attributes || [],
+        commerce: {
+          providers: providers.providers || [],
+          shippingZones: shippingZones.zones || []
+        }
       });
     } catch (error) {
       renderShopPage({ errorMessage: error.message || "Unable to load shop overview." });
@@ -225,24 +231,33 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "shop-configuration") {
     const { renderShopConfigurationPage } = await adminViews();
-    const [config, shopResponse] = await Promise.all([
+    const canReadOrders = hasPermission("read", "orders");
+    const [config, shopResponse, shippingResponse, taxResponse, couponResponse] = await Promise.all([
       api("/config"),
-      api("/products/settings")
+      api("/products/settings"),
+      canReadOrders ? api("/orders/shipping/zones") : Promise.resolve({ zones: [] }),
+      canReadOrders ? api("/orders/tax-rules") : Promise.resolve({ taxRules: [] }),
+      canReadOrders ? api("/orders/coupons") : Promise.resolve({ coupons: [] })
     ]);
     const shopSettings = shopResponse.settings || {};
+    const commerce = {
+      shippingZones: shippingResponse.zones || [],
+      taxRules: taxResponse.taxRules || [],
+      coupons: couponResponse.coupons || []
+    };
     if (!moduleEnabled("payments")) {
-      renderShopConfigurationPage(config, shopSettings, {}, "Payments module is disabled for this project.");
+      renderShopConfigurationPage(config, shopSettings, {}, "Payments module is disabled for this project.", commerce);
       return;
     }
     if (!hasPermission("read", "payments")) {
-      renderShopConfigurationPage(config, shopSettings);
+      renderShopConfigurationPage(config, shopSettings, {}, "", commerce);
       return;
     }
 
     try {
-      renderShopConfigurationPage(config, shopSettings, await api("/payments/providers"));
+      renderShopConfigurationPage(config, shopSettings, await api("/payments/providers"), "", commerce);
     } catch (error) {
-      renderShopConfigurationPage(config, shopSettings, {}, error.message || "Unable to load payment settings.");
+      renderShopConfigurationPage(config, shopSettings, {}, error.message || "Unable to load payment settings.", commerce);
     }
     return;
   }

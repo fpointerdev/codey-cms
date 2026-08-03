@@ -25,6 +25,10 @@ function productMetadata(product = {}) {
   return product.metadata && typeof product.metadata === "object" ? product.metadata : {};
 }
 
+function productPurchaseMode(product = {}) {
+  return productMetadata(product).purchaseMode === "quote" ? "quote" : "buy";
+}
+
 function productAttributes(product = {}) {
   const metadata = productMetadata(product);
   return Array.isArray(metadata.attributes) && metadata.attributes.length
@@ -122,7 +126,7 @@ export function renderProductEditorPage({ product = null, categories = [], messa
   renderShopShell(
     isNew ? "product-create" : "product-editor",
     `
-      <form class="product-editor-shell" data-product-editor-form data-product-slug="${escapeHtml(product?.slug || "")}">
+      <form class="product-editor-shell" data-product-editor-form data-product-slug="${escapeHtml(product?.slug || "")}" data-purchase-mode="${escapeHtml(productPurchaseMode(product || {}))}">
         <section class="builder-topbar product-editor-topbar">
           <div>
             <p class="section-label">${isNew ? "New product" : "Product editor"}</p>
@@ -145,10 +149,21 @@ export function renderProductEditorPage({ product = null, categories = [], messa
               <label class="product-name-field"><span>Name</span><input name="name" value="${escapeHtml(product?.name || "")}" placeholder="Product name" data-title-source required /></label>
               <label><span>Description</span><textarea name="description" rows="5" placeholder="What should customers know about this product?">${escapeHtml(product?.description || "")}</textarea></label>
               <div class="builder-form-grid">
-                <label><span>Price</span><input name="price" type="number" min="0" step="0.01" value="${escapeHtml(product ? (product.priceCents / 100).toFixed(2) : "0.00")}" required /></label>
-                <label><span>Stock</span><input name="stockQuantity" type="number" min="0" step="1" value="${escapeHtml(product?.stockQuantity ?? 0)}" required /></label>
+                <label data-product-buy-field><span>Price</span><input name="price" type="number" min="0" step="0.01" value="${escapeHtml(product ? (product.priceCents / 100).toFixed(2) : "0.00")}" required /></label>
+                <label data-product-buy-field><span>Stock</span><input name="stockQuantity" type="number" min="0" step="1" value="${escapeHtml(product?.stockQuantity ?? 0)}" required /></label>
                 <label><span>Category</span><select name="categoryId" data-product-category-select>${categoryOptions(categories, product?.categoryId || "")}</select></label>
               </div>
+              <fieldset class="choice-card-grid product-purchase-mode">
+                <legend>Customer action</legend>
+                <label class="choice-card">
+                  <input type="radio" name="purchaseMode" value="buy" ${productPurchaseMode(product || {}) === "buy" ? "checked" : ""} />
+                  <span><strong>Buy online</strong><small>Add to cart and continue through checkout.</small></span>
+                </label>
+                <label class="choice-card">
+                  <input type="radio" name="purchaseMode" value="quote" ${productPurchaseMode(product || {}) === "quote" ? "checked" : ""} />
+                  <span><strong>Request a quote</strong><small>Collect a qualified inquiry for custom or high-value work.</small></span>
+                </label>
+              </fieldset>
               <div class="builder-form-grid product-new-category-fields" data-new-category-fields hidden>
                 <label><span>New category name</span><input name="newCategoryName" placeholder="Railings" /></label>
                 <label><span>New category slug</span><input name="newCategorySlug" placeholder="railings" /></label>

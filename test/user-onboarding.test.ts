@@ -493,6 +493,22 @@ test("read-only dashboard views hide mutation controls", async () => {
   assert.match(page.innerHTML, /name="publishableKey"[^>]*disabled/);
   assert.match(page.innerHTML, /name="instructions"[^>]*disabled/);
   assert.doesNotMatch(page.innerHTML, /Save Stripe|Save PayPal|Save manual payment/);
+
+  state.user.permissions.push({ action: "read", subject: "orders" });
+  renderShopConfigurationPage({ modules: {} }, {}, {}, "", {
+    shippingZones: [{ id: "zone-1", name: "Europe", countries: ["DE", "FR"], rates: [] }],
+    taxRules: [{ id: "tax-1", name: "VAT", country: "DE", rateBps: 1900 }],
+    coupons: [{ id: "coupon-1", code: "WELCOME10", discountType: "PERCENTAGE", amount: 10, usageCount: 0 }]
+  });
+  assert.match(page.innerHTML, /Commerce rules|Europe|VAT|WELCOME10/);
+  assert.doesNotMatch(page.innerHTML, /data-commerce-rule-form|data-delete-commerce-rule/);
+
+  state.user.permissions.push({ action: "update", subject: "orders" });
+  renderShopConfigurationPage({ modules: {} }, {}, {}, "", {
+    shippingZones: [{ id: "zone-1", name: "Europe", countries: ["DE", "FR"], rates: [] }]
+  });
+  assert.match(page.innerHTML, /data-commerce-rule-form="shipping"/);
+  assert.match(page.innerHTML, /data-delete-commerce-rule="shipping"/);
 });
 
 test("admin routes declare permissions for direct navigation", async () => {

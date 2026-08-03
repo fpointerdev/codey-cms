@@ -158,6 +158,7 @@ export const websiteSpecProductSchema = z
     priceCents: z.number().int().nonnegative(),
     currency: z.string().trim().length(3).default("EUR"),
     stockQuantity: z.number().int().nonnegative().default(0),
+    purchaseMode: z.enum(["buy", "quote"]).default("buy"),
     seo: z
       .object({
         title: z.string().trim().max(180).optional(),

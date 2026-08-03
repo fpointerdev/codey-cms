@@ -528,8 +528,12 @@ test("shop and product markup are useful without JavaScript and escape catalog d
   assert.match(listing, /href="\/shop\/category\/tools"/);
   assert.match(listing, /href="\/shop\?page=3" rel="next"/);
   assert.match(listing, /Page 2 of 3/);
+  assert.match(listing, /data-commerce-root/);
+  assert.match(listing, /data-commerce-add/);
   assert.doesNotMatch(listing, /<script>|javascript:/);
   assert.match(detail, /<dt>Material<\/dt><dd>Steel<\/dd>/);
+  assert.match(detail, /data-commerce-product-form/);
+  assert.match(detail, /data-commerce-cart-toggle/);
   assert.doesNotMatch(detail, /<script>|javascript:/);
 
   const outOfRangeListing = renderShopListingContent({
@@ -576,4 +580,48 @@ test("shop and product markup are useful without JavaScript and escape catalog d
   assert.doesNotMatch(customizedListing, /shop-public-filters|STARTER-1|in stock/);
   assert.match(customizedDetail, /shop-detail-layout-immersive shop-detail-style-premium/);
   assert.doesNotMatch(customizedDetail, /STARTER-1|in stock|Product attributes|<dt>Material<\/dt>/);
+});
+
+test("shop rendering supports quote products and sellable variants", () => {
+  const quoteProduct = {
+    id: "quote-product",
+    slug: "custom-installation",
+    name: "Custom installation",
+    description: "Designed for your site.",
+    priceCents: 0,
+    currency: "EUR",
+    stockQuantity: 0,
+    metadata: { purchaseMode: "quote" },
+    images: []
+  };
+  const variantProduct = {
+    id: "variant-product",
+    slug: "workbench",
+    name: "Workbench",
+    description: "Built to order.",
+    priceCents: 50000,
+    currency: "EUR",
+    stockQuantity: 0,
+    metadata: { purchaseMode: "buy" },
+    images: [],
+    variants: [
+      { id: "small", name: "Small", priceCents: 50000, stockQuantity: 2, active: true },
+      { id: "large", name: "Large", priceCents: 70000, stockQuantity: 3, active: true }
+    ]
+  };
+
+  const renderOptions = { locale: "en", defaultLocale: "en" };
+  const listing = renderShopListingContent({ products: [quoteProduct, variantProduct] }, renderOptions);
+  const quoteDetail = renderProductDetailContent(quoteProduct, renderOptions);
+  const variantDetail = renderProductDetailContent(variantProduct, renderOptions);
+
+  assert.match(listing, /data-commerce-quote/);
+  assert.match(listing, /Choose options/);
+  assert.match(quoteDetail, /data-purchase-mode="quote"/);
+  assert.match(quoteDetail, /Request a quote/);
+  assert.match(quoteDetail, /Tailored pricing/);
+  assert.doesNotMatch(quoteDetail, /0 in stock|€0\.00/);
+  assert.match(variantDetail, /name="variantId"/);
+  assert.match(variantDetail, /data-stock="3"/);
+  assert.match(variantDetail, />5 in stock</);
 });

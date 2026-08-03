@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { websiteSpecProductSchema } from "../src/modules/config/website-spec.schemas.js";
 import { buildWebsiteGenerationPlan } from "../src/modules/config/website-spec.service.js";
+
+test("WebsiteSpec products default to online purchase and can request a quote", () => {
+  const baseProduct = {
+    name: "Custom installation",
+    slug: "custom-installation",
+    priceCents: 0,
+    currency: "EUR",
+    stockQuantity: 0,
+    seo: {},
+    imageMediaKeys: [],
+    options: [],
+    variants: []
+  };
+
+  assert.equal(websiteSpecProductSchema.parse(baseProduct).purchaseMode, "buy");
+  assert.equal(websiteSpecProductSchema.parse({ ...baseProduct, purchaseMode: "quote" }).purchaseMode, "quote");
+});
 
 test("CodeY CMS accepts and maps the platform WebsiteSpec contract", () => {
   const plan = buildWebsiteGenerationPlan({

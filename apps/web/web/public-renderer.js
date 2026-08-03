@@ -1642,6 +1642,17 @@ function shopProductAttributes(product = {}) {
   return Array.isArray(metadata.attributes) ? metadata.attributes : [];
 }
 
+function shopPurchaseMode(product = {}) {
+  const metadata = isRecord(product.metadata) ? product.metadata : {};
+  return metadata.purchaseMode === "quote" ? "quote" : "buy";
+}
+
+function activeShopVariants(product = {}) {
+  return Array.isArray(product.variants)
+    ? product.variants.filter((variant) => variant?.active !== false)
+    : [];
+}
+
 function shopAttributeSlug(value = "") {
   return String(value || "")
     .trim()
@@ -1673,6 +1684,11 @@ function renderShopProductCard(product, options) {
   const imageHtml = renderShopProductImage(image, product.name);
   const href = localizedShopPath(`/product/${encodePathSegment(product.slug)}`, options);
   const settings = normalizeShopSettings(options.shopSettings);
+  const variants = activeShopVariants(product);
+  const availableStock = variants.length
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.stockQuantity) || 0), 0)
+    : Math.max(0, Number(product.stockQuantity) || 0);
+  const purchaseMode = shopPurchaseMode(product);
 
   return `
     <article class="shop-product-card">
@@ -1683,9 +1699,16 @@ function renderShopProductCard(product, options) {
       </a>
       <p>${escapeHtml(product.description || "")}</p>
       <div class="shop-product-card-meta">
-        ${settings.showSku ? `<small>${escapeHtml(product.sku || translateString("shop.noSku", "No SKU"))}</small>` : ""}
-        ${settings.showStock ? `<span>${escapeHtml(product.stockQuantity)} ${escapeHtml(translateString("shop.inStock", "in stock"))}</span>` : ""}
-        <b>${escapeHtml(formatMoney(product.priceCents, product.currency || "EUR"))}</b>
+        ${settings.showSku && product.sku ? `<small>${escapeHtml(product.sku)}</small>` : ""}
+        ${settings.showStock && purchaseMode === "buy" ? `<span>${escapeHtml(availableStock)} ${escapeHtml(translateString("shop.inStock", "in stock"))}</span>` : ""}
+        <b>${escapeHtml(purchaseMode === "quote" ? translateString("shop.tailoredPricing", "Tailored pricing") : formatMoney(product.priceCents, product.currency || "EUR"))}</b>
+      </div>
+      <div class="shop-product-card-actions">
+        ${purchaseMode === "quote"
+          ? `<button type="button" class="secondary-button" data-commerce-quote data-product-id="${escapeHtml(product.id || "")}" data-product-name="${escapeHtml(product.name)}">${escapeHtml(translateString("shop.requestQuote", "Request a quote"))}</button>`
+          : variants.length
+            ? `<a class="secondary-button" href="${escapeHtml(href)}">${escapeHtml(translateString("shop.chooseOptions", "Choose options"))}</a>`
+            : `<button type="button" data-commerce-add data-product-id="${escapeHtml(product.id || "")}" data-product-name="${escapeHtml(product.name)}" ${availableStock > 0 ? "" : "disabled"}>${escapeHtml(availableStock > 0 ? translateString("shop.addToCart", "Add to cart") : translateString("shop.soldOut", "Sold out"))}</button>`}
       </div>
     </article>
   `;
@@ -1797,11 +1820,16 @@ export function renderShopListingContent(
     : "";
 
   return `
-    <section class="shop-public-page shop-layout-${escapeHtml(settings.catalogLayout)} shop-card-${escapeHtml(settings.cardStyle)}">
+    <section class="shop-public-page shop-layout-${escapeHtml(settings.catalogLayout)} shop-card-${escapeHtml(settings.cardStyle)}" data-commerce-root>
       <header class="shop-public-header">
-        <p class="section-label">${escapeHtml(translateString("shop.catalog", "Catalog"))}</p>
-        <h1>${escapeHtml(title)}</h1>
-        ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
+        <div>
+          <p class="section-label">${escapeHtml(translateString("shop.catalog", "Catalog"))}</p>
+          <h1>${escapeHtml(title)}</h1>
+          ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
+        </div>
+        <button type="button" class="secondary-button commerce-cart-trigger" data-commerce-cart-toggle>
+          ${escapeHtml(translateString("shop.cart", "Cart"))} <span data-commerce-cart-count>0</span>
+        </button>
       </header>
       ${categoriesHtml || attributesHtml ? `<aside class="shop-public-filters">${categoriesHtml}${attributesHtml}</aside>` : ""}
       <div class="shop-product-grid">
@@ -1815,25 +1843,52 @@ export function renderShopListingContent(
 }
 
 export function renderProductDetailContent(product, options = {}) {
+  const images = Array.isArray(product.images) ? product.images : [];
   const image = shopPrimaryImage(product);
   const imageHtml = renderShopProductImage(image, product.name, true);
   const attributes = shopProductAttributes(product);
   const settings = normalizeShopSettings(options.shopSettings);
+  const variants = activeShopVariants(product);
+  const purchaseMode = shopPurchaseMode(product);
+  const availableStock = variants.length
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.stockQuantity) || 0), 0)
+    : Math.max(0, Number(product.stockQuantity) || 0);
+  const variantOptions = variants.map((variant) => {
+    const price = variant.priceCents ?? product.priceCents;
+    const label = `${variant.name} · ${formatMoney(price, product.currency || "EUR")}${variant.stockQuantity > 0 ? "" : ` · ${translateString("shop.soldOut", "Sold out")}`}`;
+    return `<option value="${escapeHtml(variant.id)}" data-price-cents="${escapeHtml(price)}" data-stock="${escapeHtml(variant.stockQuantity)}" ${variant.stockQuantity > 0 ? "" : "disabled"}>${escapeHtml(label)}</option>`;
+  }).join("");
 
   return `
-    <article class="shop-product-detail shop-detail-layout-${escapeHtml(settings.detailLayout)} shop-detail-style-${escapeHtml(settings.detailStyle)}">
-      <a class="secondary-button" href="${escapeHtml(localizedShopPath("/shop", options))}">${escapeHtml(translateString("shop.backToShop", "Back to shop"))}</a>
+    <article class="shop-product-detail shop-detail-layout-${escapeHtml(settings.detailLayout)} shop-detail-style-${escapeHtml(settings.detailStyle)}" data-commerce-root>
+      <div class="shop-detail-navigation">
+        <a class="secondary-button" href="${escapeHtml(localizedShopPath("/shop", options))}">${escapeHtml(translateString("shop.backToShop", "Back to shop"))}</a>
+        <button type="button" class="secondary-button commerce-cart-trigger" data-commerce-cart-toggle>${escapeHtml(translateString("shop.cart", "Cart"))} <span data-commerce-cart-count>0</span></button>
+      </div>
       <section class="shop-product-detail-hero">
-        <div>
+        <div class="shop-product-gallery">
           ${imageHtml || `<div class="shop-product-image-placeholder large">${escapeHtml(translateString("shop.noImage", "No image"))}</div>`}
+          ${images.length > 1 ? `<div class="shop-product-gallery-rail">${images.slice(1).map((item) => renderShopProductImage(item, product.name)).join("")}</div>` : ""}
         </div>
         <div>
           <p class="section-label">${escapeHtml(product.category?.name || translateString("shop.product", "Product"))}</p>
           <h1>${escapeHtml(product.name)}</h1>
           <p>${escapeHtml(product.description || "")}</p>
-          <strong>${escapeHtml(formatMoney(product.priceCents, product.currency || "EUR"))}</strong>
-          ${settings.showSku ? `<span class="shop-product-detail-sku">${escapeHtml(product.sku || translateString("shop.noSku", "No SKU"))}</span>` : ""}
-          ${settings.showStock ? `<span>${escapeHtml(product.stockQuantity)} ${escapeHtml(translateString("shop.inStock", "in stock"))}</span>` : ""}
+          <strong data-commerce-product-price>${escapeHtml(purchaseMode === "quote" ? translateString("shop.tailoredPricing", "Tailored pricing") : formatMoney(product.priceCents, product.currency || "EUR"))}</strong>
+          ${settings.showSku && product.sku ? `<span class="shop-product-detail-sku">${escapeHtml(product.sku)}</span>` : ""}
+          ${settings.showStock && purchaseMode === "buy" ? `<span>${escapeHtml(availableStock)} ${escapeHtml(translateString("shop.inStock", "in stock"))}</span>` : ""}
+          <form class="shop-product-purchase" data-commerce-product-form data-product-id="${escapeHtml(product.id || "")}" data-product-name="${escapeHtml(product.name)}" data-product-currency="${escapeHtml(product.currency || "EUR")}" data-purchase-mode="${escapeHtml(purchaseMode)}">
+            ${variants.length ? `<label><span>${escapeHtml(translateString("shop.variant", "Option"))}</span><select name="variantId" aria-label="${escapeHtml(translateString("shop.variant", "Option"))}" required>${variantOptions}</select></label>` : ""}
+            ${purchaseMode === "buy" ? `<label class="shop-quantity-field"><span>${escapeHtml(translateString("shop.quantity", "Quantity"))}</span><input name="quantity" type="number" min="1" max="${escapeHtml(Math.max(1, availableStock))}" value="1" inputmode="numeric" /></label>` : ""}
+            <button type="submit" ${purchaseMode === "buy" && availableStock <= 0 ? "disabled" : ""}>${escapeHtml(
+              purchaseMode === "quote"
+                ? translateString("shop.requestQuote", "Request a quote")
+                : availableStock > 0
+                  ? translateString("shop.addToCart", "Add to cart")
+                  : translateString("shop.soldOut", "Sold out")
+            )}</button>
+            <p class="commerce-inline-message" data-commerce-inline-message aria-live="polite"></p>
+          </form>
         </div>
       </section>
       ${settings.showAttributes ? `<section class="shop-product-specs">

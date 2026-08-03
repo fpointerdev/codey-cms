@@ -106,6 +106,7 @@ type GeneratedProduct = {
   priceCents: number;
   currency: string;
   stockQuantity: number;
+  purchaseMode: "buy" | "quote";
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
   metaTitle?: string;
   metaDescription?: string;
@@ -958,6 +959,7 @@ function mapProduct(
     priceCents: product.priceCents,
     currency: product.currency.toUpperCase(),
     stockQuantity: product.stockQuantity,
+    purchaseMode: product.purchaseMode,
     status: "ACTIVE",
     metaTitle: product.seo.title ?? product.name,
     metaDescription: product.seo.description ?? product.description,
@@ -1183,7 +1185,8 @@ async function syncProducts(
       seo: product.seo as Prisma.InputJsonValue | undefined,
       metadata: {
         generated: true,
-        source: "websiteSpec"
+        source: "websiteSpec",
+        purchaseMode: product.purchaseMode
       } as Prisma.InputJsonValue
     };
 
