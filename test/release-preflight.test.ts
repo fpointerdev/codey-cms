@@ -18,13 +18,26 @@ const packageJson = JSON.parse(
 ) as { version: string };
 const releaseTag = `v${packageJson.version}`;
 
+function localPreflightEnvironment(overrides: NodeJS.ProcessEnv = {}) {
+  const environment = {
+    ...process.env,
+    ...overrides
+  };
+
+  delete environment.GITHUB_ACTIONS;
+  delete environment.GITHUB_REF;
+  delete environment.GITHUB_REPOSITORY;
+  delete environment.GITHUB_SHA;
+
+  return environment;
+}
+
 test("release preflight accepts matching notes, version, and signing key", async () => {
   const result = await execFileAsync(process.execPath, ["scripts/release-preflight.mjs"], {
-    env: {
-      ...process.env,
+    env: localPreflightEnvironment({
       GITHUB_REF_NAME: releaseTag,
       CODEY_RELEASE_PRIVATE_KEY: privateKey
-    }
+    })
   });
 
   assert.match(result.stdout, new RegExp(`Release preflight passed for ${escapeRegex(releaseTag)}\\.`));
@@ -34,11 +47,10 @@ test("release preflight accepts matching notes, version, and signing key", async
 test("release preflight rejects a tag that differs from the package version", async () => {
   await assert.rejects(
     execFileAsync(process.execPath, ["scripts/release-preflight.mjs"], {
-      env: {
-        ...process.env,
+      env: localPreflightEnvironment({
         GITHUB_REF_NAME: `${releaseTag}-mismatch`,
         CODEY_RELEASE_PRIVATE_KEY: privateKey
-      }
+      })
     }),
     new RegExp(`does not match package version ${escapeRegex(packageJson.version)}`)
   );
