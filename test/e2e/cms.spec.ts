@@ -108,9 +108,16 @@ test("customers can complete the real storefront journey", async ({ page }) => {
   await page.getByLabel("Option").selectOption({ index: 0 });
   await page.getByRole("button", { name: "Add to cart" }).click();
 
-  const cartDialog = page.locator("[data-commerce-dialog]");
+  let cartDialog = page.locator("[data-commerce-dialog]");
   await expect(cartDialog).toBeVisible();
   await expect(cartDialog.getByText("Starter Product", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator("[data-commerce-cart-count]")).toHaveText("1");
+  await page.getByRole("button", { name: /Cart 1/ }).click();
+  cartDialog = page.locator("[data-commerce-dialog]");
+  await expect(cartDialog.getByText("Starter Product", { exact: true })).toBeVisible();
+
   await cartDialog.getByRole("button", { name: "Checkout" }).click();
   await cartDialog.getByLabel("Name", { exact: true }).fill("Commerce Customer");
   await cartDialog.getByLabel("Email", { exact: true }).fill(`browser-commerce-${Date.now()}@example.com`);
