@@ -176,3 +176,115 @@ test("CodeY CMS accepts and maps the platform WebsiteSpec contract", () => {
   assert.match(galleryValue.items?.[0]?.caption ?? "", /Steel hall.*Built for long service\./);
   assert.equal(projects?.blocks.some((block) => block.key === "projects-items"), true);
 });
+
+test("generator-safe custom WebsiteSpec elements keep their portable values", () => {
+  const values = customElementValues();
+  const plan = buildWebsiteGenerationPlan(customElementsWebsiteSpec(values));
+
+  assert.deepEqual(
+    plan.cmsPages[0]?.sections.map((section) => ({
+      elementId: section.settings.elementId,
+      transportValueStored: Object.hasOwn(section.settings, "value"),
+      blockElementId: section.blocks[0]?.settings?.elementId,
+      value: section.blocks[0]?.value
+    })),
+    ["process-steps", "comparison-table", "video"].map((elementId) => ({
+      elementId,
+      transportValueStored: false,
+      blockElementId: elementId,
+      value: values[elementId as keyof typeof values]
+    }))
+  );
+});
+
+test("WebsiteSpec rejects unbounded custom element values before persistence", () => {
+  const values = customElementValues();
+  values.video.body = "x".repeat(12_001);
+
+  assert.throws(
+    () => buildWebsiteGenerationPlan(customElementsWebsiteSpec(values)),
+    /Custom element strings must be no longer than 12,000 characters/
+  );
+});
+
+test("custom WebsiteSpec sections reject non-generator-safe element selection", () => {
+  const spec = customElementsWebsiteSpec() as unknown as {
+    pages: Array<{ sections: Array<{ settings: Record<string, unknown> }> }>;
+  };
+  spec.pages[0]!.sections[0]!.settings.elementId = "structured-content";
+
+  const section = buildWebsiteGenerationPlan(spec).cmsPages[0]?.sections[0];
+  assert.equal(section?.settings.elementId, "structured-content");
+  assert.equal(section?.blocks[0]?.settings?.elementId, "structured-content");
+  assert.notDeepEqual(section?.blocks[0]?.value, customElementValues()["process-steps"]);
+  assert.equal(Object.hasOwn(section?.blocks[0]?.value as object, "settings"), false);
+});
+
+test("non-custom WebsiteSpec section settings remain backward compatible", () => {
+  const spec = customElementsWebsiteSpec() as unknown as {
+    pages: Array<{ sections: Array<Record<string, unknown>> }>;
+  };
+  spec.pages[0]!.sections = [{
+    key: "intro",
+    type: "text",
+    body: "Existing generated content.",
+    settings: { value: "legacy-setting", customOption: true }
+  }];
+
+  const settings = buildWebsiteGenerationPlan(spec).cmsPages[0]?.sections[0]?.settings;
+  assert.equal(settings?.value, "legacy-setting");
+  assert.equal(settings?.customOption, true);
+});
+
+function customElementValues() {
+  return {
+    "process-steps": {
+      title: "How delivery works",
+      items: [
+        { title: "Plan", body: "Agree on scope." },
+        { title: "Launch", body: "Publish and verify." }
+      ],
+      display: { columns: 2, showNumbers: true }
+    },
+    "comparison-table": {
+      title: "Compare support",
+      firstColumnTitle: "Standard",
+      secondColumnTitle: "Priority",
+      items: [{ title: "Response", firstValue: "2 days", secondValue: "4 hours" }],
+      display: { striped: true }
+    },
+    video: {
+      title: "Product tour",
+      body: "A short walkthrough.",
+      url: "/uploads/product-tour.mp4",
+      display: { ratio: "16 / 9", preload: "none", loop: false }
+    }
+  };
+}
+
+function customElementsWebsiteSpec(values = customElementValues()) {
+  return {
+    version: "1.0",
+    intent: "cms",
+    project: {
+      name: "Portable custom elements",
+      slug: "portable-custom-elements",
+      summary: "A generated page with canonical custom builder elements."
+    },
+    modules: { cms: true },
+    style: {
+      theme: "system",
+      colorPalette: { primary: "#17211b", accent: "#0f766e" }
+    },
+    pages: [{
+      title: "Services",
+      slug: "services",
+      purpose: "content",
+      sections: Object.entries(values).map(([elementId, value]) => ({
+        key: elementId,
+        type: "custom",
+        settings: { elementId, value }
+      }))
+    }]
+  };
+}

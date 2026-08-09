@@ -85,7 +85,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-06-19";
+export const builderRegistryVersion = "2026-08-09";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label
@@ -413,6 +413,64 @@ export const builderElementRegistry = [
     ]
   },
   {
+    id: "process-steps",
+    label: "Process Steps",
+    icon: "list-ordered",
+    description: "Ordered steps for services, onboarding, delivery, and customer journeys.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "How it works",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "items", label: "Steps", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "comparison-table",
+    label: "Comparison Table",
+    icon: "columns-3",
+    description: "Accessible side-by-side comparison for plans, services, products, and capabilities.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Compare options",
+      firstColumnTitle: "Option A",
+      secondColumnTitle: "Option B",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "items", label: "Comparison rows", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "video",
+    label: "Video",
+    icon: "video",
+    description: "Self-hosted MP4 or WebM video with accessible title and supporting copy.",
+    category: "media",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Video title",
+      body: "Add context so visitors and search engines understand the video.",
+      url: ""
+    },
+    fieldSchema: [
+      { name: "title", label: "Title", type: "text", required: true },
+      { name: "body", label: "Description", type: "richText", required: false },
+      { name: "url", label: "Video file", type: "custom", required: false }
+    ]
+  },
+  {
     id: "contact-form",
     label: "Contact Form",
     icon: "mail",
@@ -484,7 +542,7 @@ export const sectionPresetRegistry = [
     id: "two-column",
     label: "Two columns",
     description: "Side-by-side content for image/text and comparison sections.",
-    allowedElements: ["image-text", "text-layout", "cta", "product-list", "structured-content"],
+    allowedElements: ["image-text", "text-layout", "cta", "process-steps", "comparison-table", "video", "product-list", "structured-content"],
     defaultSettings: {
       layout: "two-column",
       container: "default",
@@ -497,7 +555,7 @@ export const sectionPresetRegistry = [
     id: "three-column",
     label: "Three columns",
     description: "Feature, service, or product summary grid.",
-    allowedElements: ["text-layout", "image-text", "stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "faq-accordion", "tabs", "accordion", "product-list", "structured-content"],
+    allowedElements: ["text-layout", "image-text", "stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "faq-accordion", "tabs", "accordion", "process-steps", "comparison-table", "product-list", "structured-content"],
     defaultSettings: {
       layout: "three-column",
       container: "default",
@@ -510,7 +568,7 @@ export const sectionPresetRegistry = [
     id: "four-column",
     label: "Four columns",
     description: "Dense card grid for stats, features, logos, and team members.",
-    allowedElements: ["stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "structured-content"],
+    allowedElements: ["stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "process-steps", "structured-content"],
     defaultSettings: {
       layout: "four-column",
       container: "wide",
@@ -523,7 +581,7 @@ export const sectionPresetRegistry = [
     id: "full-bleed",
     label: "Full width",
     description: "Wide visual section for hero, gallery, and media bands.",
-    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "cta"],
+    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "video", "cta"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -536,7 +594,7 @@ export const sectionPresetRegistry = [
     id: "asymmetric",
     label: "Asymmetric",
     description: "Editorial section with stronger visual weight on one side.",
-    allowedElements: ["hero-creative", "image-text", "feature-cards", "structured-content"],
+    allowedElements: ["hero-creative", "image-text", "feature-cards", "process-steps", "comparison-table", "structured-content"],
     defaultSettings: {
       layout: "asymmetric",
       container: "wide",
@@ -564,7 +622,7 @@ export const sectionPresetRegistry = [
     id: "media-band",
     label: "Media band",
     description: "Wide visual strip for galleries, carousels, project highlights, and image-led storytelling.",
-    allowedElements: ["slider", "carousel", "gallery", "image-text", "text-layout"],
+    allowedElements: ["slider", "carousel", "gallery", "image-text", "video", "text-layout"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -990,6 +1048,31 @@ function validateCustomElementValue(
       requireTitle: true,
       requireBody: true
     });
+  }
+
+  if (elementId === "process-steps") {
+    validateItemCollection(result, label, value, ["items", "steps"], {
+      collectionLabel: "process",
+      requireTitle: true,
+      requireBody: true
+    });
+  }
+
+  if (elementId === "comparison-table") {
+    validateItemCollection(result, label, value, ["items", "rows"], {
+      collectionLabel: "comparison",
+      requireTitle: true
+    });
+
+    const items = firstRecordArray(value, ["items", "rows"]);
+    for (const [index, item] of items.entries()) {
+      if (!isRecord(item) || !hasText(item.firstValue) || !hasText(item.secondValue)) {
+        result.errors.push(issue(
+          "missing_comparison_values",
+          `${label} comparison row ${index + 1} needs values for both options.`
+        ));
+      }
+    }
   }
 }
 

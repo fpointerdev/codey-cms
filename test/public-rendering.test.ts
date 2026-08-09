@@ -426,6 +426,69 @@ test("linked gallery items expose the whole item as an accessible destination", 
   assert.match(html, /<figcaption><h3>Neighbourhood play space<\/h3><\/figcaption>/);
 });
 
+test("v1 builder elements server-render semantic process, comparison, and video markup", () => {
+  const html = renderPageContent({
+    title: "Service details",
+    content: {},
+    sections: [{
+      id: "details",
+      key: "details",
+      settings: {},
+      blocks: [
+        {
+          key: "process",
+          type: "CUSTOM",
+          value: {
+            variant: "process-steps",
+            title: "How it works",
+            items: [
+              { title: "Plan", body: "Agree on scope." },
+              { title: "Launch", body: "Publish and verify." }
+            ],
+            display: { columns: 2, showNumbers: true, surface: "soft" }
+          },
+          settings: { elementId: "process-steps" },
+          editable: true
+        },
+        {
+          key: "comparison",
+          type: "CUSTOM",
+          value: {
+            variant: "comparison-table",
+            title: "Compare support",
+            firstColumnTitle: "Standard",
+            secondColumnTitle: "Priority",
+            items: [{ title: "Response", firstValue: "2 days", secondValue: "4 hours" }]
+          },
+          settings: { elementId: "comparison-table" },
+          editable: true
+        },
+        {
+          key: "video",
+          type: "CUSTOM",
+          value: {
+            variant: "video",
+            title: "Product tour",
+            body: "A short walkthrough.",
+            url: "/uploads/product-tour.mp4",
+            display: { ratio: "16 / 9", preload: "none", loop: false }
+          },
+          settings: { elementId: "video" },
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.match(html, /<ol class="structured-process/);
+  assert.match(html, /<li class="structured-process-step">/);
+  assert.match(html, /<table>/);
+  assert.match(html, /<th scope="row">Response<\/th><td>2 days<\/td><td>4 hours<\/td>/);
+  assert.match(html, /<video src="\/uploads\/product-tour\.mp4" controls playsinline preload="none"/);
+  assert.match(html, /aria-label="Product tour"/);
+  assert.doesNotMatch(html, /<iframe/);
+});
+
 test("section backgrounds receive the same accessible foreground used by generated previews", () => {
   const html = withPublicRenderContext(
     {

@@ -216,11 +216,14 @@ export function translationAlternates(translations = [], kind = "page", context 
 }
 
 function organizationGraph(context, origin) {
+  const logoUrl = publicMediaUrl(context.organizationLogo, context);
+
   return {
     "@type": "Organization",
     "@id": `${origin}/#organization`,
     name: text(context.siteName, "Website"),
-    url: `${origin}/`
+    url: `${origin}/`,
+    ...(logoUrl ? { logo: { "@type": "ImageObject", url: logoUrl } } : {})
   };
 }
 
@@ -236,11 +239,68 @@ function websiteGraph(context, origin, locale) {
   };
 }
 
-function structuredGraph(entity, context, locale) {
+function plainText(value) {
+  return text(value)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(?:39|x27);/gi, "'")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.,!?;:])/g, "$1")
+    .trim();
+}
+
+function faqPageEntity(page, canonicalUrl) {
+  const questions = [];
+
+  for (const section of Array.isArray(page?.sections) ? page.sections : []) {
+    for (const block of Array.isArray(section?.blocks) ? section.blocks : []) {
+      const value = isRecord(block?.value) ? block.value : {};
+      const elementId = text(block?.settings?.elementId || section?.settings?.elementId).toLowerCase();
+      const variant = text(value.variant || value.type).toLowerCase();
+      if (elementId !== "faq-accordion" && variant !== "faq-accordion") continue;
+
+      const items = Array.isArray(value.items)
+        ? value.items
+        : Array.isArray(value.questions)
+          ? value.questions
+          : [];
+
+      for (const item of items) {
+        if (!isRecord(item)) continue;
+        const name = plainText(item.title || item.name || item.label);
+        const answer = plainText(item.body || item.text || item.copy || item.description || item.content);
+        if (!name || !answer) continue;
+
+        questions.push({
+          "@type": "Question",
+          name,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: answer
+          }
+        });
+      }
+    }
+  }
+
+  if (!questions.length) return null;
+
+  return {
+    "@type": "FAQPage",
+    "@id": `${canonicalUrl}#faq`,
+    mainEntity: questions.slice(0, 20)
+  };
+}
+
+function structuredGraph(entity, context, locale, related = []) {
   const origin = originFromContext(context);
   return {
     "@context": "https://schema.org",
-    "@graph": [organizationGraph(context, origin), websiteGraph(context, origin, locale), entity]
+    "@graph": [organizationGraph(context, origin), websiteGraph(context, origin, locale), entity, ...related]
   };
 }
 
@@ -248,12 +308,15 @@ export function createSeoDocument(input = {}) {
   const title = text(input.title, "Website");
   const description = text(input.description);
   const canonicalUrl = absoluteUrl(input.canonicalUrl, input);
-  const image = input.image?.url
+  const imageSource = input.image?.url ? input.image : input.defaultImage;
+  const imageUrl = imageSource?.url ? publicMediaUrl(imageSource.url, input) : "";
+  const image = imageUrl
     ? {
-        ...input.image,
-        url: absoluteUrl(input.image.url, input)
+        ...imageSource,
+        url: imageUrl
       }
     : undefined;
+  const faviconUrl = publicMediaUrl(input.faviconUrl, input);
   const type = text(input.type, "website");
 
   return {
@@ -262,6 +325,7 @@ export function createSeoDocument(input = {}) {
     htmlLang: text(input.htmlLang, "en").toLowerCase(),
     noindex: input.noindex === true,
     ...(canonicalUrl ? { canonicalUrl } : {}),
+    ...(faviconUrl ? { faviconUrl } : {}),
     alternates: Array.isArray(input.alternates) ? input.alternates : [],
     openGraph: {
       type,
@@ -298,6 +362,7 @@ export function createPageSeoDocument(page = {}, context = {}) {
   const image = imageFrom(page, firstPageImage(page), resolved);
   const title = text(page.metaTitle || page.title, resolved.siteName || "Website");
   const description = text(page.metaDescription || page.excerpt, resolved.siteDescription || "");
+  const faq = faqPageEntity(page, canonicalUrl);
   const entity = {
     "@type": "WebPage",
     "@id": `${canonicalUrl}#webpage`,
@@ -306,7 +371,8 @@ export function createPageSeoDocument(page = {}, context = {}) {
     description,
     inLanguage: resolved.locale,
     isPartOf: { "@id": `${originFromContext(resolved)}/#website` },
-    ...(image ? { primaryImageOfPage: { "@type": "ImageObject", url: image.url } } : {})
+    ...(image ? { primaryImageOfPage: { "@type": "ImageObject", url: image.url } } : {}),
+    ...(faq ? { mainEntity: { "@id": faq["@id"] } } : {})
   };
 
   return createSeoDocument({
@@ -318,7 +384,7 @@ export function createPageSeoDocument(page = {}, context = {}) {
     image,
     type: "website",
     alternates: translationAlternates(page.translations, "page", { ...resolved, canonicalUrl }),
-    structuredData: [structuredGraph(entity, resolved, resolved.locale)]
+    structuredData: [structuredGraph(entity, resolved, resolved.locale, faq ? [faq] : [])]
   });
 }
 
@@ -476,6 +542,7 @@ export function renderSeoHead(document) {
     `<meta name="description" content="${escapeHtml(document.description)}" data-codey-seo />`,
     `<meta name="robots" content="${document.noindex ? "noindex, nofollow" : "index, follow, max-image-preview:large"}" data-codey-seo />`,
     document.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(document.canonicalUrl)}" data-codey-seo />` : "",
+    document.faviconUrl ? `<link rel="icon" href="${escapeHtml(document.faviconUrl)}" data-codey-seo />` : "",
     ...document.alternates.map((alternate) => `<link rel="alternate" hreflang="${escapeHtml(alternate.hreflang)}" href="${escapeHtml(alternate.href)}" data-codey-seo />`),
     `<meta property="og:type" content="${escapeHtml(document.openGraph.type)}" data-codey-seo />`,
     `<meta property="og:title" content="${escapeHtml(document.openGraph.title)}" data-codey-seo />`,
@@ -548,6 +615,7 @@ export function injectSeoDocument(html, document) {
     .replace(/\s*<meta\s+name=(["'])description\1[^>]*\/?\s*>/gi, "")
     .replace(/\s*<(?:meta|link)\b[^>]*data-codey-seo[^>]*\/?\s*>/gi, "")
     .replace(/\s*<script\b[^>]*data-codey-seo[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(document.faviconUrl ? /\s*<link\b(?=[^>]*\brel=(["'])[^"']*\bicon\b[^"']*\1)[^>]*\/?\s*>/gi : /$^/, "")
     .replace(/<html\b[^>]*>/i, (tag) => {
       if (/\slang=(["']).*?\1/i.test(tag)) return tag.replace(/\slang=(["']).*?\1/i, ` lang="${htmlLang}"`);
       return tag.replace(/<html\b/i, `<html lang="${htmlLang}"`);
@@ -562,6 +630,9 @@ export function applySeoDocument(document) {
   const head = window.document.head;
   head.querySelectorAll("[data-codey-seo]").forEach((element) => element.remove());
   head.querySelectorAll("title, meta[name='description']").forEach((element) => element.remove());
+  if (document.faviconUrl) {
+    head.querySelectorAll("link[rel~='icon']").forEach((element) => element.remove());
+  }
   head.insertAdjacentHTML("beforeend", renderSeoHead(document));
   if (window.document.documentElement) window.document.documentElement.lang = document.htmlLang || "en";
 }

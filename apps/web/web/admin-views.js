@@ -1919,6 +1919,28 @@ function renderLaunchReadiness(readiness = {}) {
   `;
 }
 
+function renderSettingsImagePicker({ name, label, url = "", alt = "", help = "", square = false }) {
+  return `
+    <div class="settings-media-picker${square ? " is-square" : ""}" data-site-media-picker>
+      <label class="gallery-image-picker settings-image-picker">
+        <span class="gallery-image-label">${escapeHtml(label)}</span>
+        <span class="gallery-image-preview" data-site-image-preview>
+          ${url
+            ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt || label)}" />`
+            : '<span class="gallery-accordion-placeholder" aria-hidden="true">Upload image</span>'}
+        </span>
+        <span class="gallery-image-change" data-site-image-change>${url ? "&#9998;" : "Upload"}</span>
+        <input name="${escapeHtml(name)}File" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" data-site-image-picker-input />
+      </label>
+      <input name="${escapeHtml(name)}Remove" type="hidden" value="false" data-site-media-remove />
+      <div class="settings-media-picker-footer">
+        <small class="field-help">${escapeHtml(help)}</small>
+        <button type="button" class="secondary-button" data-clear-site-media${url ? "" : " hidden"}>Remove</button>
+      </div>
+    </div>
+  `;
+}
+
 export function renderSettingsPage(config) {
   const settings = config.siteSettings || {};
   const email = config.email || {};
@@ -1977,6 +1999,49 @@ export function renderSettingsPage(config) {
             <form class="admin-card settings-form" data-site-settings-form>
               <label><span>Site title</span><input name="title" value="${escapeHtml(settings.title || config.app?.name || "Code Epsylon")}" required /></label>
               <label><span>Site description</span><textarea name="description" rows="3">${escapeHtml(settings.description || "")}</textarea></label>
+              <div class="settings-form-section">
+                <div>
+                  <p class="section-label">Branding &amp; sharing</p>
+                  <h2>Website identity</h2>
+                </div>
+                <div class="settings-media-grid">
+                  ${renderSettingsImagePicker({
+                    name: "logo",
+                    label: "Logo",
+                    url: settings.logoUrl || "",
+                    alt: settings.logoAltText || settings.title || "Logo",
+                    help: "PNG or WebP with a transparent background works best."
+                  })}
+                  ${renderSettingsImagePicker({
+                    name: "favicon",
+                    label: "Browser icon",
+                    url: settings.faviconUrl || "",
+                    alt: "Browser icon",
+                    help: "Use a square PNG or WebP, ideally 512 x 512.",
+                    square: true
+                  })}
+                  ${renderSettingsImagePicker({
+                    name: "socialImage",
+                    label: "Social sharing image",
+                    url: settings.socialImageUrl || "",
+                    alt: settings.socialImageAlt || settings.title || "Social sharing image",
+                    help: "Used when a page has no image. Recommended size: 1200 x 630."
+                  })}
+                </div>
+                <div class="builder-form-grid settings-brand-fields">
+                  <label>
+                    <span>Logo display</span>
+                    <select name="logoMode">
+                      <option value="text"${settings.logoMode === "image" || settings.logoMode === "image-and-name" ? "" : " selected"}>Site name only</option>
+                      <option value="image"${settings.logoMode === "image" ? " selected" : ""}>Logo only</option>
+                      <option value="image-and-name"${settings.logoMode === "image-and-name" ? " selected" : ""}>Logo and site name</option>
+                    </select>
+                  </label>
+                  <label><span>Logo height</span><input name="logoHeight" type="number" min="20" max="120" step="1" value="${escapeHtml(settings.logoHeight || 42)}" /></label>
+                  <label><span>Logo description</span><input name="logoAltText" value="${escapeHtml(settings.logoAltText || settings.title || "")}" /></label>
+                  <label><span>Social image description</span><input name="socialImageAlt" value="${escapeHtml(settings.socialImageAlt || settings.title || "")}" /></label>
+                </div>
+              </div>
               <label><span>Default meta title</span><input name="metaTitle" value="${escapeHtml(settings.metaTitle || settings.title || config.app?.name || "")}" /></label>
               <label><span>Default meta description</span><textarea name="metaDescription" rows="3">${escapeHtml(settings.metaDescription || "")}</textarea></label>
               <label>

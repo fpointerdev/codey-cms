@@ -115,6 +115,14 @@ export function runtimeSeoContext(overrides = {}) {
     noindex: siteSettings.searchIndexing === false,
     defaultLocale: state.config?.localization?.defaultLocale || "en",
     storagePublicBaseUrl: state.config?.storage?.publicBaseUrl || "",
+    organizationLogo: siteSettings.logoUrl || "",
+    faviconUrl: siteSettings.faviconUrl || "",
+    defaultImage: siteSettings.socialImageUrl
+      ? {
+          url: siteSettings.socialImageUrl,
+          alt: siteSettings.socialImageAlt || siteSettings.title || "Website"
+        }
+      : undefined,
     ...overrides
   };
 }
@@ -713,7 +721,32 @@ function renderStructuredStats(stats) {
   return items ? `<dl class="structured-stats">${items}</dl>` : "";
 }
 
-function renderStructuredItems(items, variant = "cards", renderContext = {}) {
+function structuredDisplay(value) {
+  const display = isRecord(value?.display) ? value.display : {};
+  const columns = [2, 3, 4].includes(Number(display.columns)) ? Number(display.columns) : 3;
+
+  return {
+    alignment: oneOf(display.alignment, ["left", "center"], "left"),
+    density: oneOf(display.density, ["comfortable", "compact"], "comfortable"),
+    surface: oneOf(display.surface, ["plain", "outline", "soft"], "outline"),
+    columns,
+    showNumbers: display.showNumbers !== false,
+    striped: display.striped !== false,
+    ratio: oneOf(display.ratio, ["16 / 9", "4 / 3", "1 / 1"], "16 / 9"),
+    preload: oneOf(display.preload, ["metadata", "none"], "metadata"),
+    loop: display.loop === true
+  };
+}
+
+function structuredDisplayClasses(display) {
+  return [
+    `structured-align-${display.alignment}`,
+    `structured-density-${display.density}`,
+    `structured-surface-${display.surface}`
+  ].join(" ");
+}
+
+function renderStructuredItems(items, variant = "cards", renderContext = {}, display = structuredDisplay({})) {
   if (!Array.isArray(items)) return "";
 
   const token = cssToken(variant, "cards");
@@ -785,7 +818,85 @@ function renderStructuredItems(items, variant = "cards", renderContext = {}) {
     })
     .join("");
 
-  return html ? `<div class="structured-items card-grid structured-items-${escapeHtml(token)}">${html}</div>` : "";
+  return html
+    ? `<div class="structured-items card-grid structured-items-${escapeHtml(token)}" style="--structured-columns:${escapeHtml(display.columns)}">${html}</div>`
+    : "";
+}
+
+function renderStructuredProcess(items, display) {
+  if (!Array.isArray(items)) return "";
+
+  const steps = items
+    .map((item, index) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name", "label"]);
+      const body = firstText(item, ["body", "text", "copy", "description", "content"]);
+      const label = firstText(item, ["label", "kicker", "eyebrow", "meta"]);
+      const url = item.url ? safePublicHref(item.url) : "";
+      if (!title && !body) return "";
+
+      return `
+        <li class="structured-process-step">
+          <span class="structured-process-number" aria-hidden="true">${escapeHtml(String(index + 1).padStart(2, "0"))}</span>
+          <div class="structured-card-copy">
+            ${label && label !== title ? `<p class="structured-note">${escapeHtml(label)}</p>` : ""}
+            ${title ? `<h4>${escapeHtml(title)}</h4>` : ""}
+            ${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}
+            ${url ? `<a class="action-link" href="${escapeHtml(url)}">Learn more</a>` : ""}
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  if (!steps) return "";
+
+  return `<ol class="structured-process${display.showNumbers ? "" : " structured-process-hide-numbers"}" style="--structured-columns:${escapeHtml(display.columns)}">${steps}</ol>`;
+}
+
+function renderStructuredComparison(items, value, display) {
+  if (!Array.isArray(items)) return "";
+
+  const rows = items
+    .map((item) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name", "label"]);
+      const firstValue = firstText(item, ["firstValue", "first", "optionA"]);
+      const secondValue = firstText(item, ["secondValue", "second", "optionB"]);
+      if (!title && !firstValue && !secondValue) return "";
+
+      return `<tr><th scope="row">${escapeHtml(title)}</th><td>${escapeHtml(firstValue)}</td><td>${escapeHtml(secondValue)}</td></tr>`;
+    })
+    .join("");
+  if (!rows) return "";
+
+  const title = firstText(value, ["title", "heading", "headline", "name"]) || "Comparison";
+  const firstHeading = firstText(value, ["firstColumnTitle"]) || "Option A";
+  const secondHeading = firstText(value, ["secondColumnTitle"]) || "Option B";
+
+  return `
+    <div class="structured-comparison${display.striped ? " structured-comparison-striped" : ""}" tabindex="0">
+      <table>
+        <caption class="visually-hidden">${escapeHtml(title)}</caption>
+        <thead><tr><th scope="col">Feature</th><th scope="col">${escapeHtml(firstHeading)}</th><th scope="col">${escapeHtml(secondHeading)}</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderStructuredVideo(value, display) {
+  const src = safeMediaSrc(value.url);
+  if (!src) return '<div class="fallback-content">Video is not available.</div>';
+
+  const title = firstText(value, ["title", "heading", "headline", "name"]) || "Video";
+  return `
+    <figure class="structured-video" style="--structured-video-ratio:${escapeHtml(display.ratio)}">
+      <video src="${escapeHtml(src)}" controls playsinline preload="${escapeHtml(display.preload)}" aria-label="${escapeHtml(title)}"${display.loop ? " loop" : ""}>
+        <a href="${escapeHtml(src)}">Download ${escapeHtml(title)}</a>
+      </video>
+    </figure>
+  `;
 }
 
 function renderHeroPoints(items) {
@@ -915,14 +1026,17 @@ function renderStructuredAccordion(items, variant, renderContext = {}) {
   `;
 }
 
-function renderStructuredCollection(items, variant, blockKey, renderContext = {}) {
+function renderStructuredCollection(items, variant, blockKey, renderContext = {}, value = {}) {
   const token = cssToken(variant, "cards");
+  const display = structuredDisplay(value);
 
   if (token === "hero-points") return renderHeroPoints(items);
   if (token === "tabs") return renderStructuredTabs(items, token, blockKey, renderContext);
   if (token === "accordion" || token === "faq-accordion") return renderStructuredAccordion(items, token, renderContext);
+  if (token === "process-steps") return renderStructuredProcess(items, display);
+  if (token === "comparison-table") return renderStructuredComparison(items, value, display);
 
-  return renderStructuredItems(items, token, renderContext);
+  return renderStructuredItems(items, token, renderContext, display);
 }
 
 function renderStructuredBlock(block, renderContext = {}) {
@@ -933,13 +1047,18 @@ function renderStructuredBlock(block, renderContext = {}) {
   const body = firstText(value, ["body", "text", "copy", "description", "content"]);
   const note = firstText(value, ["note", "kicker", "eyebrow", "summary"]);
   const variant = firstText(value, ["variant", "type"]) || block.settings?.elementId || block.label || "content";
-  const imageHtml = renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
+  const variantToken = cssToken(variant);
+  const display = structuredDisplay(value);
+  const imageHtml = variantToken === "video"
+    ? renderStructuredVideo(value, display)
+    : renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
   const statsHtml = renderStructuredStats(value.stats || value.metrics);
   const itemsHtml = renderStructuredCollection(
     value.items || value.cards || value.people || value.logos || value.questions,
     variant,
     block.key,
-    renderContext
+    renderContext,
+    value
   );
   const cta = isRecord(value.cta) ? value.cta : null;
   const ctaHtml = cta?.label && cta?.url
@@ -950,7 +1069,7 @@ function renderStructuredBlock(block, renderContext = {}) {
   if (!title && !body && !note && !imageHtml && !statsHtml && !itemsHtml && !ctaHtml) return "";
 
   return `
-    <article class="structured-block structured-block-${escapeHtml(cssToken(variant))}">
+    <article class="structured-block structured-block-${escapeHtml(variantToken)} ${escapeHtml(structuredDisplayClasses(display))}">
       <div class="structured-block-copy">
         ${note ? `<p class="structured-note">${escapeHtml(note)}</p>` : ""}
         ${title ? `<${headingTag}>${escapeHtml(title)}</${headingTag}>` : ""}
@@ -1530,7 +1649,6 @@ function renderWebsiteSpecBackgroundMedia(section, renderContext) {
 function renderWebsiteSpecSection(section, renderContext) {
   const websiteSpec = section.settings?.websiteSpec;
   const type = websiteSpec?.type || "text";
-  const structured = websiteSpecStructuredValue(section);
   const intro = renderWebsiteSpecIntro(section, type === "hero" ? "h1" : "h2");
   const cta = renderWebsiteSpecCta(section);
 
@@ -1552,13 +1670,8 @@ function renderWebsiteSpecSection(section, renderContext) {
   }
 
   if (type === "custom") {
-    const items = Array.isArray(structured.items) ? structured.items : [];
-    const collection = renderStructuredItems(
-      items,
-      firstText(structured, ["variant"]) || "feature-cards",
-      renderContext
-    );
-    return `<div class="section-copy content-block">${intro}${cta}</div>${collection}`;
+    const custom = section.blocks.find((candidate) => candidate.type === "CUSTOM");
+    return custom ? renderBlock(custom, renderContext) : `<div class="section-copy content-block">${intro}${cta}</div>`;
   }
 
   if (type === "gallery") {

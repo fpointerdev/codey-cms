@@ -436,6 +436,70 @@ export const componentTemplates = [
     ]
   },
   {
+    id: "process-steps",
+    label: "Process Steps",
+    description: "Ordered steps for services, onboarding, delivery, or customer journeys.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Process steps",
+        value: {
+          variant: "process-steps",
+          title: "How it works",
+          body: "Make the next steps clear and easy to scan.",
+          items: [
+            { title: "Discover", body: "Clarify the goal, audience, scope, and success criteria.", label: "Step 1" },
+            { title: "Create", body: "Build the solution and review the important decisions together.", label: "Step 2" },
+            { title: "Launch", body: "Publish, verify, and hand over a setup that stays easy to manage.", label: "Step 3" }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "outline", columns: 3, showNumbers: true }
+        }
+      }
+    ]
+  },
+  {
+    id: "comparison-table",
+    label: "Comparison Table",
+    description: "Accessible comparison for plans, services, products, or capabilities.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Comparison",
+        value: {
+          variant: "comparison-table",
+          title: "Compare options",
+          body: "Help visitors understand the differences without reading several pages.",
+          firstColumnTitle: "Standard",
+          secondColumnTitle: "Advanced",
+          items: [
+            { title: "Core features", firstValue: "Included", secondValue: "Included" },
+            { title: "Custom configuration", firstValue: "Optional", secondValue: "Included" },
+            { title: "Priority support", firstValue: "No", secondValue: "Included" }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "outline", striped: true }
+        }
+      }
+    ]
+  },
+  {
+    id: "video",
+    label: "Video",
+    description: "Self-hosted MP4 or WebM video with accessible supporting content.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Video",
+        value: {
+          variant: "video",
+          title: "Video title",
+          body: "Add context so visitors and search engines understand the video.",
+          url: "",
+          display: { alignment: "left", ratio: "16 / 9", preload: "metadata", loop: false }
+        }
+      }
+    ]
+  },
+  {
     id: "text-layout",
     label: "Text Layout",
     description: "Heading and rich text copy for company or service sections.",

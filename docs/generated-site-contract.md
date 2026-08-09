@@ -99,8 +99,14 @@ Generated pages must use registered elements instead of anonymous JSON structure
 - Set `section.settings.elementId` to a valid `builder.elements[].id`.
 - Only use block types allowed by that element's `blockTypes`.
 - Treat `structured-content` as a fallback for unsupported generated content, not as the normal path.
-- Prefer the reusable visual elements for common sections: `hero-creative`, `stats-grid`, `feature-cards`, `team-section`, `logo-grid`, `testimonials`, `pricing-cards`, `faq-accordion`, `tabs`, and `accordion`.
+- Prefer the reusable visual elements for common sections: `hero-creative`, `stats-grid`, `feature-cards`, `team-section`, `logo-grid`, `testimonials`, `pricing-cards`, `faq-accordion`, `tabs`, `accordion`, `process-steps`, `comparison-table`, and `video`.
 - Populate visual element collections with meaningful item objects. Tabs, accordions, FAQs, testimonials, and feature cards need item titles plus body text; stats need labels plus values; pricing cards need titles plus prices or metrics.
+- Use `process-steps` items with `title`, `body`, and optional `label` and `url` values. The public renderer emits a semantic ordered list.
+- Use `comparison-table` with `firstColumnTitle`, `secondColumnTitle`, and item rows containing `title`, `firstValue`, and `secondValue`. The public renderer emits an accessible table.
+- Use `video` only with a CMS-managed MP4 or WebM `url`, a descriptive `title`, and optional rich `body`. The CMS never turns arbitrary embed HTML into an iframe.
+- Carry generator-safe custom elements as `type: "custom"` with the registered ID in `settings.elementId` and the element data in `settings.value`. The CMS validates and moves that bounded transport value into the persisted `CUSTOM` block atomically.
+- Structured elements may include a bounded `display` object. Supported options are `alignment` (`left` or `center`), `density` (`comfortable` or `compact`), `surface` (`plain`, `outline`, or `soft`), and `columns` (`2`, `3`, or `4`). Process steps also accept `showNumbers`; comparisons accept `striped`; videos accept `ratio` (`16 / 9`, `4 / 3`, or `1 / 1`), `preload` (`metadata` or `none`), and `loop`.
+- Published `faq-accordion` content automatically contributes matching `FAQPage` structured data. Keep every question and answer truthful and visible on the page.
 - Keep static gallery/portfolio pages on the `gallery` element and rotating media on `slider` or `carousel`.
 - Prefer `builder.sectionPatterns` for common full-section layouts before assembling low-level elements manually.
 - Use `builder.stylePresets` for visual direction before falling back to custom colors.

@@ -412,6 +412,16 @@ test("settings show whether backups are protected off-site", async () => {
 
   renderSettingsPage({
     app: { name: "CodeY CMS" },
+    siteSettings: {
+      title: "Example Studio",
+      logoUrl: "/uploads/logo.webp",
+      logoMode: "image-and-name",
+      logoAltText: "Example Studio logo",
+      logoHeight: 48,
+      faviconUrl: "/uploads/favicon.png",
+      socialImageUrl: "/uploads/social.webp",
+      socialImageAlt: "Example Studio preview"
+    },
     operationsDiagnostics: {
       status: "attention",
       operations: {
@@ -427,6 +437,13 @@ test("settings show whether backups are protected off-site", async () => {
   assert.match(page.innerHTML, /Backups need off-site protection/);
   assert.match(page.innerHTML, /Local only/);
   assert.match(page.innerHTML, /BACKUP_OFFSITE_PROTECTED=true/);
+  assert.match(page.innerHTML, /Website identity/);
+  assert.match(page.innerHTML, /name="logoFile"/);
+  assert.match(page.innerHTML, /name="faviconFile"/);
+  assert.match(page.innerHTML, /name="socialImageFile"/);
+  assert.match(page.innerHTML, /src="\/uploads\/logo\.webp"/);
+  assert.match(page.innerHTML, /data-clear-site-media/);
+  assert.doesNotMatch(page.innerHTML, /name="(?:logo|favicon|socialImage)Url"/);
 });
 
 test("read-only dashboard views hide mutation controls", async () => {

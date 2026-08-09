@@ -8,6 +8,8 @@ import { prisma } from "../../src/infrastructure/database/prisma.js";
 import { logger } from "../../src/infrastructure/logging/logger.js";
 import { applyWebsiteSpec } from "../../src/modules/config/website-spec.service.js";
 
+const { renderPageContent } = await import("../../apps/web/web/public-renderer.js");
+
 const ownerEmail = "first-owner@example.com";
 const ownerPassword = "FirstOwnerPassword123!";
 
@@ -139,6 +141,94 @@ test("an empty runtime can be claimed once and used immediately", { timeout: 60_
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await prisma.$disconnect();
   }
+});
+
+test("WebsiteSpec atomically imports custom elements that server-render publicly", { timeout: 60_000 }, async () => {
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const pageSlug = `custom-elements-${runId}`;
+  const elementValues = {
+    "process-steps": {
+      title: "How delivery works",
+      items: [
+        { title: "Plan", body: "Agree on scope." },
+        { title: "Launch", body: "Publish and verify." }
+      ],
+      display: { columns: 2, showNumbers: true }
+    },
+    "comparison-table": {
+      title: "Compare support",
+      firstColumnTitle: "Standard",
+      secondColumnTitle: "Priority",
+      items: [{ title: "Response", firstValue: "2 days", secondValue: "4 hours" }]
+    },
+    video: {
+      title: "Product tour",
+      body: "A short walkthrough.",
+      url: "/uploads/product-tour.mp4",
+      display: { ratio: "16 / 9", preload: "none", loop: false }
+    }
+  };
+
+  const result = await applyWebsiteSpec({ config, prisma, logger }, {
+    version: "1.0",
+    intent: "cms",
+    project: {
+      name: `Custom element import ${runId}`,
+      slug: `custom-element-import-${runId}`,
+      summary: "An atomic import of canonical custom builder elements.",
+      locale: "en",
+      timezone: "UTC",
+      currency: "EUR"
+    },
+    modules: { cms: true },
+    style: {
+      theme: "system",
+      colorPalette: { primary: "#17211b", accent: "#0f766e" }
+    },
+    pages: [{
+      title: "Custom elements",
+      slug: pageSlug,
+      purpose: "content",
+      sections: Object.entries(elementValues).map(([elementId, value]) => ({
+        key: elementId,
+        type: "custom",
+        settings: { elementId, value }
+      }))
+    }]
+  });
+
+  const page = await prisma.cmsPage.findUniqueOrThrow({
+    where: { locale_slug: { locale: "en", slug: pageSlug } },
+    include: {
+      sections: {
+        orderBy: { sortOrder: "asc" },
+        include: { blocks: { orderBy: { sortOrder: "asc" } } }
+      }
+    }
+  });
+
+  assert.equal(result.applied.pages, 1);
+  assert.deepEqual(
+    page.sections.map((section) => ({
+      elementId: (section.settings as Record<string, unknown>).elementId,
+      transportValueStored: Object.hasOwn(section.settings as object, "value"),
+      blockElementId: (section.blocks[0]?.settings as Record<string, unknown>).elementId,
+      value: section.blocks[0]?.value
+    })),
+    Object.entries(elementValues).map(([elementId, value]) => ({
+      elementId,
+      transportValueStored: false,
+      blockElementId: elementId,
+      value
+    }))
+  );
+
+  const html = renderPageContent(page);
+  assert.match(html, /<ol class="structured-process/);
+  assert.match(html, /<th scope="row">Response<\/th><td>2 days<\/td><td>4 hours<\/td>/);
+  assert.match(html, /<video src="\/uploads\/product-tour\.mp4" controls playsinline preload="none"/);
+  assert.doesNotMatch(html, /<iframe/);
+  await prisma.$disconnect();
 });
 
 test("a late WebsiteSpec failure rolls back every generated record", { timeout: 60_000 }, async () => {

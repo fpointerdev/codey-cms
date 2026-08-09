@@ -351,6 +351,69 @@
   margin-top: 18px;
 }
 
+.settings-form-section {
+  display: grid;
+  gap: 16px;
+  border-top: 1px solid var(--admin-line);
+  border-bottom: 1px solid var(--admin-line);
+  padding: 20px 0 6px;
+}
+
+.settings-form-section h2 {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.settings-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-media-picker {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.settings-image-picker {
+  min-width: 0;
+}
+
+.settings-form .settings-image-picker > span {
+  text-transform: none;
+}
+
+.settings-media-picker.is-square .gallery-image-preview {
+  width: min(100%, 144px);
+  aspect-ratio: 1;
+}
+
+.settings-media-picker-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-media-picker-footer .field-help {
+  margin: 0;
+}
+
+.settings-media-picker-footer .secondary-button {
+  min-height: 32px;
+  padding: 6px 9px;
+}
+
+.settings-brand-fields {
+  margin-bottom: 0;
+}
+
 .profile-mfa-card > form {
   display: grid;
   gap: 16px;
@@ -599,7 +662,8 @@
 
 @media (max-width: 760px) {
   .settings-two-column,
-  .locale-row {
+  .locale-row,
+  .settings-media-grid {
     grid-template-columns: 1fr;
   }
 

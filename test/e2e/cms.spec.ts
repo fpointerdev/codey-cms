@@ -24,6 +24,18 @@ test("admin settings and builder controls complete their primary workflows", asy
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/dashboard\/settings$/);
   await expect(page.locator("[data-launch-readiness]")).toBeVisible();
+  await page.getByText("General settings", { exact: true }).click();
+  const logoPicker = page.locator("[data-site-media-picker]").first();
+  await expect(page.getByRole("heading", { name: "Website identity" })).toBeVisible();
+  await page.locator('input[name="logoFile"]').setInputFiles({
+    name: "logo.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64")
+  });
+  await expect(logoPicker.locator("[data-site-image-preview] img")).toBeVisible();
+  await logoPicker.getByRole("button", { name: "Remove" }).click();
+  await expect(logoPicker.locator('[name="logoRemove"]')).toHaveValue("true");
+  await expect(logoPicker.getByText("Upload image", { exact: true })).toBeVisible();
   await page.getByText("Email", { exact: true }).click();
   await expect(page.locator("[data-email-settings-form]")).toBeVisible();
   await expect(page.getByLabel("Provider API key")).toHaveAttribute("type", "password");
@@ -184,6 +196,26 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await expect(page.locator("[data-builder-template='slider']")).toBeVisible();
   await expect(page.locator("[data-builder-template='gallery']")).toBeHidden();
   await librarySearch.fill("");
+
+  const blockCount = await page.locator("[data-builder-block-key]").count();
+  await librarySearch.fill("process steps");
+  await expect(page.locator("[data-builder-template='process-steps']")).toBeVisible();
+  await page.locator("[data-builder-template='process-steps']").click();
+  await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount + 1);
+
+  const processBlock = page.locator("[data-builder-block-key]").filter({ hasText: "Process steps" }).last();
+  await processBlock.locator("[data-builder-edit-block]").click();
+  const editorDialog = page.getByRole("dialog", { name: "Process steps" });
+  await expect(editorDialog.getByRole("tab", { name: "Content" })).toBeVisible();
+  await expect(editorDialog.getByRole("tab", { name: "Settings" })).toBeVisible();
+  await expect(editorDialog.getByRole("tab", { name: "Style" })).toBeVisible();
+  await expect(editorDialog.getByRole("tab")).toHaveCount(3);
+  await editorDialog.getByRole("tab", { name: "Settings" }).click();
+  await expect(editorDialog.getByLabel("Desktop columns")).toBeVisible();
+  await expect(editorDialog.getByLabel("Show step numbers")).toBeVisible();
+  await editorDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Undo last canvas change" }).click();
+  await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
 
   await page.locator("[data-builder-rail-view='structure']").click();
   const firstStructureSection = page.locator("[data-builder-structure-section]").first();

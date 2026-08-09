@@ -1319,11 +1319,44 @@ function filePreviewHtml(files = []) {
 
 function bindFilePreviewEvents() {
   elements.page.addEventListener("change", (event) => {
+    const siteImageInput = event.target.closest("[data-site-image-picker-input]");
+    if (siteImageInput) {
+      const file = Array.from(siteImageInput.files || []).find((item) => item?.type?.startsWith("image/") && item.size);
+      const picker = siteImageInput.closest("[data-site-media-picker]");
+      const preview = picker?.querySelector("[data-site-image-preview]");
+      if (!file || !preview || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return;
+
+      preview.innerHTML = `<img src="${escapeHtml(URL.createObjectURL(file))}" alt="" />`;
+      const remove = picker.querySelector("[data-site-media-remove]");
+      const removeButton = picker.querySelector("[data-clear-site-media]");
+      const change = picker.querySelector("[data-site-image-change]");
+      if (remove) remove.value = "false";
+      if (removeButton) removeButton.hidden = false;
+      if (change) change.innerHTML = "&#9998;";
+      return;
+    }
+
     const input = event.target.closest("[data-file-preview-input]");
     const preview = input?.parentElement?.querySelector?.("[data-file-preview]");
     if (!input || !preview) return;
 
     preview.innerHTML = filePreviewHtml(Array.from(input.files || []));
+  });
+
+  elements.page.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-clear-site-media]");
+    const picker = button?.closest("[data-site-media-picker]");
+    if (!button || !picker) return;
+
+    const input = picker.querySelector("[data-site-image-picker-input]");
+    const preview = picker.querySelector("[data-site-image-preview]");
+    const remove = picker.querySelector("[data-site-media-remove]");
+    const change = picker.querySelector("[data-site-image-change]");
+    if (input) input.value = "";
+    if (preview) preview.innerHTML = '<span class="gallery-accordion-placeholder" aria-hidden="true">Upload image</span>';
+    if (remove) remove.value = "true";
+    if (change) change.textContent = "Upload";
+    button.hidden = true;
   });
 }
 

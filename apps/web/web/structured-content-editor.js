@@ -153,8 +153,188 @@ const visualCollectionEditors = {
       { key: "body", label: "Panel content", type: "richtext" },
       { key: "open", label: "Open by default", type: "checkbox", required: false }
     ]
+  },
+  "process-steps": {
+    keys: ["items", "steps"],
+    label: "Steps",
+    minRows: 3,
+    fields: [
+      { key: "title", label: "Step title" },
+      { key: "body", label: "Step details", type: "richtext" },
+      { key: "label", label: "Small label", required: false },
+      { key: "url", label: "Optional link", required: false }
+    ]
+  },
+  "comparison-table": {
+    keys: ["items", "rows"],
+    label: "Rows",
+    minRows: 3,
+    fields: [
+      { key: "title", label: "Feature" },
+      { key: "firstValue", label: "First option" },
+      { key: "secondValue", label: "Second option" }
+    ]
   }
 };
+
+const structuredGridVariants = new Set([
+  "stats-grid",
+  "feature-cards",
+  "team-section",
+  "logo-grid",
+  "testimonials",
+  "pricing-cards",
+  "process-steps"
+]);
+
+function selectedValue(value, allowed, fallback) {
+  return allowed.includes(value) ? value : fallback;
+}
+
+function structuredDisplayEditor(variant, value) {
+  const supported = Boolean(visualCollectionEditors[variant]) || variant === "video";
+  if (!supported) return null;
+
+  const display = isRecord(value.display) ? value.display : {};
+  const fields = [
+    {
+      name: "structuredAlignment",
+      label: "Content alignment",
+      type: "select",
+      value: selectedValue(display.alignment, ["left", "center"], "left"),
+      options: [
+        { value: "left", label: "Left" },
+        { value: "center", label: "Centered" }
+      ],
+      group: "Settings"
+    }
+  ];
+
+  if (variant === "video") {
+    fields.push(
+      {
+        name: "structuredVideoRatio",
+        label: "Aspect ratio",
+        type: "select",
+        value: selectedValue(display.ratio, ["16 / 9", "4 / 3", "1 / 1"], "16 / 9"),
+        options: [
+          { value: "16 / 9", label: "Widescreen" },
+          { value: "4 / 3", label: "Standard" },
+          { value: "1 / 1", label: "Square" }
+        ],
+        group: "Settings"
+      },
+      {
+        name: "structuredVideoPreload",
+        label: "Loading",
+        type: "select",
+        value: selectedValue(display.preload, ["metadata", "none"], "metadata"),
+        options: [
+          { value: "metadata", label: "Load video details" },
+          { value: "none", label: "Load on play" }
+        ],
+        group: "Settings"
+      },
+      {
+        name: "structuredVideoLoop",
+        label: "Loop video",
+        type: "checkbox",
+        checked: display.loop === true,
+        group: "Settings"
+      }
+    );
+  } else {
+    fields.push(
+      {
+        name: "structuredDensity",
+        label: "Spacing",
+        type: "select",
+        value: selectedValue(display.density, ["comfortable", "compact"], "comfortable"),
+        options: [
+          { value: "comfortable", label: "Comfortable" },
+          { value: "compact", label: "Compact" }
+        ],
+        group: "Settings"
+      },
+      {
+        name: "structuredSurface",
+        label: "Item style",
+        type: "select",
+        value: selectedValue(display.surface, ["plain", "outline", "soft"], "outline"),
+        options: [
+          { value: "plain", label: "Plain" },
+          { value: "outline", label: "Outlined" },
+          { value: "soft", label: "Soft background" }
+        ],
+        group: "Settings"
+      }
+    );
+  }
+
+  if (structuredGridVariants.has(variant)) {
+    fields.push({
+      name: "structuredColumns",
+      label: "Desktop columns",
+      type: "select",
+      value: String([2, 3, 4].includes(Number(display.columns)) ? Number(display.columns) : 3),
+      options: [
+        { value: "2", label: "2 columns" },
+        { value: "3", label: "3 columns" },
+        { value: "4", label: "4 columns" }
+      ],
+      group: "Settings"
+    });
+  }
+
+  if (variant === "process-steps") {
+    fields.push({
+      name: "structuredShowNumbers",
+      label: "Show step numbers",
+      type: "checkbox",
+      checked: display.showNumbers !== false,
+      group: "Settings"
+    });
+  }
+
+  if (variant === "comparison-table") {
+    fields.push({
+      name: "structuredStripedRows",
+      label: "Alternate row backgrounds",
+      type: "checkbox",
+      checked: display.striped !== false,
+      group: "Settings"
+    });
+  }
+
+  return {
+    fields,
+    valueFrom(values) {
+      const next = {
+        ...display,
+        alignment: selectedValue(values.structuredAlignment, ["left", "center"], "left")
+      };
+
+      if (variant === "video") {
+        next.ratio = selectedValue(values.structuredVideoRatio, ["16 / 9", "4 / 3", "1 / 1"], "16 / 9");
+        next.preload = selectedValue(values.structuredVideoPreload, ["metadata", "none"], "metadata");
+        next.loop = values.structuredVideoLoop === true;
+      } else {
+        next.density = selectedValue(values.structuredDensity, ["comfortable", "compact"], "comfortable");
+        next.surface = selectedValue(values.structuredSurface, ["plain", "outline", "soft"], "outline");
+      }
+
+      if (structuredGridVariants.has(variant)) {
+        next.columns = [2, 3, 4].includes(Number(values.structuredColumns))
+          ? Number(values.structuredColumns)
+          : 3;
+      }
+      if (variant === "process-steps") next.showNumbers = values.structuredShowNumbers === true;
+      if (variant === "comparison-table") next.striped = values.structuredStripedRows === true;
+
+      return next;
+    }
+  };
+}
 
 function normalizedVariant(value, block) {
   const variant = firstText(value, ["variant", "type"]) || block.settings?.elementId || "";
@@ -206,7 +386,7 @@ function visualCollectionEditor(block, value) {
 
   for (let index = 0; index < rowCount; index += 1) {
     const item = isRecord(items[index]) ? items[index] : {};
-    const group = config.label;
+    const group = "Content";
 
     addField(fields, {
       name: `structuredItem${index + 1}Section`,
@@ -365,6 +545,8 @@ export function structuredContentEditor(block) {
   const cardsKey = firstKey(value, ["cards", "features"]);
   const projectsKey = firstKey(value, ["projects", "works"]);
   const collectionEditor = visualCollectionEditor(block, value);
+  const variant = normalizedVariant(value, block);
+  const displayEditor = structuredDisplayEditor(variant, value);
   const handledCollectionKey = collectionEditor?.collectionKey || "";
 
   if (!titleKey && !bodyKey && !noteKey && !imageKey && !statsKey && !itemsKey && !actionsKey && !cardsKey && !projectsKey) {
@@ -413,6 +595,32 @@ export function structuredContentEditor(block) {
       name: "structuredImageAlt",
       label: "Image description",
       value: image.alt || image.title || ""
+    });
+  }
+
+  if (variant === "comparison-table") {
+    addField(fields, {
+      name: "structuredFirstColumnTitle",
+      label: "First option heading",
+      value: firstText(value, ["firstColumnTitle"]) || "Option A"
+    });
+    addField(fields, {
+      name: "structuredSecondColumnTitle",
+      label: "Second option heading",
+      value: firstText(value, ["secondColumnTitle"]) || "Option B"
+    });
+  }
+
+  if (variant === "video") {
+    addField(fields, {
+      name: "structuredVideoFile",
+      label: value.url ? "Replace video" : "Video file",
+      type: "file",
+      accept: "video/mp4,video/webm",
+      required: false,
+      help: value.url
+        ? "The current video stays published until you upload a replacement."
+        : "Upload an MP4 or WebM file within the site upload limit."
     });
   }
 
@@ -474,6 +682,9 @@ export function structuredContentEditor(block) {
   if (collectionEditor) {
     fields.push(...collectionEditor.fields);
   }
+  if (displayEditor) {
+    fields.push(...displayEditor.fields);
+  }
 
   return {
     fields,
@@ -489,6 +700,15 @@ export function structuredContentEditor(block) {
       if (cardsKey && cardsKey !== handledCollectionKey) next[cardsKey] = textToRows(values.structuredCards, value[cardsKey], ["title", "body", "meta", "url"]);
       if (projectsKey && projectsKey !== handledCollectionKey) next[projectsKey] = textToRows(values.structuredProjects, value[projectsKey], ["title", "meta", "category", "url"]);
       if (collectionEditor) next[collectionEditor.collectionKey] = collectionEditor.valueFrom(values);
+      if (displayEditor) next.display = displayEditor.valueFrom(values);
+      if (variant === "comparison-table") {
+        next.firstColumnTitle = values.structuredFirstColumnTitle || "Option A";
+        next.secondColumnTitle = values.structuredSecondColumnTitle || "Option B";
+      }
+      if (variant === "video" && mediaAsset?.url) {
+        next.url = mediaAsset.url;
+        next.mediaAssetId = mediaAsset.id;
+      }
 
       if (imageKey) {
         const existingImage = typeof value[imageKey] === "string" ? { url: value[imageKey] } : value[imageKey] || {};

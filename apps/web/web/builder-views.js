@@ -38,6 +38,9 @@ function templateIcon(templateId) {
     "faq-accordion": "FQ",
     tabs: "TB",
     accordion: "AC",
+    "process-steps": "PS",
+    "comparison-table": "CP",
+    video: "VD",
     "text-layout": "TX",
     "image-text": "IM",
     cta: "CT",
@@ -163,6 +166,7 @@ function templateCategory(templateId) {
     carousel: "media",
     gallery: "media",
     "image-text": "media",
+    video: "media",
     "pricing-cards": "commerce",
     "product-list": "commerce",
     "contact-form": "forms"

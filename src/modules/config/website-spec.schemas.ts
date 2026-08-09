@@ -66,6 +66,70 @@ const contentItemSchema = z
   })
   .strict();
 
+const customValueMaxBytes = 64_000;
+const customValueMaxDepth = 8;
+const customValueMaxEntries = 2_000;
+
+const websiteSpecSectionSettingsSchema = z.record(z.unknown());
+
+function portableCustomValueIssue(value: unknown) {
+  if (!isPlainRecord(value)) {
+    return "Custom element value must be a JSON object.";
+  }
+
+  const state = { entries: 0 };
+  const structuralIssue = portableJsonIssue(value, 0, state);
+  if (structuralIssue) return structuralIssue;
+
+  const serialized = JSON.stringify(value);
+  if (new TextEncoder().encode(serialized).byteLength > customValueMaxBytes) {
+    return "Custom element value must be no larger than 64 KB.";
+  }
+
+  return null;
+}
+
+function portableJsonIssue(value: unknown, depth: number, state: { entries: number }): string | null {
+  state.entries += 1;
+  if (state.entries > customValueMaxEntries) return "Custom element value has too many entries.";
+  if (depth > customValueMaxDepth) return "Custom element value is nested too deeply.";
+
+  if (value === null || typeof value === "boolean") return null;
+  if (typeof value === "string") {
+    return value.length <= 12_000 ? null : "Custom element strings must be no longer than 12,000 characters.";
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? null : "Custom element numbers must be finite.";
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length > 100) return "Custom element arrays may contain at most 100 items.";
+    for (const item of value) {
+      const issue = portableJsonIssue(item, depth + 1, state);
+      if (issue) return issue;
+    }
+    return null;
+  }
+
+  if (!isPlainRecord(value)) return "Custom element value must contain only JSON-compatible data.";
+  const entries = Object.entries(value);
+  if (entries.length > 100) return "Custom element objects may contain at most 100 properties.";
+
+  for (const [key, item] of entries) {
+    if (key.length > 120) return "Custom element property names must be no longer than 120 characters.";
+    const issue = portableJsonIssue(item, depth + 1, state);
+    if (issue) return issue;
+  }
+
+  return null;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 export const websiteSpecMediaSchema = z
   .object({
     key: slugSchema,
@@ -114,9 +178,21 @@ export const websiteSpecSectionSchema = z
     galleryMediaKeys: z.array(slugSchema).max(24).default([]),
     productSlugs: z.array(slugSchema).max(100).default([]),
     cta: ctaSchema.optional(),
-    settings: z.record(z.unknown()).default({})
+    settings: websiteSpecSectionSettingsSchema.default({})
   })
-  .strict();
+  .strict()
+  .superRefine((section, context) => {
+    if (section.type !== "custom" || !Object.hasOwn(section.settings, "value")) return;
+
+    const issue = portableCustomValueIssue(section.settings.value);
+    if (issue) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["settings", "value"],
+        message: issue
+      });
+    }
+  });
 
 export const websiteSpecPageSchema = z
   .object({

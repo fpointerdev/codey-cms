@@ -9,6 +9,7 @@ import {
   type DeploymentProfileId
 } from "../manifest.js";
 import {
+  builderElementById,
   builderElementForSectionType,
   builderElementRegistry,
   builderRegistryVersion,
@@ -62,6 +63,7 @@ type GeneratedContentBlock = {
   editable: boolean;
   mediaKey?: string;
   mediaAssetId?: string;
+  settings?: Record<string, unknown>;
 };
 
 type GeneratedPageSection = {
@@ -621,7 +623,8 @@ function mapSection(
   const media = sectionMedia
     ? mediaPlaceholders.find((item) => item.key === sectionMedia)
     : undefined;
-  const builderElement = builderElementForSectionType(section.type);
+  const requestedCustomElement = generatorSafeCustomElement(section);
+  const builderElement = requestedCustomElement ?? builderElementForSectionType(section.type);
   const structuredSection = ["featureGrid", "pricing", "faq", "custom"].includes(section.type);
 
   if (section.eyebrow) {
@@ -772,19 +775,24 @@ function mapSection(
   }
 
   if (structuredSection || blocks.length === 0) {
+    const customValue = requestedCustomElement && isRecord(section.settings.value)
+      ? section.settings.value
+      : {
+          variant: builderElement?.id ?? section.type,
+          type: section.type,
+          heading: section.heading,
+          body: section.body,
+          items: mapSectionItems(section.items, mediaPlaceholders),
+          ...(section.cta ? { cta: section.cta } : {}),
+          ...(section.type === "custom" ? {} : { settings: section.settings })
+        };
+
     blocks.push({
       key: `${section.key}-content`,
       type: "CUSTOM",
       label: section.heading ?? section.type,
-      value: {
-        variant: builderElement?.id ?? section.type,
-        type: section.type,
-        heading: section.heading,
-        body: section.body,
-        items: mapSectionItems(section.items, mediaPlaceholders),
-        ...(section.cta ? { cta: section.cta } : {}),
-        settings: section.settings
-      },
+      value: customValue,
+      settings: { elementId: builderElement?.id ?? "structured-content" },
       sortOrder: blocks.length,
       editable: true
     });
@@ -803,10 +811,15 @@ function generatedSectionSettings(
   elementId: string | undefined
 ) {
   const settings = section.settings;
+  const storedSettings = { ...settings };
+  if (section.type === "custom") {
+    delete storedSettings.value;
+    delete storedSettings.elementId;
+  }
   const requestedLayout = typeof settings.layout === "string" ? settings.layout : "";
 
   return {
-    ...settings,
+    ...storedSettings,
     template: sectionTemplateByType[section.type],
     layout: supportedSectionLayout(requestedLayout, section.type),
     container: supportedSetting(settings.container, ["narrow", "default", "wide", "full"], "wide"),
@@ -818,6 +831,15 @@ function generatedSectionSettings(
     },
     elementId: elementId ?? "structured-content"
   };
+}
+
+function generatorSafeCustomElement(section: WebsiteSpecSection) {
+  if (section.type !== "custom" || typeof section.settings.elementId !== "string") return undefined;
+
+  const element = builderElementById(section.settings.elementId);
+  if (!element?.generatorSafe || !element.blockTypes.some((blockType) => blockType === "CUSTOM")) return undefined;
+
+  return element;
 }
 
 function supportedSectionLayout(value: string, type: WebsiteSpecSection["type"]) {
@@ -835,6 +857,10 @@ function supportedSectionLayout(value: string, type: WebsiteSpecSection["type"])
 
 function supportedSetting(value: unknown, allowed: string[], fallback: string) {
   return typeof value === "string" && allowed.includes(value) ? value : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function headingBlock(

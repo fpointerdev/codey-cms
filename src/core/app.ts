@@ -556,6 +556,13 @@ async function readSiteSeoDefaults() {
       experience: undefined,
       generatedCss: "",
       generatedFrom: "",
+      logoUrl: "",
+      logoMode: "text",
+      logoAltText: "",
+      logoHeight: 42,
+      faviconUrl: "",
+      socialImageUrl: "",
+      socialImageAlt: "",
       customCss: ""
     };
   }
@@ -597,6 +604,9 @@ async function readSiteSeoDefaults() {
     logoMode: typeof storedSettings.logoMode === "string" ? storedSettings.logoMode : "text",
     logoAltText: typeof storedSettings.logoAltText === "string" ? storedSettings.logoAltText : "",
     logoHeight: typeof storedSettings.logoHeight === "number" ? storedSettings.logoHeight : 42,
+    faviconUrl: typeof storedSettings.faviconUrl === "string" ? storedSettings.faviconUrl : "",
+    socialImageUrl: typeof storedSettings.socialImageUrl === "string" ? storedSettings.socialImageUrl : "",
+    socialImageAlt: typeof storedSettings.socialImageAlt === "string" ? storedSettings.socialImageAlt : "",
     customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }
@@ -608,11 +618,16 @@ function seoDocumentContext(
 ) {
   return {
     origin,
-    siteName: site.title || config.app.name,
+    siteName: site.brandTitle || site.title || config.app.name,
     siteDescription: site.description,
     noindex: site.noindex === true,
     defaultLocale: localization.defaultLocale,
-    storagePublicBaseUrl: config.storage.publicBaseUrl
+    storagePublicBaseUrl: config.storage.publicBaseUrl,
+    organizationLogo: site.logoUrl,
+    faviconUrl: site.faviconUrl,
+    defaultImage: site.socialImageUrl
+      ? { url: site.socialImageUrl, alt: site.socialImageAlt || site.brandTitle || site.title }
+      : undefined
   };
 }
 

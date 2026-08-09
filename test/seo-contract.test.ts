@@ -54,6 +54,74 @@ test("shared SEO documents cover canonical, social, hreflang, and schema metadat
   assert.match(injected, /<html lang="en">/);
 });
 
+test("site branding supplies favicon, social fallback, and organization logo metadata", () => {
+  const document = createPageSeoDocument({
+    title: "Contact",
+    slug: "contact",
+    locale: "en",
+    excerpt: "Contact the studio."
+  }, {
+    origin: "https://example.com",
+    siteName: "Example Studio",
+    defaultLocale: "en",
+    organizationLogo: "/uploads/logo.webp",
+    faviconUrl: "/uploads/favicon.png",
+    defaultImage: {
+      url: "/uploads/social.webp",
+      alt: "Example Studio preview"
+    }
+  });
+  const head = renderSeoHead(document);
+  const schema = JSON.stringify(document.structuredData);
+
+  assert.equal(document.openGraph.image.url, "https://example.com/uploads/social.webp");
+  assert.equal(document.twitter.card, "summary_large_image");
+  assert.match(head, /rel="icon" href="https:\/\/example\.com\/uploads\/favicon\.png"/);
+  assert.match(head, /property="og:image" content="https:\/\/example\.com\/uploads\/social\.webp"/);
+  assert.match(schema, /"logo":\{"@type":"ImageObject","url":"https:\/\/example\.com\/uploads\/logo\.webp"\}/);
+
+  const injected = injectSeoDocument(
+    '<!doctype html><html><head><link rel="icon" href="/favicon.svg"></head><body></body></html>',
+    document
+  );
+  assert.equal((injected.match(/rel="icon"/g) || []).length, 1);
+  assert.doesNotMatch(injected, /favicon\.svg/);
+});
+
+test("published FAQ elements add matching FAQPage structured data", () => {
+  const document = createPageSeoDocument({
+    title: "Support",
+    slug: "support",
+    locale: "en",
+    sections: [{
+      key: "questions",
+      settings: { elementId: "faq-accordion" },
+      blocks: [{
+        key: "faq",
+        type: "CUSTOM",
+        settings: { elementId: "faq-accordion" },
+        value: {
+          variant: "faq-accordion",
+          items: [
+            { title: "Can I edit the site?", body: "<p>Yes, from the <strong>CMS</strong>.</p>" },
+            { title: "Is setup required?", body: "Complete the guided first-run setup." }
+          ]
+        }
+      }]
+    }]
+  }, {
+    origin: "https://example.com",
+    siteName: "Example",
+    defaultLocale: "en"
+  });
+  const schema = JSON.stringify(document.structuredData);
+
+  assert.match(schema, /"@type":"FAQPage"/);
+  assert.match(schema, /"name":"Can I edit the site\?"/);
+  assert.match(schema, /"text":"Yes, from the CMS\."/);
+  assert.doesNotMatch(schema, /<p>|<strong>/);
+});
+
 test("language switchers use published alternates instead of guessing translated slugs", () => {
   const document = createPageSeoDocument({
     title: "About",

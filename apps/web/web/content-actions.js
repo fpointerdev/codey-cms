@@ -110,14 +110,25 @@ async function fileToBase64(file) {
   return btoa(binary);
 }
 
+export function mediaKindForMimeType(mimeType = "") {
+  return mimeType.startsWith("image/")
+    ? "IMAGE"
+    : mimeType.startsWith("video/")
+      ? "VIDEO"
+      : mimeType === "application/pdf"
+        ? "DOCUMENT"
+        : "OTHER";
+}
+
 export async function uploadMediaFile(file, altText = "") {
+  const kind = mediaKindForMimeType(file.type || "");
   const { asset } = await api("/cms/media/upload", {
     method: "POST",
     body: JSON.stringify({
       filename: file.name || `upload-${Date.now()}`,
       mimeType: file.type || "application/octet-stream",
       dataBase64: await fileToBase64(file),
-      kind: file.type?.startsWith("image/") ? "IMAGE" : "OTHER",
+      kind,
       altText
     })
   });
@@ -203,7 +214,7 @@ function cssSettingsPayload(block, values) {
 }
 
 function withCustomCssField(block, fields, options = {}) {
-  const animationGroup = options.animationGroup || "Configuration";
+  const animationGroup = options.animationGroup || "Settings";
   const animation = sanitizeAnimationSettings(block.settings?.animation || {});
 
   return [
@@ -440,8 +451,10 @@ export async function editContentBlock(page, blockKey) {
     });
     if (!values) return null;
 
-    const file = selectedFile(values.structuredImageFile);
-    const mediaAsset = file ? await uploadMediaFile(file, values.structuredImageAlt || block.label || "") : null;
+    const file = selectedFile(values.structuredImageFile) || selectedFile(values.structuredVideoFile);
+    const mediaAsset = file
+      ? await uploadMediaFile(file, values.structuredImageAlt || values.structuredTitle || block.label || "")
+      : null;
 
     return updatePageBlock(page.slug, block, {
       value: structuredEditor.valueFrom(values, mediaAsset),
@@ -703,6 +716,16 @@ const containerLayoutOptions = [
   { value: "full-bleed", label: "Full width", description: "Wide media, hero, or immersive sections." }
 ];
 
+async function siteSettingImage(formData, name, currentUrl, altText) {
+  if (String(formData.get(`${name}Remove`) || "") === "true") return "";
+
+  const file = selectedFile(formData.get(`${name}File`));
+  if (!file) return String(currentUrl || "").trim();
+
+  const asset = await uploadMediaFile(file, altText || file.name || name);
+  return asset.url;
+}
+
 export async function saveSiteSettings(form) {
   const formData = new FormData(form);
   const current = state.config?.siteSettings || {};
@@ -716,11 +739,22 @@ export async function saveSiteSettings(form) {
       ? String(formData.get(key)) === "true"
       : current[key] !== false
   );
+  const settingNumber = (key, fallback, minimum, maximum) => {
+    const value = Number(formData.has(key) ? formData.get(key) : current[key]);
+    return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, Math.round(value))) : fallback;
+  };
 
   setFormDisabled(form, true);
   setFormMessage(form, "Saving settings...");
 
   try {
+    const logoAltText = settingValue("logoAltText") || settingValue("title");
+    const socialImageAlt = settingValue("socialImageAlt") || settingValue("title");
+    const [logoUrl, faviconUrl, socialImageUrl] = await Promise.all([
+      siteSettingImage(formData, "logo", current.logoUrl, logoAltText),
+      siteSettingImage(formData, "favicon", current.faviconUrl, "Browser icon"),
+      siteSettingImage(formData, "socialImage", current.socialImageUrl, socialImageAlt)
+    ]);
     const response = await api("/config/site-settings", {
       method: "PATCH",
       body: JSON.stringify({
@@ -731,6 +765,15 @@ export async function saveSiteSettings(form) {
         siteUrl: settingValue("siteUrl"),
         searchIndexing: settingBoolean("searchIndexing"),
         sitemapEnabled: settingBoolean("sitemapEnabled"),
+        logoUrl,
+        logoMode: ["text", "image", "image-and-name"].includes(settingValue("logoMode"))
+          ? settingValue("logoMode")
+          : "text",
+        logoAltText,
+        logoHeight: settingNumber("logoHeight", 42, 20, 120),
+        faviconUrl,
+        socialImageUrl,
+        socialImageAlt,
         design: designSystemFromForm(form, current.design),
         customCss: settingValue("customCss")
       })

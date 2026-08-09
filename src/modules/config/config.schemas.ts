@@ -156,6 +156,22 @@ export const designSystemSettingsSchema = z.object({
   }).default(defaultDesignSystemSettings.footer)
 }).default(defaultDesignSystemSettings);
 
+const siteImageUrlSchema = z
+  .string()
+  .trim()
+  .max(120_000)
+  .refine((value) => {
+    if (!value || value.startsWith("/")) return true;
+    if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);(?:base64|utf8),/i.test(value)) return true;
+
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Use an uploaded image or an HTTP(S) image URL.");
+
 export const siteSettingsSchema = z.object({
   title: z.string().trim().min(1).max(160),
   description: z.string().trim().max(500).optional().default(""),
@@ -164,6 +180,13 @@ export const siteSettingsSchema = z.object({
   siteUrl: z.string().trim().url().max(300).or(z.literal("")).optional().default(""),
   searchIndexing: z.boolean().optional().default(true),
   sitemapEnabled: z.boolean().optional().default(true),
+  logoUrl: siteImageUrlSchema.optional().default(""),
+  logoMode: z.enum(["text", "image", "image-and-name"]).optional().default("text"),
+  logoAltText: z.string().trim().max(160).optional().default(""),
+  logoHeight: z.number().int().min(20).max(120).optional().default(42),
+  faviconUrl: siteImageUrlSchema.optional().default(""),
+  socialImageUrl: siteImageUrlSchema.optional().default(""),
+  socialImageAlt: z.string().trim().max(240).optional().default(""),
   design: designSystemSettingsSchema.optional().default(defaultDesignSystemSettings),
   customCss: z.string().trim().max(20000).optional().default("")
 });

@@ -126,6 +126,9 @@ async function readSiteSettings(context: ModuleContext) {
     logoMode: typeof storedSettings.logoMode === "string" ? storedSettings.logoMode : "text",
     logoAltText: typeof storedSettings.logoAltText === "string" ? storedSettings.logoAltText : "",
     logoHeight: typeof storedSettings.logoHeight === "number" ? storedSettings.logoHeight : 42,
+    faviconUrl: typeof storedSettings.faviconUrl === "string" ? storedSettings.faviconUrl : "",
+    socialImageUrl: typeof storedSettings.socialImageUrl === "string" ? storedSettings.socialImageUrl : "",
+    socialImageAlt: typeof storedSettings.socialImageAlt === "string" ? storedSettings.socialImageAlt : "",
     customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }
