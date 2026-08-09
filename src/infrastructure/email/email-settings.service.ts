@@ -12,6 +12,7 @@ type StoredEmailSettings = {
   from?: string;
   httpEndpoint?: string;
   encryptedCredentials?: string;
+  credentialsRequired?: boolean;
   lastTestedAt?: string;
   lastTestSucceeded?: boolean;
   lastTestMessage?: string;
@@ -58,6 +59,7 @@ function asStoredSettings(value: Prisma.JsonValue | null | undefined): StoredEma
     from: typeof record.from === "string" ? record.from : undefined,
     httpEndpoint: typeof record.httpEndpoint === "string" ? record.httpEndpoint : undefined,
     encryptedCredentials: typeof record.encryptedCredentials === "string" ? record.encryptedCredentials : undefined,
+    credentialsRequired: record.credentialsRequired === true,
     lastTestedAt: typeof record.lastTestedAt === "string" ? record.lastTestedAt : undefined,
     lastTestSucceeded: typeof record.lastTestSucceeded === "boolean" ? record.lastTestSucceeded : undefined,
     lastTestMessage: typeof record.lastTestMessage === "string" ? record.lastTestMessage : undefined,
@@ -94,6 +96,7 @@ export class EmailSettingsService {
         timeoutMs: this.config.email.timeoutMs
       }),
       httpBearerToken: credentials.bearerToken,
+      credentialsRequired: stored.credentialsRequired === true,
       timeoutMs: this.config.email.timeoutMs,
       source: "dashboard",
       lastTestedAt: stored.lastTestedAt,
@@ -128,20 +131,38 @@ export class EmailSettingsService {
 
     const current = await this.resolve();
     const enabled = input.enabled ?? (current.driver === "http");
-    const provider = input.provider ?? current.provider ?? "generic";
+    const currentProvider = current.provider ?? "generic";
+    const provider = input.provider ?? currentProvider;
     const recoveryEnabled = input.recoveryEnabled ?? current.recoveryEnabled;
     const from = input.from === undefined ? current.from : clean(input.from);
-    const httpEndpoint = provider === "generic"
-      ? input.httpEndpoint === undefined ? current.httpEndpoint : clean(input.httpEndpoint)
+    const currentHttpEndpoint = currentProvider === "generic"
+      ? this.normalizeHttpEndpoint(current.httpEndpoint)
       : undefined;
-    const providerChanged = provider !== (current.provider || "generic");
+    const httpEndpoint = provider === "generic"
+      ? input.httpEndpoint === undefined && currentProvider === "generic"
+        ? currentHttpEndpoint
+        : this.normalizeHttpEndpoint(input.httpEndpoint)
+      : undefined;
+    const providerChanged = provider !== currentProvider;
+    const endpointChanged = provider === "generic" && currentProvider === "generic" &&
+      httpEndpoint !== currentHttpEndpoint;
+    const credentialBindingChanged = providerChanged || endpointChanged;
+    const suppliedBearerToken = clean(input.bearerToken);
+    const hadConfiguredBinding = currentProvider !== "generic" || Boolean(currentHttpEndpoint);
     const bearerToken = input.clearBearerToken
       ? undefined
-      : providerChanged && input.bearerToken === undefined
-        ? undefined
-        : input.bearerToken === undefined
-          ? current.httpBearerToken
-          : clean(input.bearerToken);
+      : suppliedBearerToken
+        ? suppliedBearerToken
+        : credentialBindingChanged
+          ? undefined
+          : current.httpBearerToken;
+    const credentialsRequired = suppliedBearerToken
+      ? false
+      : credentialBindingChanged
+        ? hadConfiguredBinding || current.credentialsRequired === true || provider !== "generic"
+        : input.clearBearerToken
+          ? false
+          : current.credentialsRequired === true;
 
     if (enabled && !from) {
       throw new AppError(422, "email_settings_incomplete", "Sender address is required before enabling email.");
@@ -149,8 +170,13 @@ export class EmailSettingsService {
     if (enabled && provider === "generic" && !httpEndpoint) {
       throw new AppError(422, "email_settings_incomplete", "HTTP endpoint is required for the generic email provider.");
     }
-    if (enabled && provider !== "generic" && !bearerToken) {
-      throw new AppError(422, "email_credentials_required", `A new ${provider} API key is required before enabling email.`);
+    if (enabled && !bearerToken && (provider !== "generic" || credentialsRequired)) {
+      const credentialName = provider === "generic" ? "bearer token" : `${provider} API key`;
+      throw new AppError(
+        422,
+        "email_credentials_required",
+        `A new ${credentialName} is required before enabling email for the changed provider or endpoint.`
+      );
     }
     if (httpEndpoint) {
       const endpoint = this.parseHttpEndpoint(httpEndpoint);
@@ -159,13 +185,13 @@ export class EmailSettingsService {
       }
     }
 
-    const currentHttpEndpoint = provider === "generic" ? current.httpEndpoint : undefined;
     const changed = current.driver !== (enabled ? "http" : "disabled") ||
-      current.provider !== provider ||
+      currentProvider !== provider ||
       current.recoveryEnabled !== recoveryEnabled ||
       current.from !== from ||
       currentHttpEndpoint !== httpEndpoint ||
-      current.httpBearerToken !== bearerToken;
+      current.httpBearerToken !== bearerToken ||
+      current.credentialsRequired !== credentialsRequired;
     const stored: StoredEmailSettings = {
       enabled,
       provider,
@@ -175,6 +201,7 @@ export class EmailSettingsService {
       encryptedCredentials: bearerToken
         ? encryptSecretEnvelope(this.config.payments.credentialEncryptionKey, { bearerToken })
         : undefined,
+      credentialsRequired,
       updatedAt: new Date().toISOString(),
       ...(!changed ? {
         lastTestedAt: current.lastTestedAt,
@@ -210,10 +237,10 @@ export class EmailSettingsService {
       return {
         succeeded: true,
         message: "Test email accepted by the provider.",
-        providerMessageId: result.providerMessageId
+        providerMessageId: safeProviderMessageId(result.providerMessageId, settings.httpBearerToken)
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message.slice(0, 500) : "Email provider request failed.";
+      const message = safeProviderError(error, settings.httpBearerToken);
       await this.recordTestResult(settings, false, message);
       throw new AppError(502, "email_test_failed", "Email provider test failed.", { message });
     }
@@ -267,6 +294,7 @@ export class EmailSettingsService {
       encryptedCredentials: settings.httpBearerToken
         ? encryptSecretEnvelope(this.config.payments.credentialEncryptionKey, { bearerToken: settings.httpBearerToken })
         : undefined,
+      credentialsRequired: settings.credentialsRequired === true,
       lastTestedAt: new Date().toISOString(),
       lastTestSucceeded: succeeded,
       lastTestMessage: message,
@@ -294,14 +322,26 @@ export class EmailSettingsService {
     }
   }
 
-  private parseHttpEndpoint(value: string) {
+  private normalizeHttpEndpoint(value?: string) {
+    const normalized = clean(value);
+    if (!normalized) return undefined;
+
     try {
-      const endpoint = new URL(value);
+      const endpoint = new URL(normalized);
       if (!["http:", "https:"].includes(endpoint.protocol)) throw new Error("Unsupported protocol");
-      return endpoint;
+      endpoint.hash = "";
+      return endpoint.toString();
     } catch {
       throw new AppError(422, "email_endpoint_invalid", "Email endpoint must be a valid HTTP or HTTPS URL.");
     }
+  }
+
+  private parseHttpEndpoint(value: string) {
+    const normalized = this.normalizeHttpEndpoint(value);
+    if (!normalized) {
+      throw new AppError(422, "email_endpoint_invalid", "Email endpoint must be a valid HTTP or HTTPS URL.");
+    }
+    return new URL(normalized);
   }
 
   private getOrCreateDefaultSite() {
@@ -325,4 +365,17 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function safeProviderMessageId(value?: string, credential?: string) {
+  if (!value || (credential && value.includes(credential))) return undefined;
+  return value.slice(0, 500);
+}
+
+function safeProviderError(error: unknown, credential?: string) {
+  const fallback = "Email provider request failed.";
+  if (!(error instanceof Error)) return fallback;
+
+  const message = error.message.slice(0, 500);
+  return credential ? message.replaceAll(credential, "[Redacted]") : message;
 }

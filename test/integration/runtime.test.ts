@@ -48,6 +48,10 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     where: { moduleId: "config", key: "site", site: { slug: "default" } },
     select: { id: true, value: true }
   });
+  const existingEmailSetting = await prisma.moduleSetting.findFirst({
+    where: { moduleId: "config", key: "email", site: { slug: "default" } },
+    select: { id: true, value: true }
+  });
 
   async function request(pathname: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers);
@@ -143,6 +147,33 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(replayAudit.status, 200, JSON.stringify(replayAuditBody));
     assert.equal(replayAuditBody.data?.auditLogs[0]?.outcome, "DENIED");
     assert.equal(replayAuditBody.data?.auditLogs[0]?.integrity, "valid");
+
+    const emailCredential = `integration-email-secret-${runId}`;
+    const emailUpdate = await request("/api/v1/config/email", {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({
+        enabled: false,
+        provider: "generic",
+        recoveryEnabled: false,
+        from: "notifications@example.com",
+        httpEndpoint: "https://mailer.example.com/send",
+        bearerToken: emailCredential
+      })
+    });
+    const emailUpdateBody = await responseJson(emailUpdate);
+    assert.equal(emailUpdate.status, 200, JSON.stringify(emailUpdateBody));
+    assert.equal(emailUpdateBody.data?.email.bearerTokenConfigured, true);
+    assert.doesNotMatch(JSON.stringify(emailUpdateBody), new RegExp(emailCredential));
+
+    const emailAudit = await request(
+      "/api/v1/config/audit-logs?action=email.settings.update",
+      { headers: authorization }
+    );
+    const emailAuditBody = await responseJson(emailAudit);
+    assert.equal(emailAudit.status, 200, JSON.stringify(emailAuditBody));
+    assert.equal(emailAuditBody.data?.auditLogs[0]?.action, "email.settings.update");
+    assert.doesNotMatch(JSON.stringify(emailAuditBody), new RegExp(emailCredential));
 
     const invite = await request("/api/v1/auth/invites", {
       method: "POST",
@@ -556,6 +587,16 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     } else {
       await prisma.moduleSetting.deleteMany({
         where: { moduleId: "config", key: "site", site: { slug: "default" } }
+      });
+    }
+    if (existingEmailSetting) {
+      await prisma.moduleSetting.update({
+        where: { id: existingEmailSetting.id },
+        data: { value: existingEmailSetting.value }
+      });
+    } else {
+      await prisma.moduleSetting.deleteMany({
+        where: { moduleId: "config", key: "email", site: { slug: "default" } }
       });
     }
     await prisma.userInvite.deleteMany({ where: { email: managedUserEmail } });

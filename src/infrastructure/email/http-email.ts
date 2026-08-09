@@ -33,6 +33,7 @@ export function isEmailDeliveryConfigured(config: AppConfig | EmailDeliveryConfi
   return email.driver === "http" && Boolean(
     email.from &&
     emailProviderEndpoint(email) &&
+    email.credentialsRequired !== true &&
     (selectedProvider === "generic" || email.httpBearerToken)
   );
 }
@@ -62,12 +63,12 @@ async function sendHttpEmail(
       method: "POST",
       headers: requestHeaders(selectedProvider, config.httpBearerToken),
       body: JSON.stringify(requestBody(selectedProvider, message)),
+      redirect: "manual",
       signal: controller.signal
     });
 
     if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      throw new Error(`Email provider returned ${response.status}: ${errorBody.slice(0, 500)}`);
+      throw new Error(`Email provider returned ${response.status}.`);
     }
 
     const data = (await response.json().catch(() => ({}))) as {

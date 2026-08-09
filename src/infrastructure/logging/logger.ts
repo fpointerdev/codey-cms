@@ -14,6 +14,7 @@ export const logger = pino({
       "token",
       "accessToken",
       "refreshToken",
+      "bearerToken",
       "clientSecret",
       "secretAccessKey",
       "*.authorization",
@@ -22,11 +23,13 @@ export const logger = pino({
       "*.token",
       "*.accessToken",
       "*.refreshToken",
+      "*.bearerToken",
       "*.clientSecret",
       "*.secretAccessKey",
       "req.headers.authorization",
       "req.headers.cookie",
       "req.headers[\"x-api-key\"]",
+      "req.body.bearerToken",
       "res.headers[\"set-cookie\"]"
     ]
   },
