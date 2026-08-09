@@ -6,17 +6,17 @@ import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
 import { requirePermission } from "../auth/auth.middleware.js";
+import { createSharedCommerceLimiter } from "./commerce-rate-limit.middleware.js";
 import {
-  addCartItemSchema,
   cartItemParams,
   cartTokenParams,
   checkoutCartSchema,
+  checkoutLimitSchemas,
   commerceResourceParams,
   createCartSchema,
   createCouponSchema,
   customerDataAnonymizeSchema,
   customerDataExportSchema,
-  createOrderSchema,
   createShippingRateSchema,
   createShippingZoneSchema,
   createTaxRuleSchema,
@@ -25,7 +25,6 @@ import {
   orderIdParams,
   shippingZoneIdParams,
   updateCheckoutStatusSchema,
-  updateCartItemSchema,
   updateOrderStatusSchema
 } from "./orders.schemas.js";
 import {
@@ -49,10 +48,10 @@ import {
 } from "./customer-data.service.js";
 import { deliverQueuedOrderEmails, queueOrderEmail, requeueOrderEmail } from "./order-email.service.js";
 
-function createCheckoutLimiter() {
+function createCheckoutLimiter(context: ModuleContext) {
   return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 60,
+    windowMs: context.config.commerce.checkout.rateLimitWindowMs,
+    limit: context.config.commerce.checkout.rateLimitMax,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     handler: (_req, res) => {
@@ -70,7 +69,12 @@ function createCheckoutLimiter() {
 }
 
 export function registerOrderRoutes(router: Router, context: ModuleContext) {
-  const checkoutLimiter = createCheckoutLimiter();
+  const limitSchemas = checkoutLimitSchemas(context.config.commerce.checkout);
+  const checkoutLimiter = createCheckoutLimiter(context);
+  const createCartLimiter = createSharedCommerceLimiter(context, "cart.create");
+  const checkoutCartLimiter = createSharedCommerceLimiter(context, "cart.checkout");
+  const createOrderLimiter = createSharedCommerceLimiter(context, "order.create");
+  const lookupOrderLimiter = createSharedCommerceLimiter(context, "order.lookup");
   const cleanupTimer = setInterval(() => {
     void releaseExpiredOrderReservations(context).catch((error) => {
       context.logger.error({ err: error }, "Unable to release expired order reservations");
@@ -105,9 +109,10 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/",
     requirePermission(context, "update", "orders"),
-    validateRequest({ body: createOrderSchema }),
+    createOrderLimiter,
+    validateRequest({ body: limitSchemas.createOrder }),
     asyncHandler(async (req, res) => {
-      const order = await createOrder(context, req.body);
+      const order = await createOrder(context, req.body, { ipAddress: req.ip });
       await deliverQueuedOrderEmails(context, { orderId: order.id });
 
       return sendCreated(res, { order });
@@ -116,6 +121,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/lookup",
+    lookupOrderLimiter,
     validateRequest({ body: lookupOrderSchema }),
     asyncHandler(async (req, res) => {
       const order = await lookupOrder(context, req.body);
@@ -126,6 +132,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/carts",
+    createCartLimiter,
     checkoutLimiter,
     validateRequest({ body: createCartSchema }),
     asyncHandler(async (req, res) => {
@@ -148,7 +155,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/carts/:token/items",
     checkoutLimiter,
-    validateRequest({ params: cartTokenParams, body: addCartItemSchema }),
+    validateRequest({ params: cartTokenParams, body: limitSchemas.addCartItem }),
     asyncHandler(async (req, res) => {
       const cart = await addCartItem(context, req.params.token, req.body);
 
@@ -159,7 +166,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
   router.patch(
     "/carts/:token/items/:itemId",
     checkoutLimiter,
-    validateRequest({ params: cartItemParams, body: updateCartItemSchema }),
+    validateRequest({ params: cartItemParams, body: limitSchemas.updateCartItem }),
     asyncHandler(async (req, res) => {
       const cart = await updateCartItem(
         context,
@@ -185,10 +192,11 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/carts/:token/checkout",
+    checkoutCartLimiter,
     checkoutLimiter,
     validateRequest({ params: cartTokenParams, body: checkoutCartSchema }),
     asyncHandler(async (req, res) => {
-      const order = await checkoutCart(context, req.params.token, req.body);
+      const order = await checkoutCart(context, req.params.token, req.body, { ipAddress: req.ip });
       await deliverQueuedOrderEmails(context, { orderId: order.id });
 
       return sendCreated(res, { order });

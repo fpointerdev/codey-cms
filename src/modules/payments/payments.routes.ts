@@ -8,6 +8,7 @@ import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
 import { requirePermission } from "../auth/auth.middleware.js";
+import { createSharedCommerceLimiter } from "../orders/commerce-rate-limit.middleware.js";
 import {
   orderReservationTtlMs,
   releaseExpiredOrderReservations
@@ -53,10 +54,10 @@ import {
 
 export { statusFromWebhook } from "./payment-event.service.js";
 
-function createPaymentLimiter() {
+function createPaymentLimiter(context: ModuleContext) {
   return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 60,
+    windowMs: context.config.commerce.checkout.rateLimitWindowMs,
+    limit: context.config.commerce.checkout.rateLimitMax,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     handler: (_req, res) => {
@@ -459,7 +460,8 @@ async function authorizePayPalCapture(context: ModuleContext, orderId: string) {
 }
 
 export function registerPaymentRoutes(router: Router, context: ModuleContext) {
-  const paymentLimiter = createPaymentLimiter();
+  const paymentLimiter = createPaymentLimiter(context);
+  const paymentIntentLimiter = createSharedCommerceLimiter(context, "payment.intent");
   const providerService = new PaymentProviderConfigService(context);
 
   router.get(
@@ -569,6 +571,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/intent",
+    paymentIntentLimiter,
     paymentLimiter,
     validateRequest({ body: createPaymentIntentSchema }),
     asyncHandler(async (req, res) => {

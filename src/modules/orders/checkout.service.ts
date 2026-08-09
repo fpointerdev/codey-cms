@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
+import { CommerceAbuseService } from "./commerce-abuse.service.js";
 import { queueOrderEmail } from "./order-email.service.js";
 
 type OrderItemInput = {
@@ -38,6 +39,10 @@ export type CreateCartInput = {
 };
 
 export type CheckoutCartInput = Omit<CreateOrderInput, "items">;
+
+export type OrderRequestMeta = {
+  ipAddress?: string;
+};
 
 export type LookupOrderInput = {
   orderNumber: string;
@@ -384,7 +389,30 @@ async function resolveTax(
   return Math.floor((taxableCents * taxRule.rateBps) / 10_000);
 }
 
-async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderInput) {
+async function createOrderInTransaction(
+  tx: ShopTransaction,
+  context: ModuleContext,
+  input: CreateOrderInput,
+  requestMeta: OrderRequestMeta = {}
+) {
+  if (input.items.length > context.config.commerce.checkout.maxOrderItems) {
+    throw new AppError(
+      422,
+      "order_item_limit_exceeded",
+      `Orders cannot contain more than ${context.config.commerce.checkout.maxOrderItems} items.`
+    );
+  }
+  if (input.items.some((item) => item.quantity > context.config.commerce.checkout.maxItemQuantity)) {
+    throw new AppError(
+      422,
+      "order_quantity_limit_exceeded",
+      `An order item cannot exceed ${context.config.commerce.checkout.maxItemQuantity} units.`
+    );
+  }
+
+  const abuseService = new CommerceAbuseService(context.prisma, context.config);
+  const pendingOrderHashes = abuseService.pendingOrderHashes(input.customerEmail, requestMeta.ipAddress);
+  await abuseService.assertPendingOrderCapacity(tx, input.customerEmail, pendingOrderHashes);
   const requestedQuantities = input.items.reduce((totals, item) => {
     totals.set(itemKey(item), (totals.get(itemKey(item)) ?? 0) + item.quantity);
     return totals;
@@ -523,6 +551,8 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
       couponCode: code,
       shippingCountry,
       shippingRateId,
+      checkoutEmailHash: pendingOrderHashes.emailHash,
+      checkoutIpHash: pendingOrderHashes.ipHash,
       metadata: checkoutMetadata(input) as Prisma.InputJsonValue | undefined,
       items: {
         create: orderItems
@@ -554,9 +584,20 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
   return order;
 }
 
-export async function createOrder(context: ModuleContext, input: CreateOrderInput) {
+export async function createOrder(
+  context: ModuleContext,
+  input: CreateOrderInput,
+  requestMeta: OrderRequestMeta = {}
+) {
   await releaseExpiredOrderReservations(context);
-  return context.prisma.$transaction((tx) => createOrderInTransaction(tx, input));
+  try {
+    return await context.prisma.$transaction((tx) =>
+      createOrderInTransaction(tx, context, input, requestMeta)
+    );
+  } catch (error) {
+    await auditPendingOrderLimit(context, input.customerEmail, requestMeta, error);
+    throw error;
+  }
 }
 
 export async function createCart(context: ModuleContext, input: CreateCartInput) {
@@ -639,8 +680,12 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
     const nextQuantity = (existingItem?.quantity ?? 0) + input.quantity;
     const availableStock = variant?.stockQuantity ?? product.stockQuantity;
 
-    if (nextQuantity > 999) {
-      throw new AppError(422, "cart_quantity_too_large", "Cart item quantity cannot exceed 999.");
+    if (nextQuantity > context.config.commerce.checkout.maxItemQuantity) {
+      throw new AppError(
+        422,
+        "cart_quantity_too_large",
+        `Cart item quantity cannot exceed ${context.config.commerce.checkout.maxItemQuantity}.`
+      );
     }
 
     if (nextQuantity > availableStock) {
@@ -690,6 +735,14 @@ export async function updateCartItem(
   itemId: string,
   quantity: number
 ) {
+  if (quantity > context.config.commerce.checkout.maxItemQuantity) {
+    throw new AppError(
+      422,
+      "cart_quantity_too_large",
+      `Cart item quantity cannot exceed ${context.config.commerce.checkout.maxItemQuantity}.`
+    );
+  }
+
   const cart = await context.prisma.$transaction(async (tx) => {
     await lockCart(tx, token);
     const activeCart = await tx.cart.findFirst({ where: activeCartWhere(token) });
@@ -749,44 +802,54 @@ export async function removeCartItem(context: ModuleContext, token: string, item
   return hydrateCart(context, cart);
 }
 
-export async function checkoutCart(context: ModuleContext, token: string, input: CheckoutCartInput) {
+export async function checkoutCart(
+  context: ModuleContext,
+  token: string,
+  input: CheckoutCartInput,
+  requestMeta: OrderRequestMeta = {}
+) {
   await releaseExpiredOrderReservations(context);
 
-  return context.prisma.$transaction(async (tx) => {
-    await lockCart(tx, token);
-    const cart = await tx.cart.findFirst({
-      where: activeCartWhere(token),
-      include: { items: true }
+  try {
+    return await context.prisma.$transaction(async (tx) => {
+      await lockCart(tx, token);
+      const cart = await tx.cart.findFirst({
+        where: activeCartWhere(token),
+        include: { items: true }
+      });
+
+      if (!cart) {
+        throw new AppError(404, "cart_not_found", "Cart not found.");
+      }
+
+      if (!cart.items.length) {
+        throw new AppError(422, "empty_cart", "Cart has no items.");
+      }
+
+      const order = await createOrderInTransaction(tx, context, {
+        ...input,
+        shippingCountry: input.shippingCountry ?? cart.shippingCountry ?? undefined,
+        shippingRateId: input.shippingRateId ?? cart.shippingRateId ?? undefined,
+        couponCode: input.couponCode ?? cart.couponCode ?? undefined,
+        items: cart.items.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId ?? undefined,
+          quantity: item.quantity,
+          metadata: item.metadata as Record<string, unknown> | undefined
+        }))
+      }, requestMeta);
+
+      await tx.cart.update({
+        where: { id: cart.id },
+        data: { status: "CONVERTED" }
+      });
+
+      return order;
     });
-
-    if (!cart) {
-      throw new AppError(404, "cart_not_found", "Cart not found.");
-    }
-
-    if (!cart.items.length) {
-      throw new AppError(422, "empty_cart", "Cart has no items.");
-    }
-
-    const order = await createOrderInTransaction(tx, {
-      ...input,
-      shippingCountry: input.shippingCountry ?? cart.shippingCountry ?? undefined,
-      shippingRateId: input.shippingRateId ?? cart.shippingRateId ?? undefined,
-      couponCode: input.couponCode ?? cart.couponCode ?? undefined,
-      items: cart.items.map((item) => ({
-        productId: item.productId,
-        variantId: item.variantId ?? undefined,
-        quantity: item.quantity,
-        metadata: item.metadata as Record<string, unknown> | undefined
-      }))
-    });
-
-    await tx.cart.update({
-      where: { id: cart.id },
-      data: { status: "CONVERTED" }
-    });
-
-    return order;
-  });
+  } catch (error) {
+    await auditPendingOrderLimit(context, input.customerEmail, requestMeta, error);
+    throw error;
+  }
 }
 
 export async function lookupOrder(context: ModuleContext, input: LookupOrderInput) {
@@ -906,4 +969,21 @@ export async function releaseExpiredOrderReservations(context: ModuleContext, no
   }
 
   return released;
+}
+
+async function auditPendingOrderLimit(
+  context: ModuleContext,
+  customerEmail: string,
+  requestMeta: OrderRequestMeta,
+  error: unknown
+) {
+  if (!(error instanceof AppError) || error.code !== "pending_order_limit_exceeded") return;
+  const scope = !Array.isArray(error.details) ? error.details?.scope : undefined;
+  if (scope !== "email" && scope !== "ip") return;
+
+  const service = new CommerceAbuseService(context.prisma, context.config);
+  await service.auditPendingOrderDenial(
+    service.pendingOrderHashes(customerEmail, requestMeta.ipAddress),
+    scope
+  );
 }

@@ -61,6 +61,8 @@ model Order {
   couponCode         String?
   shippingCountry    String?
   shippingRateId     String?
+  checkoutEmailHash  String?
+  checkoutIpHash     String?
   metadata           Json?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
@@ -71,6 +73,22 @@ model Order {
   @@index([checkoutStatus, createdAt])
   @@index([customerEmail])
   @@index([orderNumber, customerEmail])
+  @@index([checkoutEmailHash, status, checkoutStatus])
+  @@index([checkoutIpHash, status, checkoutStatus])
+}
+
+model CommerceRateLimit {
+  id              String   @id @default(cuid())
+  scope           String
+  keyHash         String
+  requestCount    Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([scope, keyHash])
+  @@index([expiresAt])
 }
 
 model OrderItem {

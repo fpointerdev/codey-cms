@@ -4,10 +4,12 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { config } from "../../src/config/index.js";
 import { createApp } from "../../src/core/app.js";
+import { AppError } from "../../src/core/errors/app-error.js";
 import { prisma } from "../../src/infrastructure/database/prisma.js";
 import { EmailSettingsService } from "../../src/infrastructure/email/email-settings.service.js";
 import { logger } from "../../src/infrastructure/logging/logger.js";
 import { createTotpCode } from "../../src/modules/auth/mfa.js";
+import { CommerceAbuseService } from "../../src/modules/orders/commerce-abuse.service.js";
 import { deliverQueuedOrderEmails } from "../../src/modules/orders/order-email.service.js";
 import { runtimeVersion } from "../../src/runtime/release.js";
 
@@ -679,5 +681,141 @@ test("concurrent order email workers claim a notification once", async () => {
       await prisma.moduleSetting.delete({ where: settingKey }).catch(() => undefined);
     }
     await new Promise<void>((resolve, reject) => emailServer.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("checkout rate limits are shared and store only keyed hashes", async () => {
+  const scope = "cart.create" as const;
+  const rawKey = `198.51.100.${Math.floor(Math.random() * 200) + 1}`;
+  await prisma.commerceRateLimit.deleteMany({ where: { scope } });
+  const limitedConfig = {
+    ...config,
+    commerce: {
+      checkout: {
+        ...config.commerce.checkout,
+        rateLimitMax: 2
+      }
+    }
+  } as typeof config;
+  const firstInstance = new CommerceAbuseService(prisma, limitedConfig);
+  const secondInstance = new CommerceAbuseService(prisma, limitedConfig);
+
+  try {
+    await firstInstance.consumeRateLimit(scope, rawKey);
+    await secondInstance.consumeRateLimit(scope, rawKey);
+    await assert.rejects(
+      secondInstance.consumeRateLimit(scope, rawKey),
+      (error) => error instanceof AppError &&
+        error.code === "checkout_rate_limit_exceeded" &&
+        typeof error.details === "object" &&
+        !Array.isArray(error.details) &&
+        Number(error.details.retryAfterSeconds) > 0
+    );
+
+    const records = await prisma.commerceRateLimit.findMany({ where: { scope } });
+    assert.equal(records.length, 1);
+    assert.equal(records[0]?.requestCount, 3);
+    assert.doesNotMatch(JSON.stringify(records), new RegExp(rawKey.replaceAll(".", "\\.")));
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: "commerce.rate_limit.exceeded" },
+      orderBy: { createdAt: "desc" }
+    });
+    assert.ok(audit);
+    assert.doesNotMatch(JSON.stringify(audit), new RegExp(rawKey.replaceAll(".", "\\.")));
+  } finally {
+    await prisma.commerceRateLimit.deleteMany({ where: { scope } });
+    await prisma.$disconnect();
+  }
+});
+
+test("pending checkout limits normalize email and serialize concurrent clients", async () => {
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const email = `Pending-${runId}@Example.com`;
+  const ipAddress = "203.0.113.42";
+  const limitedConfig = {
+    ...config,
+    commerce: {
+      checkout: {
+        ...config.commerce.checkout,
+        pendingOrderLimitPerEmail: 1,
+        pendingOrderLimitPerIp: 1
+      }
+    }
+  } as typeof config;
+  const firstInstance = new CommerceAbuseService(prisma, limitedConfig);
+  const secondInstance = new CommerceAbuseService(prisma, limitedConfig);
+  const firstHashes = firstInstance.pendingOrderHashes(email, ipAddress);
+  const secondHashes = secondInstance.pendingOrderHashes(email.toLowerCase(), ipAddress);
+
+  assert.equal(firstHashes.emailHash, secondHashes.emailHash);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await firstInstance.assertPendingOrderCapacity(tx, email, firstHashes);
+      await tx.order.create({
+        data: {
+          orderNumber: `LIMIT-${runId}`,
+          customerEmail: email,
+          checkoutEmailHash: firstHashes.emailHash,
+          checkoutIpHash: firstHashes.ipHash,
+          checkoutStatus: "PAYMENT_PENDING",
+          currency: "EUR",
+          subtotalCents: 1000,
+          totalCents: 1000
+        }
+      });
+    });
+
+    await assert.rejects(
+      prisma.$transaction(async (tx) => {
+        await secondInstance.assertPendingOrderCapacity(tx, email.toLowerCase(), secondHashes);
+      }),
+      (error) => error instanceof AppError && error.code === "pending_order_limit_exceeded"
+    );
+  } finally {
+    await prisma.order.deleteMany({ where: { orderNumber: `LIMIT-${runId}` } });
+    await prisma.$disconnect();
+  }
+});
+
+test("checkout rate-limit responses use the API envelope and retry header", async () => {
+  await prisma.commerceRateLimit.deleteMany({ where: { scope: "cart.create" } });
+  const app = await createApp();
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () => resolve(listeningServer));
+  });
+  const address = server.address() as AddressInfo;
+  const createdCartIds: string[] = [];
+
+  try {
+    for (let attempt = 0; attempt < config.commerce.checkout.rateLimitMax; attempt += 1) {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/orders/carts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}"
+      });
+      const body = await responseJson(response);
+      assert.equal(response.status, 201, JSON.stringify(body));
+      createdCartIds.push(String(body.data?.cart.id));
+    }
+
+    const limited = await fetch(`http://127.0.0.1:${address.port}/api/v1/orders/carts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    });
+    const limitedBody = await responseJson(limited);
+    assert.equal(limited.status, 429);
+    assert.equal(limitedBody.success, false);
+    assert.equal(limitedBody.error?.code, "checkout_rate_limit_exceeded");
+    assert.ok(Number(limited.headers.get("retry-after")) > 0);
+  } finally {
+    await prisma.cart.deleteMany({ where: { id: { in: createdCartIds } } });
+    await prisma.commerceRateLimit.deleteMany({ where: { scope: "cart.create" } });
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+    await prisma.$disconnect();
   }
 });

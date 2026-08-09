@@ -85,6 +85,17 @@ export const config = {
       adminMax: 60
     }
   },
+  commerce: {
+    checkout: {
+      maxItemQuantity: env.CHECKOUT_MAX_ITEM_QUANTITY,
+      maxOrderItems: env.CHECKOUT_MAX_ORDER_ITEMS,
+      rateLimitMax: env.CHECKOUT_RATE_LIMIT_MAX,
+      rateLimitWindowMs: 15 * 60_000,
+      pendingOrderLimitPerEmail: env.CHECKOUT_PENDING_ORDER_LIMIT_PER_EMAIL,
+      pendingOrderLimitPerIp: env.CHECKOUT_PENDING_ORDER_LIMIT_PER_IP,
+      reservationTtlMinutes: env.ORDER_RESERVATION_TTL_MINUTES
+    }
+  },
   maintenance: {
     enabled: env.MAINTENANCE_MODE,
     message: env.MAINTENANCE_MESSAGE,

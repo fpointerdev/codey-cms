@@ -112,6 +112,19 @@ Audit keys can rotate independently. Move the old `SECURITY_AUDIT_KEY` into `SEC
 
 See [payment-providers.md](payment-providers.md) for setup, checkout, webhook, retry, and credential-rotation flows.
 
+## Checkout Protection
+
+Checkout abuse controls are enforced through PostgreSQL so they remain consistent across multiple CMS processes. Limiter identifiers for email addresses and client IPs are keyed hashes; the limiter table never stores the original values.
+
+- `CHECKOUT_MAX_ITEM_QUANTITY`: maximum units for one product or variant, default `20`
+- `CHECKOUT_MAX_ORDER_ITEMS`: maximum order lines, default `50`
+- `CHECKOUT_RATE_LIMIT_MAX`: attempts per protected checkout route in 15 minutes, default `15`
+- `CHECKOUT_PENDING_ORDER_LIMIT_PER_EMAIL`: active unpaid orders per normalized email, default `3`
+- `CHECKOUT_PENDING_ORDER_LIMIT_PER_IP`: active unpaid orders per client IP, default `5`
+- `ORDER_RESERVATION_TTL_MINUTES`: temporary payment inventory hold, default `10`
+
+Rate-limited API responses include `Retry-After` and the standard CodeY error envelope. Pending-order limits are checked while holding PostgreSQL advisory transaction locks, so two application instances cannot create checkouts past the configured limit.
+
 ## Auth Recovery
 
 `AUTH_RECOVERY_TOKEN_DELIVERY=response` is only for local development and tests. Production rejects response-based token delivery.
