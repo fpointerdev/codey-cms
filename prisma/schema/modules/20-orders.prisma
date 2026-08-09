@@ -45,6 +45,13 @@ enum OrderNotificationEvent {
   ORDER_REFUNDED
 }
 
+enum InventoryReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
 model Order {
   id                 String        @id @default(cuid())
   orderNumber        String        @unique
@@ -68,6 +75,7 @@ model Order {
   updatedAt          DateTime      @updatedAt
   items              OrderItem[]
   notifications      OrderNotification[]
+  inventoryReservations InventoryReservation[]
 
   @@index([status, createdAt])
   @@index([checkoutStatus, createdAt])
@@ -75,6 +83,27 @@ model Order {
   @@index([orderNumber, customerEmail])
   @@index([checkoutEmailHash, status, checkoutStatus])
   @@index([checkoutIpHash, status, checkoutStatus])
+}
+
+model InventoryReservation {
+  id             String                     @id @default(cuid())
+  orderId        String
+  order          Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  selectionKey   String
+  productId      String
+  variantId      String?
+  quantity       Int
+  status         InventoryReservationStatus @default(ACTIVE)
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  releasedAt     DateTime?
+  releaseReason  String?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([orderId, selectionKey])
+  @@index([status, expiresAt])
+  @@index([productId, variantId, status])
 }
 
 model CommerceRateLimit {

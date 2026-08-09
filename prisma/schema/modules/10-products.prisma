@@ -53,6 +53,7 @@ model Product {
   priceCents     Int
   currency       String           @default("USD")
   stockQuantity  Int              @default(0)
+  reservedQuantity Int            @default(0)
   status         ProductStatus    @default(DRAFT)
   metaTitle      String?
   metaDescription String?
@@ -109,6 +110,7 @@ model ProductVariant {
   optionValues  Json?
   priceCents    Int?
   stockQuantity Int      @default(0)
+  reservedQuantity Int   @default(0)
   active        Boolean  @default(true)
   metadata      Json?
   createdAt     DateTime @default(now())
