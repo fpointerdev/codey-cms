@@ -2,7 +2,13 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { decryptSecretEnvelope, encryptSecretEnvelope } from "../../core/security/secret-envelope.js";
-import { createEmailClient, emailProviderEndpoint, isEmailDeliveryConfigured } from "./http-email.js";
+import {
+  assertSafeEmailEndpoint,
+  createEmailClient,
+  emailProviderEndpoint,
+  isEmailDeliveryConfigured,
+  parseEmailEndpoint
+} from "./http-email.js";
 import type { EmailDeliveryConfig, EmailProvider } from "./email.types.js";
 
 type StoredEmailSettings = {
@@ -78,6 +84,7 @@ export class EmailSettingsService {
     if (!stored) {
       return {
         ...this.config.email,
+        protectInternalEndpoints: this.config.isProduction,
         source: "environment",
         recoveryEnabled: this.config.auth.recoveryTokenDelivery === "email"
       };
@@ -97,6 +104,7 @@ export class EmailSettingsService {
       }),
       httpBearerToken: credentials.bearerToken,
       credentialsRequired: stored.credentialsRequired === true,
+      protectInternalEndpoints: this.config.isProduction,
       timeoutMs: this.config.email.timeoutMs,
       source: "dashboard",
       lastTestedAt: stored.lastTestedAt,
@@ -179,9 +187,8 @@ export class EmailSettingsService {
       );
     }
     if (httpEndpoint) {
-      const endpoint = this.parseHttpEndpoint(httpEndpoint);
-      if (enabled && this.config.isProduction && endpoint.protocol !== "https:") {
-        throw new AppError(422, "email_endpoint_insecure", "Email endpoint must use HTTPS in production.");
+      if (this.config.isProduction) {
+        await assertSafeEmailEndpoint(httpEndpoint, { requireHttps: true });
       }
     }
 
@@ -212,6 +219,18 @@ export class EmailSettingsService {
 
     await this.writeStoredSettings(stored);
     return this.getAdminStatus();
+  }
+
+  async requiresSensitiveAuthorization(input: UpdateEmailSettingsInput) {
+    if (clean(input.bearerToken) || input.clearBearerToken) return true;
+
+    const current = await this.resolve();
+    const currentProvider = current.provider ?? "generic";
+    const requestedProvider = input.provider ?? currentProvider;
+    if (requestedProvider !== currentProvider) return true;
+    if (requestedProvider !== "generic" || input.httpEndpoint === undefined) return false;
+    return this.normalizeHttpEndpoint(input.httpEndpoint) !==
+      this.normalizeHttpEndpoint(current.httpEndpoint);
   }
 
   async test(recipient: string) {
@@ -327,21 +346,11 @@ export class EmailSettingsService {
     if (!normalized) return undefined;
 
     try {
-      const endpoint = new URL(normalized);
-      if (!["http:", "https:"].includes(endpoint.protocol)) throw new Error("Unsupported protocol");
-      endpoint.hash = "";
-      return endpoint.toString();
-    } catch {
+      return parseEmailEndpoint(normalized).toString();
+    } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(422, "email_endpoint_invalid", "Email endpoint must be a valid HTTP or HTTPS URL.");
     }
-  }
-
-  private parseHttpEndpoint(value: string) {
-    const normalized = this.normalizeHttpEndpoint(value);
-    if (!normalized) {
-      throw new AppError(422, "email_endpoint_invalid", "Email endpoint must be a valid HTTP or HTTPS URL.");
-    }
-    return new URL(normalized);
   }
 
   private getOrCreateDefaultSite() {

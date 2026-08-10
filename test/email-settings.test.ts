@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EmailSettingsService } from "../src/infrastructure/email/email-settings.service.js";
+import {
+  assertSafeEmailEndpoint,
+  isPublicEmailAddress,
+  parseEmailEndpoint
+} from "../src/infrastructure/email/http-email.js";
+import { assertRecentSensitiveAuthentication } from "../src/modules/auth/auth.middleware.js";
 import { emailSettingsSchema } from "../src/modules/config/config.schemas.js";
 
 function emailSettingsHarness(environmentEmail: Record<string, unknown> = {}, isProduction = false) {
@@ -60,6 +66,112 @@ test("email settings only accept HTTP endpoints and require HTTPS in production"
     }),
     /HTTPS in production/i
   );
+});
+
+test("email endpoints reject URL credentials and fragments", async () => {
+  assert.throws(
+    () => parseEmailEndpoint("https://user:password@mailer.example.com/send"),
+    /URL credentials/i
+  );
+  assert.throws(
+    () => parseEmailEndpoint("https://mailer.example.com/send#token"),
+    /fragment/i
+  );
+
+  const harness = emailSettingsHarness();
+  await assert.rejects(
+    harness.service.update({ httpEndpoint: "https://mailer.example.com/send#token" }),
+    /fragment/i
+  );
+});
+
+test("production email endpoints resolve only to public addresses", async () => {
+  assert.equal(isPublicEmailAddress("127.0.0.1"), false);
+  assert.equal(isPublicEmailAddress("::1"), false);
+  assert.equal(isPublicEmailAddress("10.20.30.40"), false);
+  assert.equal(isPublicEmailAddress("169.254.169.254"), false);
+  assert.equal(isPublicEmailAddress("2606:4700:4700::1111"), true);
+
+  await assert.rejects(
+    assertSafeEmailEndpoint("https://127.0.0.1/send", { requireHttps: true }),
+    /public address/i
+  );
+  await assert.rejects(
+    assertSafeEmailEndpoint("https://[::1]/send", { requireHttps: true }),
+    /public address/i
+  );
+  await assert.rejects(
+    assertSafeEmailEndpoint("https://mailer.example.com/send", {
+      requireHttps: true,
+      lookup: async () => [{ address: "10.10.0.4", family: 4 }]
+    }),
+    /public addresses/i
+  );
+  const endpoint = await assertSafeEmailEndpoint("https://mailer.example.com/send", {
+    requireHttps: true,
+    lookup: async () => [
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:4700:4700::1111", family: 6 }
+    ]
+  });
+  assert.equal(endpoint.toString(), "https://mailer.example.com/send");
+});
+
+test("secret changes require recent authentication at the service boundary", async () => {
+  const now = Date.now();
+  const baseUser = {
+    id: "user-1",
+    email: "owner@example.com",
+    name: "Owner",
+    roles: ["owner"],
+    permissions: [{ action: "manage", subject: "all" }]
+  };
+  assert.doesNotThrow(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: false,
+    authenticatedAt: new Date(now - 60_000)
+  }, now));
+  assert.throws(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: false,
+    authenticatedAt: new Date(now - 16 * 60_000)
+  }, now), /Sign in again/i);
+  assert.doesNotThrow(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: true,
+    authenticatedAt: new Date(now - 60_000),
+    mfaVerifiedAt: new Date(now - 60_000)
+  }, now));
+  assert.throws(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: true,
+    authenticatedAt: new Date(now - 60_000),
+    mfaVerifiedAt: null
+  }, now), /two-step verification/i);
+});
+
+test("endpoint and credential changes require sensitive authorization", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer.example.com/send",
+    bearerToken: "email-token"
+  });
+
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    from: "accounts@example.com"
+  }), false);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    httpEndpoint: "https://other-mailer.example.com/send"
+  }), true);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    bearerToken: "replacement-token"
+  }), true);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    clearBearerToken: true
+  }), true);
 });
 
 test("email settings encrypt credentials and never return the bearer token", async () => {
@@ -142,14 +254,14 @@ test("equivalent endpoints and unrelated settings preserve the bound credential"
     provider: "generic",
     recoveryEnabled: false,
     from: "notifications@example.com",
-    httpEndpoint: "https://MAILER.example.com:443/old/../send#initial",
+    httpEndpoint: "https://MAILER.example.com:443/old/../send",
     bearerToken: "preserved-email-token"
   });
 
   const status = await harness.service.update({
     recoveryEnabled: true,
     from: "accounts@example.com",
-    httpEndpoint: "https://mailer.example.com/send#ignored"
+    httpEndpoint: "https://mailer.example.com/send"
   });
   const resolved = await harness.service.resolve();
 

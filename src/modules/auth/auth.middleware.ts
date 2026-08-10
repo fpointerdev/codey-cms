@@ -50,6 +50,24 @@ export function hasPermission(
   }) ?? false;
 }
 
+export function assertRecentSensitiveAuthentication(
+  user: AuthenticatedUser | undefined,
+  now = Date.now(),
+  maximumAgeMs = 15 * 60_000
+) {
+  if (!user) {
+    throw new AppError(401, "unauthorized", "Authentication required.");
+  }
+  const verifiedAt = user.mfaEnabled ? user.mfaVerifiedAt : user.authenticatedAt;
+  const code = user.mfaEnabled ? "recent_mfa_required" : "recent_authentication_required";
+  const message = user.mfaEnabled
+    ? "Sign in with two-step verification again before changing secrets."
+    : "Sign in again before changing secrets.";
+  if (!verifiedAt || verifiedAt.getTime() < now - maximumAgeMs) {
+    throw new AppError(403, code, message);
+  }
+}
+
 export function requirePermission(
   context: ModuleContext,
   action: string,

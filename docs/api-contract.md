@@ -112,6 +112,7 @@ Core permissions include:
 - `update:payments`
 - `read:modules`
 - `manage:modules`
+- `manage:secrets`
 - `read:audit`
 
 ## Public Visibility
@@ -144,7 +145,7 @@ PATCH /api/v1/config/email
 POST  /api/v1/config/email/test
 ```
 
-The provider API key is write-only and encrypted at rest. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
+The provider API key is write-only and encrypted at rest. Endpoint or credential changes require `manage:secrets` and a recent authenticated session; MFA-enabled accounts must have completed MFA recently. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Production generic endpoints must resolve only to public addresses and cannot redirect. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
 
 Storefront customization is site-owned and public rendering reads the same validated settings:
 

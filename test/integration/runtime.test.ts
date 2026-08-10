@@ -191,6 +191,8 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const emailAuditBody = await responseJson(emailAudit);
     assert.equal(emailAudit.status, 200, JSON.stringify(emailAuditBody));
     assert.equal(emailAuditBody.data?.auditLogs[0]?.action, "email.settings.update");
+    assert.equal(emailAuditBody.data?.auditLogs[0]?.metadata?.endpointHostname, "mailer.example.com");
+    assert.equal("httpEndpoint" in emailAuditBody.data?.auditLogs[0]?.metadata, false);
     assert.doesNotMatch(JSON.stringify(emailAuditBody), new RegExp(emailCredential));
 
     const invite = await request("/api/v1/auth/invites", {

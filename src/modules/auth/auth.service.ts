@@ -1307,7 +1307,20 @@ export class AuthService {
       throw new AppError(401, "invalid_access_token", "Access token is invalid.");
     }
 
-    return this.resolveUser(payload.sub, sessionVersion as number);
+    const user = await this.resolveUser(payload.sub, sessionVersion as number);
+    const authenticatedAt = typeof payload.authTime === "number"
+      ? new Date(payload.authTime * 1_000)
+      : undefined;
+    const mfaVerifiedAt = typeof payload.mfaVerifiedAt === "string"
+      ? new Date(payload.mfaVerifiedAt)
+      : null;
+    return {
+      ...user,
+      ...(authenticatedAt && !Number.isNaN(authenticatedAt.getTime()) ? { authenticatedAt } : {}),
+      mfaVerifiedAt: mfaVerifiedAt && !Number.isNaN(mfaVerifiedAt.getTime())
+        ? mfaVerifiedAt
+        : null
+    };
   }
 
   private async issueTokens(

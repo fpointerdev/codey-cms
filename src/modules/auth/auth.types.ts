@@ -10,6 +10,8 @@ export type AuthenticatedUser = {
   roles: string[];
   permissions: AuthenticatedPermission[];
   mfaEnabled: boolean;
+  authenticatedAt?: Date;
+  mfaVerifiedAt?: Date | null;
 };
 
 export type TokenPair = {
