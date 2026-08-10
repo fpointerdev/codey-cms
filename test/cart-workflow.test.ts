@@ -6,6 +6,7 @@ import { removeCartItem, updateCartItem } from "../src/modules/orders/checkout.s
 import {
   cartItemParams,
   checkoutCartSchema,
+  createOrderSchema,
   updateCartItemSchema
 } from "../src/modules/orders/orders.schemas.js";
 
@@ -73,6 +74,13 @@ function cartContext(options: { quote?: boolean } = {}) {
     product: { findFirst: async () => ({ ...product, variants: [] }) }
   };
   const context = {
+    config: {
+      commerce: {
+        checkout: {
+          maxItemQuantity: 20
+        }
+      }
+    },
     prisma: {
       $transaction: async (callback: (transaction: typeof tx) => unknown) => callback(tx),
       product: { findMany: async () => [product] }
@@ -104,6 +112,7 @@ test("cart item deletion is scoped to both cart and item", async () => {
 test("cart mutation schemas reject invalid quantities and item ids", () => {
   assert.equal(updateCartItemSchema.safeParse({ quantity: 0 }).success, false);
   assert.equal(updateCartItemSchema.safeParse({ quantity: 2 }).success, true);
+  assert.equal(updateCartItemSchema.safeParse({ quantity: 21 }).success, false);
   assert.equal(cartItemParams.safeParse({ token: "long-enough-cart-token", itemId: "not-a-cuid" }).success, false);
 });
 
@@ -133,5 +142,23 @@ test("physical checkout validates a complete delivery address", () => {
     customerEmail: "buyer@example.com",
     shippingRateId: "ckx1234567890123456789012",
     shippingAddress: { line1: "Main Street 1", city: "Berlin", postalCode: "10115" }
+  }).success, false);
+});
+
+test("checkout schemas enforce configured item and order-line limits", () => {
+  const item = {
+    productId: "ckx1234567890123456789012",
+    quantity: 1
+  };
+  const order = {
+    customerEmail: "buyer@example.com",
+    items: Array.from({ length: 50 }, () => item)
+  };
+
+  assert.equal(createOrderSchema.safeParse(order).success, true);
+  assert.equal(createOrderSchema.safeParse({ ...order, items: [...order.items, item] }).success, false);
+  assert.equal(createOrderSchema.safeParse({
+    customerEmail: "buyer@example.com",
+    items: [{ ...item, quantity: 21 }]
   }).success, false);
 });

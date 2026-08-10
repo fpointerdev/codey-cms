@@ -24,12 +24,14 @@ export const commerceResourceParams = z.object({
   id: z.string().cuid()
 });
 
-const orderItemSchema = z.object({
-  productId: z.string().cuid(),
-  variantId: z.string().cuid().optional(),
-  quantity: z.number().int().positive().max(999),
-  metadata: z.record(z.unknown()).optional()
-});
+function orderItemSchema(maxItemQuantity: number) {
+  return z.object({
+    productId: z.string().cuid(),
+    variantId: z.string().cuid().optional(),
+    quantity: z.number().int().positive().max(maxItemQuantity),
+    metadata: z.record(z.unknown()).optional()
+  });
+}
 
 const shippingAddressSchema = z.object({
   line1: z.string().trim().min(1).max(160),
@@ -60,17 +62,32 @@ function validateShippingSelection(
   }
 }
 
-export const createOrderSchema = z.object({
-  customerEmail: z.string().email(),
-  customerName: z.string().trim().max(120).optional(),
-  customerPhone: z.string().trim().max(80).optional(),
-  shippingCountry: z.string().trim().length(2).optional(),
-  shippingAddress: shippingAddressSchema.optional(),
-  shippingRateId: z.string().cuid().optional(),
-  couponCode: z.string().trim().min(1).max(80).optional(),
-  metadata: z.record(z.unknown()).optional(),
-  items: z.array(orderItemSchema).min(1).max(100)
-}).superRefine(validateShippingSelection);
+function orderSchema(maxItemQuantity: number, maxOrderItems: number) {
+  return z.object({
+    customerEmail: z.string().email(),
+    customerName: z.string().trim().max(120).optional(),
+    customerPhone: z.string().trim().max(80).optional(),
+    shippingCountry: z.string().trim().length(2).optional(),
+    shippingAddress: shippingAddressSchema.optional(),
+    shippingRateId: z.string().cuid().optional(),
+    couponCode: z.string().trim().min(1).max(80).optional(),
+    metadata: z.record(z.unknown()).optional(),
+    items: z.array(orderItemSchema(maxItemQuantity)).min(1).max(maxOrderItems)
+  }).superRefine(validateShippingSelection);
+}
+
+export function checkoutLimitSchemas(limits: { maxItemQuantity: number; maxOrderItems: number }) {
+  return {
+    createOrder: orderSchema(limits.maxItemQuantity, limits.maxOrderItems),
+    addCartItem: orderItemSchema(limits.maxItemQuantity),
+    updateCartItem: z.object({
+      quantity: z.number().int().positive().max(limits.maxItemQuantity)
+    })
+  };
+}
+
+const defaultCheckoutSchemas = checkoutLimitSchemas({ maxItemQuantity: 20, maxOrderItems: 50 });
+export const createOrderSchema = defaultCheckoutSchemas.createOrder;
 
 export const updateOrderStatusSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "PAID", "FULFILLED", "CANCELLED", "REFUNDED"])
@@ -95,11 +112,9 @@ export const createCartSchema = z.object({
   metadata: z.record(z.unknown()).optional()
 });
 
-export const addCartItemSchema = orderItemSchema;
+export const addCartItemSchema = defaultCheckoutSchemas.addCartItem;
 
-export const updateCartItemSchema = z.object({
-  quantity: z.number().int().positive().max(999)
-});
+export const updateCartItemSchema = defaultCheckoutSchemas.updateCartItem;
 
 export const checkoutCartSchema = z.object({
   customerEmail: z.string().email(),
@@ -114,8 +129,8 @@ export const checkoutCartSchema = z.object({
 
 export const lookupOrderSchema = z.object({
   orderNumber: z.string().trim().min(1).max(80),
-  customerEmail: z.string().email()
-});
+  lookupToken: z.string().trim().min(40).max(100)
+}).strict();
 
 export const customerDataExportSchema = z.object({
   email: z.string().email()

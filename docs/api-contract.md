@@ -112,6 +112,7 @@ Core permissions include:
 - `update:payments`
 - `read:modules`
 - `manage:modules`
+- `manage:secrets`
 - `read:audit`
 
 ## Public Visibility
@@ -136,6 +137,19 @@ Stable `/api/v1` endpoint families:
 - `payments`: site payment-provider configuration, public provider discovery, Stripe intents, PayPal orders/capture, manual settlement, and verified idempotent webhooks.
 - `health`: minimal public liveness/readiness plus authenticated operational diagnostics and metrics.
 
+Runtime configuration is split by audience:
+
+```text
+GET /api/v1/config        # public rendering contract
+GET /api/v1/config/admin  # authenticated dashboard contract
+```
+
+The public contract is limited to app identity, public feature flags, localization, public
+site settings, the public media base URL, and responsive image widths. Environment names,
+proxy settings, storage locations, module lifecycle metadata, deployment profiles, update
+configuration, and builder compatibility internals are available only through authenticated
+administrative endpoints.
+
 Transactional email configuration is site-owned:
 
 ```text
@@ -144,7 +158,9 @@ PATCH /api/v1/config/email
 POST  /api/v1/config/email/test
 ```
 
-The provider API key is write-only and encrypted at rest. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
+The email provider API key is write-only and encrypted at rest. Endpoint or credential changes require `manage:secrets` and a recent authenticated session; MFA-enabled accounts must have completed MFA recently. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Production generic endpoints connect only to the public addresses approved during validation and cannot redirect. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
+
+Stripe and PayPal configuration and connection tests also require `update:payments`, `manage:secrets`, and recent authentication. Manual-payment instructions require only `update:payments`. Connection-test results are applied only when the tested configuration revision is still current.
 
 Storefront customization is site-owned and public rendering reads the same validated settings:
 
@@ -154,6 +170,22 @@ PATCH /api/v1/products/settings  # update:products
 ```
 
 The settings contract covers catalog copy, listing and product-detail presentation, page size, and category, attribute, SKU, and stock visibility.
+
+Public order lookup uses a bearer credential returned once at checkout and included in the
+confirmation email:
+
+```text
+POST /api/v1/orders/lookup
+{ "orderNumber": "ORD-...", "lookupToken": "..." }
+```
+
+The database stores only the SHA-256 token hash. Confirmation-email retries keep the raw
+token in an authenticated encrypted envelope and clear that envelope after delivery. The
+public response is a dedicated customer-safe order projection without database IDs,
+metadata, payment details, notification records, or token hashes. Orders created before
+the secure lookup migration have no anonymous fallback; they remain available to
+authenticated administrators and can only gain a public token through a future verified
+reissue workflow.
 
 ## Contract Source
 
@@ -169,7 +201,7 @@ Before changing an existing `/api/v1` endpoint, verify:
 - Auth and permission requirements are unchanged or explicitly documented.
 - Public visibility rules still block drafts, archived records, and private data.
 - Generated-site contract docs are updated when CMS, media, shop, config, or auth behavior changes.
-- `pnpm validate` passes and focused route/service tests cover the changed behavior.
+- `pnpm validate` passes, including backend TypeScript linting and critical-module coverage ratchets, and focused route/service tests cover the changed behavior.
 - Existing route/contract tests either stay green or the change moves to `/api/v2`.
 
 ## Contract Tests

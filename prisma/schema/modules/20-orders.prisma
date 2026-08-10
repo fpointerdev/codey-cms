@@ -45,6 +45,13 @@ enum OrderNotificationEvent {
   ORDER_REFUNDED
 }
 
+enum InventoryReservationStatus {
+  ACTIVE
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
 model Order {
   id                 String        @id @default(cuid())
   orderNumber        String        @unique
@@ -61,16 +68,56 @@ model Order {
   couponCode         String?
   shippingCountry    String?
   shippingRateId     String?
+  checkoutEmailHash  String?
+  checkoutIpHash     String?
+  lookupTokenHash    String?       @unique
   metadata           Json?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   items              OrderItem[]
   notifications      OrderNotification[]
+  inventoryReservations InventoryReservation[]
 
   @@index([status, createdAt])
   @@index([checkoutStatus, createdAt])
   @@index([customerEmail])
-  @@index([orderNumber, customerEmail])
+  @@index([checkoutEmailHash, status, checkoutStatus])
+  @@index([checkoutIpHash, status, checkoutStatus])
+}
+
+model InventoryReservation {
+  id             String                     @id @default(cuid())
+  orderId        String
+  order          Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  selectionKey   String
+  productId      String
+  variantId      String?
+  quantity       Int
+  status         InventoryReservationStatus @default(ACTIVE)
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  releasedAt     DateTime?
+  releaseReason  String?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([orderId, selectionKey])
+  @@index([status, expiresAt])
+  @@index([productId, variantId, status])
+}
+
+model CommerceRateLimit {
+  id              String   @id @default(cuid())
+  scope           String
+  keyHash         String
+  requestCount    Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([scope, keyHash])
+  @@index([expiresAt])
 }
 
 model OrderItem {
@@ -202,6 +249,7 @@ model OrderNotification {
   subject   String
   body      String
   htmlBody  String?
+  secretEnvelope String?
   attempts  Int                @default(0)
   failureReason String?
   lastAttemptAt DateTime?

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { writeAuditLog } from "../../core/audit/audit-log.js";
 import type { ModuleContext } from "../../core/types/module.js";
+import { adminOrderDto } from "./order-lookup.js";
 
 type CustomerDataAudit = {
   actorUserId: string;
@@ -60,7 +61,7 @@ export async function exportCustomerData(context: ModuleContext, email: string) 
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     customerEmail: normalizedEmail,
-    orders,
+    orders: orders.map(adminOrderDto),
     carts,
     payments,
     paymentWebhooks
@@ -121,6 +122,7 @@ export async function anonymizeCustomerData(
         data: {
           customerEmail: redactedEmail,
           customerName: null,
+          lookupTokenHash: null,
           metadata: {
             anonymized: true,
             anonymizedAt: anonymizedAt.toISOString()
@@ -133,6 +135,7 @@ export async function anonymizeCustomerData(
           recipient: redactedEmail,
           body: "Customer message content removed by data anonymization.",
           htmlBody: null,
+          secretEnvelope: null,
           failureReason: null
         }
       });

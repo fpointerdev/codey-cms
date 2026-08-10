@@ -37,10 +37,14 @@ export function createTotpUri(input: { secret: string; issuer: string; account: 
 
 export function verifyTotpCode(secret: string, code: string, now = Date.now()) {
   const normalized = code.replaceAll(/\s/g, "");
-  if (!/^\d{6}$/.test(normalized)) return false;
+  if (!/^\d{6}$/.test(normalized)) return null;
 
   const counter = Math.floor(now / 30_000);
-  return [-1, 0, 1].some((offset) => safeEqual(normalized, hotp(secret, counter + offset)));
+  for (const offset of [1, 0, -1]) {
+    const candidate = counter + offset;
+    if (safeEqual(normalized, hotp(secret, candidate))) return candidate;
+  }
+  return null;
 }
 
 export function createTotpCode(secret: string, now = Date.now()) {
@@ -55,12 +59,12 @@ function hotp(secret: string, counter: number) {
   const value = Buffer.alloc(8);
   value.writeBigUInt64BE(BigInt(counter));
   const digest = createHmac("sha1", decodeBase32(secret)).update(value).digest();
-  const offset = digest[digest.length - 1]! & 0x0f;
+  const offset = digest[digest.length - 1] & 0x0f;
   const binary = (
-    (digest[offset]! & 0x7f) << 24 |
-    (digest[offset + 1]! & 0xff) << 16 |
-    (digest[offset + 2]! & 0xff) << 8 |
-    digest[offset + 3]! & 0xff
+    (digest[offset] & 0x7f) << 24 |
+    (digest[offset + 1] & 0xff) << 16 |
+    (digest[offset + 2] & 0xff) << 8 |
+    digest[offset + 3] & 0xff
   );
   return String(binary % 1_000_000).padStart(6, "0");
 }

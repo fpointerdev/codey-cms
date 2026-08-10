@@ -7,17 +7,27 @@ import { AppError } from "../../core/errors/app-error.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
-import { requirePermission } from "../auth/auth.middleware.js";
 import {
-  orderReservationTtlMs,
-  releaseExpiredOrderReservations
-} from "../orders/checkout.service.js";
+  assertRecentSensitiveAuthentication,
+  hasPermission,
+  requirePermission
+} from "../auth/auth.middleware.js";
+import type { AuthenticatedUser } from "../auth/auth.types.js";
+import { createSharedCommerceLimiter } from "../orders/commerce-rate-limit.middleware.js";
+import { releaseExpiredOrderReservations } from "../orders/checkout.service.js";
+import {
+  assertActiveInventoryReservation,
+  releaseInventoryReservation,
+  reservationExpiry,
+  reserveInventoryForOrder
+} from "../orders/inventory-reservation.service.js";
 import {
   processPaymentEvent,
   statusFromWebhook,
   type NormalizedPaymentEvent
 } from "./payment-event.service.js";
 import {
+  paymentProviderConfigRevision,
   PaymentProviderConfigService,
   type ResolvedPaymentProviderConfig
 } from "./payment-provider-config.service.js";
@@ -53,10 +63,30 @@ import {
 
 export { statusFromWebhook } from "./payment-event.service.js";
 
-function createPaymentLimiter() {
+export function assertSensitivePaymentProviderAccess(
+  provider: PaymentProvider,
+  user: AuthenticatedUser | undefined,
+  now = Date.now()
+) {
+  if (provider === "MANUAL") return;
+  if (!hasPermission(user, "manage", "secrets")) {
+    throw new AppError(403, "forbidden", "You do not have permission to change payment credentials.");
+  }
+  assertRecentSensitiveAuthentication(user, now);
+}
+
+function stalePaymentProviderTestError() {
+  return new AppError(
+    409,
+    "payment_provider_test_stale",
+    "Payment settings changed while the connection test was running. Test the current settings again."
+  );
+}
+
+function createPaymentLimiter(context: ModuleContext) {
   return rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 60,
+    windowMs: context.config.commerce.checkout.rateLimitWindowMs,
+    limit: context.config.commerce.checkout.rateLimitMax,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     handler: (_req, res) => {
@@ -172,7 +202,7 @@ async function providerPayload(
         paymentId: payment.id,
         amountCents: intent.amount,
         currency: intent.currency.toUpperCase(),
-        payload: intent as unknown as Record<string, unknown>
+        payload: intent
       });
     }
 
@@ -204,7 +234,7 @@ async function providerPayload(
       providerEventId: `paypal-sync:${order.id}:${order.status}`,
       providerReference: order.id,
       paymentId: payment.id,
-      payload: order as unknown as Record<string, unknown>
+      payload: order
     });
   }
 
@@ -285,7 +315,7 @@ async function initializeProviderPayment(input: {
         paymentId: updated.id,
         amountCents: intent.amount,
         currency: intent.currency.toUpperCase(),
-        payload: intent as unknown as Record<string, unknown>
+        payload: intent
       });
       return context.prisma.payment.findUniqueOrThrow({ where: { id: updated.id } });
     }
@@ -329,7 +359,7 @@ async function initializeProviderPayment(input: {
       providerEventId: `paypal-create:${paypalOrder.id}:${paypalOrder.status}`,
       providerReference: paypalOrder.id,
       paymentId: updated.id,
-      payload: paypalOrder as unknown as Record<string, unknown>
+      payload: paypalOrder
     });
     return context.prisma.payment.findUniqueOrThrow({ where: { id: updated.id } });
   }
@@ -378,7 +408,7 @@ async function applyCompletedPayPalOrder(
     paymentId: payment.id,
     amountCents: centsFromPayPalAmount(capture.amount),
     currency: capture.amount?.currency_code?.toUpperCase(),
-    payload: paypalOrder as unknown as Record<string, unknown>
+    payload: paypalOrder
   });
 }
 
@@ -414,6 +444,8 @@ async function claimPendingPayment(input: {
       );
     }
 
+    await reserveInventoryForOrder(tx, order.id, reservationExpiry(input.context));
+
     if (activePayment) {
       return { order, payment: activePayment, created: false };
     }
@@ -444,12 +476,10 @@ async function authorizePayPalCapture(context: ModuleContext, orderId: string) {
       throw new AppError(409, "order_not_payable", "This order cannot be paid.");
     }
     if (order.checkoutStatus === "PAYMENT_AUTHORIZED") return order;
-    if (
-      order.checkoutStatus !== "PAYMENT_PENDING" ||
-      order.createdAt.getTime() <= Date.now() - orderReservationTtlMs
-    ) {
+    if (order.checkoutStatus !== "PAYMENT_PENDING") {
       throw new AppError(409, "order_reservation_expired", "The inventory reservation has expired.");
     }
+    await assertActiveInventoryReservation(tx, order.id);
 
     return tx.order.update({
       where: { id: order.id },
@@ -459,7 +489,8 @@ async function authorizePayPalCapture(context: ModuleContext, orderId: string) {
 }
 
 export function registerPaymentRoutes(router: Router, context: ModuleContext) {
-  const paymentLimiter = createPaymentLimiter();
+  const paymentLimiter = createPaymentLimiter(context);
+  const paymentIntentLimiter = createSharedCommerceLimiter(context, "payment.intent");
   const providerService = new PaymentProviderConfigService(context);
 
   router.get(
@@ -486,6 +517,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
     }),
     asyncHandler(async (req, res) => {
       const provider = req.params.provider as PaymentProvider;
+      assertSensitivePaymentProviderAccess(provider, req.user);
       const config = await providerService.updateConfig(provider, req.body);
       await providerService.writeAuditLog({
         actorUserId: req.user?.id,
@@ -513,13 +545,15 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
     validateRequest({ params: paymentProviderParamsSchema }),
     asyncHandler(async (req, res) => {
       const provider = req.params.provider as PaymentProvider;
+      assertSensitivePaymentProviderAccess(provider, req.user);
       if (provider === "MANUAL") {
         throw new AppError(422, "manual_provider_test_not_required", "Manual payments do not require a connection test.");
       }
 
       const resolved = await providerService.resolveConfig(provider);
+      let message: string;
       try {
-        const message = provider === "STRIPE"
+        message = provider === "STRIPE"
           ? await testStripeConnection(resolved.credentials.secretKey!)
           : await testPayPalConnection({
               mode: resolved.config.mode,
@@ -527,22 +561,15 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
               clientSecret: resolved.credentials.clientSecret!,
               webhookId: resolved.config.webhookId!
             });
-        await providerService.recordTestResult(provider, true, message);
-        await providerService.writeAuditLog({
-          actorUserId: req.user?.id,
-          action: "payment_provider.test_succeeded",
-          provider,
-          ipAddress: req.ip,
-          userAgent: req.get("user-agent")
-        });
-
-        return sendSuccess(res, {
-          message,
-          ...await adminProviderResponse(providerService, context, req)
-        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Provider connection test failed.";
-        await providerService.recordTestResult(provider, false, message);
+        const recorded = await providerService.recordTestResult(
+          provider,
+          paymentProviderConfigRevision(resolved.config),
+          false,
+          message
+        );
+        if (!recorded) throw stalePaymentProviderTestError();
         await providerService.writeAuditLog({
           actorUserId: req.user?.id,
           action: "payment_provider.test_failed",
@@ -552,6 +579,26 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
         });
         throw error;
       }
+
+      const recorded = await providerService.recordTestResult(
+        provider,
+        paymentProviderConfigRevision(resolved.config),
+        true,
+        message
+      );
+      if (!recorded) throw stalePaymentProviderTestError();
+      await providerService.writeAuditLog({
+        actorUserId: req.user?.id,
+        action: "payment_provider.test_succeeded",
+        provider,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent")
+      });
+
+      return sendSuccess(res, {
+        message,
+        ...await adminProviderResponse(providerService, context, req)
+      });
     })
   );
 
@@ -569,6 +616,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
 
   router.post(
     "/intent",
+    paymentIntentLimiter,
     paymentLimiter,
     validateRequest({ body: createPaymentIntentSchema }),
     asyncHandler(async (req, res) => {
@@ -634,8 +682,8 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
             cancelUrl
           });
         } catch (error) {
-          if (error instanceof AppError && error.statusCode === 422) {
-            await context.prisma.payment.updateMany({
+          await context.prisma.$transaction(async (tx) => {
+            const failed = await tx.payment.updateMany({
               where: {
                 id: payment.id,
                 providerReference: null,
@@ -643,7 +691,12 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
               },
               data: { status: "FAILED" }
             });
-          }
+            if (failed.count === 1) {
+              await releaseInventoryReservation(tx, input.orderId, {
+                reason: "provider_initialization_failed"
+              });
+            }
+          });
           throw error;
         }
       }
@@ -702,7 +755,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
           providerEventId: `paypal-capture-sync:${existingOrder.id}:${existingOrder.status}`,
           providerReference: payment.providerReference!,
           paymentId: payment.id,
-          payload: existingOrder as unknown as Record<string, unknown>
+          payload: existingOrder
         }));
       }
       if (existingOrder.status !== "APPROVED") {
@@ -735,7 +788,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
             providerEventId: `paypal-capture-failed:${paypalOrder.id}:${paypalOrder.status}`,
             providerReference: payment.providerReference!,
             paymentId: payment.id,
-            payload: paypalOrder as unknown as Record<string, unknown>
+            payload: paypalOrder
           }));
         }
         const updatedPayment = await context.prisma.payment.update({

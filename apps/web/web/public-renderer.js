@@ -1799,8 +1799,8 @@ function renderShopProductCard(product, options) {
   const settings = normalizeShopSettings(options.shopSettings);
   const variants = activeShopVariants(product);
   const availableStock = variants.length
-    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.stockQuantity) || 0), 0)
-    : Math.max(0, Number(product.stockQuantity) || 0);
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.availableStock ?? variant.stockQuantity) || 0), 0)
+    : Math.max(0, Number(product.availableStock ?? product.stockQuantity) || 0);
   const purchaseMode = shopPurchaseMode(product);
 
   return `
@@ -1964,12 +1964,13 @@ export function renderProductDetailContent(product, options = {}) {
   const variants = activeShopVariants(product);
   const purchaseMode = shopPurchaseMode(product);
   const availableStock = variants.length
-    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.stockQuantity) || 0), 0)
-    : Math.max(0, Number(product.stockQuantity) || 0);
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.availableStock ?? variant.stockQuantity) || 0), 0)
+    : Math.max(0, Number(product.availableStock ?? product.stockQuantity) || 0);
   const variantOptions = variants.map((variant) => {
     const price = variant.priceCents ?? product.priceCents;
-    const label = `${variant.name} · ${formatMoney(price, product.currency || "EUR")}${variant.stockQuantity > 0 ? "" : ` · ${translateString("shop.soldOut", "Sold out")}`}`;
-    return `<option value="${escapeHtml(variant.id)}" data-price-cents="${escapeHtml(price)}" data-stock="${escapeHtml(variant.stockQuantity)}" ${variant.stockQuantity > 0 ? "" : "disabled"}>${escapeHtml(label)}</option>`;
+    const variantAvailableStock = Math.max(0, Number(variant.availableStock ?? variant.stockQuantity) || 0);
+    const label = `${variant.name} · ${formatMoney(price, product.currency || "EUR")}${variantAvailableStock > 0 ? "" : ` · ${translateString("shop.soldOut", "Sold out")}`}`;
+    return `<option value="${escapeHtml(variant.id)}" data-price-cents="${escapeHtml(price)}" data-stock="${escapeHtml(variantAvailableStock)}" ${variantAvailableStock > 0 ? "" : "disabled"}>${escapeHtml(label)}</option>`;
   }).join("");
 
   return `

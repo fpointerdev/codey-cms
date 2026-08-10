@@ -150,7 +150,8 @@ export function renderProductEditorPage({ product = null, categories = [], messa
               <label><span>Description</span><textarea name="description" rows="5" placeholder="What should customers know about this product?">${escapeHtml(product?.description || "")}</textarea></label>
               <div class="builder-form-grid">
                 <label data-product-buy-field><span>Price</span><input name="price" type="number" min="0" step="0.01" value="${escapeHtml(product ? (product.priceCents / 100).toFixed(2) : "0.00")}" required /></label>
-                <label data-product-buy-field><span>Stock</span><input name="stockQuantity" type="number" min="0" step="1" value="${escapeHtml(product?.stockQuantity ?? 0)}" required /></label>
+                <label data-product-buy-field><span>On-hand stock</span><input name="stockQuantity" type="number" min="${escapeHtml(product?.reservedQuantity ?? 0)}" step="1" value="${escapeHtml(product?.stockQuantity ?? 0)}" required /></label>
+                <label data-product-buy-field><span>Maximum per order</span><input name="maxPurchaseQuantity" type="number" min="1" step="1" value="${escapeHtml(product?.metadata?.maxPurchaseQuantity ?? "")}" placeholder="No limit" /></label>
                 <label><span>Category</span><select name="categoryId" data-product-category-select>${categoryOptions(categories, product?.categoryId || "")}</select></label>
               </div>
               <fieldset class="choice-card-grid product-purchase-mode">
@@ -239,7 +240,7 @@ export function renderProductEditorPage({ product = null, categories = [], messa
               <div class="product-editor-summary">
                 <p class="section-label">Current value</p>
                 <strong>${escapeHtml(formatMoney(product?.priceCents ?? 0, product?.currency || "EUR"))}</strong>
-                <span>${escapeHtml(product?.stockQuantity ?? 0)} units in stock</span>
+                <span>${escapeHtml(product?.reservedQuantity ?? 0)} reserved · ${escapeHtml(product?.availableStock ?? product?.stockQuantity ?? 0)} available</span>
               </div>
               <button type="submit">${isNew ? "Create product" : "Save product"}</button>
             </section>

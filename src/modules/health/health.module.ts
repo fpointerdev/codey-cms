@@ -5,6 +5,7 @@ import { EmailSettingsService } from "../../infrastructure/email/email-settings.
 import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
 import { createStorageAdapter } from "../../infrastructure/storage/s3-storage.js";
 import { requirePermission } from "../auth/auth.middleware.js";
+import { inventoryReservationDiagnostics } from "../orders/inventory-reservation.service.js";
 
 type CheckStatus = "pass" | "fail" | "skipped";
 
@@ -14,8 +15,6 @@ type ReadinessCheck = {
   message?: string;
   details?: Record<string, unknown>;
 };
-
-type ReadinessChecks = Record<"database" | "storage" | "email" | "backup", ReadinessCheck>;
 
 async function runtimeReadiness(context: ModuleContext) {
   const [database, storage, email] = await Promise.all([
@@ -34,16 +33,20 @@ async function runtimeReadiness(context: ModuleContext) {
 }
 
 async function runtimeDiagnostics(context: ModuleContext) {
-  const [runtime, backup] = await Promise.all([
+  const [runtime, backup, inventory] = await Promise.all([
     runtimeReadiness(context),
-    readBackupHealth(context.config.backup)
+    readBackupHealth(context.config.backup),
+    context.config.features.orders
+      ? inventoryReservationDiagnostics(context)
+      : Promise.resolve({ status: "skipped", blocking: false })
   ]);
   const operationallyHealthy = runtime.ready && (backup.status !== "fail" || !backup.blocking);
 
   return {
     ready: runtime.ready,
     operationallyHealthy,
-    checks: { ...runtime.checks, backup } satisfies ReadinessChecks
+    checks: { ...runtime.checks, backup },
+    inventory
   };
 }
 
@@ -206,7 +209,8 @@ export const healthModule: AppModule = {
             }
           },
           operations: {
-            backup: diagnostics.checks.backup
+            backup: diagnostics.checks.backup,
+            inventory: diagnostics.inventory
           },
           metrics: {
             uptimeSeconds: Math.round(process.uptime()),
@@ -227,7 +231,12 @@ export const healthModule: AppModule = {
       requirePermission(context, "manage", "modules"),
       asyncHandler(async (_req, res) => {
         const memory = process.memoryUsage();
-        const backup = await readBackupHealth(context.config.backup);
+        const [backup, inventory] = await Promise.all([
+          readBackupHealth(context.config.backup),
+          context.config.features.orders
+            ? inventoryReservationDiagnostics(context)
+            : Promise.resolve({ status: "skipped", blocking: false })
+        ]);
 
         return sendSuccess(res, {
           status: "ok",
@@ -243,7 +252,7 @@ export const healthModule: AppModule = {
             env: context.config.env,
             mode: context.config.app.mode
           },
-          operations: { backup }
+          operations: { backup, inventory }
         });
       })
     );

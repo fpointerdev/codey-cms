@@ -60,11 +60,18 @@ Production media storage must be S3-compatible. The platform default is Cloudfla
 - `STORAGE_MAX_UPLOAD_BYTES`
 - `STORAGE_UPLOAD_BODY_LIMIT`
 - `STORAGE_IMAGE_VARIANT_WIDTHS`
+- `MEDIA_MAX_PIXELS`
+- `MEDIA_MAX_WIDTH`
+- `MEDIA_MAX_HEIGHT`
+- `MEDIA_MAX_FRAMES`
+- `MEDIA_PROCESSING_CONCURRENCY`
 - `STORAGE_QUOTA_DEFAULT_MB`
 - `STORAGE_QUOTA_PRESENTATION_MB`
 - `STORAGE_QUOTA_CMS_MB`
 - `STORAGE_QUOTA_SHOP_MB`
 - `STORAGE_QUOTA_SAAS_MB`
+
+`MEDIA_MAX_PIXELS`, `MEDIA_MAX_WIDTH`, `MEDIA_MAX_HEIGHT`, and `MEDIA_MAX_FRAMES` bound decoded image work, including animated files. `MEDIA_PROCESSING_CONCURRENCY` limits simultaneous variant jobs per CMS process. Keep the defaults unless the host has been sized and monitored for larger workloads; raising upload bytes alone does not relax decoded-image protections.
 
 Codey supports one shared S3-compatible account and bucket for many copied customer runtimes. Keep the connection values managed by the platform, but assign each copied runtime a unique `STORAGE_KEY_PREFIX`. Media objects are written below that directory, for example `sites/project-123/media/...`.
 
@@ -90,7 +97,7 @@ Before launch, verify upload, responsive variant delivery, signed download, and 
 
 Production runtimes need `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned credentials and MFA secrets at rest. It also keys recovery codes and persisted login-throttle identifiers. This is stable deployment-owned infrastructure material, not a provider credential.
 
-Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server.
+Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server. Online payment credentials and connection tests require secret-management permission and recent authentication; manual-payment instructions remain available to users with ordinary payment-update permission.
 
 The email form supports Resend and Postmark presets plus a generic HTTP provider. Provider credentials are write-only, stored in an encrypted envelope, and can be tested from the dashboard. Owners can enable account recovery after a provider is configured without editing runtime environment files. Generic endpoints receive a JSON message containing `to`, `from`, `subject`, `text`, optional `html`, and `metadata`. Email endpoints must use HTTP or HTTPS, and production endpoints must use HTTPS.
 
@@ -111,6 +118,19 @@ Stripe API keys, Stripe webhook signing secrets, PayPal client credentials, and 
 Audit keys can rotate independently. Move the old `SECURITY_AUDIT_KEY` into `SECURITY_AUDIT_PREVIOUS_KEYS`, set a new current key, deploy, and keep the previous key for as long as its history must verify. MFA secret envelopes created by the earlier security release migrate to the stable credential key after successful use. Existing recovery-code hashes still need the former key until the user disables and re-enables MFA to generate new codes.
 
 See [payment-providers.md](payment-providers.md) for setup, checkout, webhook, retry, and credential-rotation flows.
+
+## Checkout Protection
+
+Checkout abuse controls are enforced through PostgreSQL so they remain consistent across multiple CMS processes. Limiter identifiers for email addresses and client IPs are keyed hashes; the limiter table never stores the original values.
+
+- `CHECKOUT_MAX_ITEM_QUANTITY`: maximum units for one product or variant, default `20`
+- `CHECKOUT_MAX_ORDER_ITEMS`: maximum order lines, default `50`
+- `CHECKOUT_RATE_LIMIT_MAX`: attempts per protected checkout route in 15 minutes, default `15`
+- `CHECKOUT_PENDING_ORDER_LIMIT_PER_EMAIL`: active unpaid orders per normalized email, default `3`
+- `CHECKOUT_PENDING_ORDER_LIMIT_PER_IP`: active unpaid orders per client IP, default `5`
+- `ORDER_RESERVATION_TTL_MINUTES`: temporary payment inventory hold, default `10`
+
+Rate-limited API responses include `Retry-After` and the standard CodeY error envelope. Pending-order limits are checked while holding PostgreSQL advisory transaction locks, so two application instances cannot create checkouts past the configured limit.
 
 ## Auth Recovery
 
@@ -147,6 +167,8 @@ Email verification and password reset tokens are created server-side, delivered 
 - First bootstrap after provisioning: `pnpm runtime:bootstrap`
 - Backup: `pnpm runtime:backup`
 - Scheduled backup worker: `pnpm runtime:backup:scheduler`
+- Inventory check: `pnpm inventory:reconcile` (dry run)
+- Inventory repair: `pnpm inventory:reconcile --repair` (audited)
 - Restore: `pnpm runtime:restore -- /path/to/runtime.dump`
 
 `runtime:start` deploys migrations before starting the API. `runtime:bootstrap` deploys migrations and runs the idempotent seed flow once after a new copied site is provisioned. By default, the seed creates only runtime roles, module settings, and an editable Home page; it does not publish sample posts, products, coupons, or shipping rules. Set `CODEY_SEED_DEMO_CONTENT=true` only for an intentional local demo or test fixture. The seed only creates an owner when explicit `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` values are present; otherwise run `pnpm setup:admin` after bootstrap. If the configured email already belongs to a non-owner, the seed refuses to elevate it and `pnpm setup:admin` must be used to reset its password and sessions during promotion.

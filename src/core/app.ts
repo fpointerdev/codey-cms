@@ -1,19 +1,13 @@
 import compression from "compression";
 import cookieParser from "cookie-parser";
-import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { Prisma } from "@prisma/client";
 import { readFile } from "node:fs/promises";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { Readable } from "node:stream";
-import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import rateLimit from "express-rate-limit";
-import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { config } from "../config/index.js";
 import { createAdminMutationAudit } from "./audit/admin-mutation-audit.middleware.js";
-import { safeWriteAuditLog } from "./audit/audit-log.js";
 import { errorHandler } from "./http/error.middleware.js";
 import { createMaintenanceMiddleware } from "./http/maintenance.middleware.js";
 import { loadModules } from "./http/module-loader.js";
@@ -21,22 +15,19 @@ import { notFoundHandler } from "./http/not-found.middleware.js";
 import { requestContext } from "./http/request-context.middleware.js";
 import { injectPublicShellContent, type PublicShellContent } from "./public-shell.js";
 import { canonicalPublicRedirectTarget } from "./public-routing.js";
+import { registerPublicMediaRoutes } from "./public-media-router.js";
+import {
+  createPlatformSecurityMiddleware,
+  normalizeAllowedOrigin
+} from "./security-middleware.js";
 import { prisma } from "../infrastructure/database/prisma.js";
 import { logger } from "../infrastructure/logging/logger.js";
 import {
   serializeHttpRequest,
   serializeHttpResponse
 } from "../infrastructure/logging/http-logging.js";
-import { createStorageAdapter } from "../infrastructure/storage/s3-storage.js";
-import type { StorageAdapter } from "../infrastructure/storage/storage.types.js";
 import { modules } from "../modules/index.js";
 import { CmsService } from "../modules/cms/cms.service.js";
-import {
-  isOptimizableImageKey,
-  optimizedImageStorageKey,
-  requestedImageWidth
-} from "../modules/cms/media-optimizer.js";
-import { publicMediaResponsePolicy } from "../modules/cms/media-policy.js";
 import { sanitizeContentBlockValue, sanitizePostContent } from "../modules/cms/rich-text-sanitizer.js";
 import { enrichPublicMedia } from "../modules/cms/public-media.js";
 import {
@@ -48,193 +39,13 @@ import {
   findProductAttributePage,
   orderProductsByIds
 } from "../modules/products/product-attribute-filter.js";
+import { withAvailableInventory } from "../modules/products/product-inventory.js";
 import { readShopSettings } from "../modules/products/shop-settings.js";
 import { publicSiteStyleTag } from "../modules/config/site-design.js";
 import {
   createInstallationGate,
   createInstallationRouter
 } from "../modules/installation/installation.routes.js";
-
-function normalizeOrigin(origin: string | undefined) {
-  if (!origin) return undefined;
-
-  try {
-    return new URL(origin).origin;
-  } catch {
-    return origin.replace(/\/+$/, "");
-  }
-}
-
-function createCorsOptions() {
-  const allowedOrigins = new Set(
-    [...config.cors.origins, config.app.publicUrl]
-      .map(normalizeOrigin)
-      .filter((origin): origin is string => Boolean(origin))
-  );
-
-  if (!config.isProduction) {
-    allowedOrigins.add(`http://localhost:${config.api.port}`);
-    allowedOrigins.add(`http://127.0.0.1:${config.api.port}`);
-  }
-
-  return {
-    origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-      const normalizedOrigin = normalizeOrigin(origin);
-
-      if (!normalizedOrigin || allowedOrigins.size === 0 || allowedOrigins.has(normalizedOrigin)) {
-        callback(null, true);
-        return;
-      }
-
-      callback(new Error(`CORS origin not allowed: ${origin}`));
-    },
-    credentials: true
-  };
-}
-
-function createApiLimiter() {
-  return createRateLimiter("rate_limit_exceeded", "Too many API requests.", config.rateLimits.platform.apiMax);
-}
-
-function createAuthLimiter() {
-  return createRateLimiter(
-    "auth_rate_limit_exceeded",
-    "Too many authentication attempts.",
-    config.rateLimits.platform.authMax,
-    { writeOnly: true }
-  );
-}
-
-function createAiLimiter() {
-  return createRateLimiter(
-    "platform_ai_rate_limit_exceeded",
-    "Too many prompt or chat requests. Please wait before trying again.",
-    config.rateLimits.platform.aiMax,
-    { writeOnly: true }
-  );
-}
-
-function createGenerationLimiter() {
-  return createRateLimiter(
-    "platform_generation_rate_limit_exceeded",
-    "Too many generation requests. Please wait before trying again.",
-    config.rateLimits.platform.generationMax,
-    { writeOnly: true }
-  );
-}
-
-function createPublishLimiter() {
-  return createRateLimiter(
-    "platform_publish_rate_limit_exceeded",
-    "Too many publish requests. Please wait before trying again.",
-    config.rateLimits.platform.publishMax,
-    { writeOnly: true }
-  );
-}
-
-function createAdminWriteLimiter() {
-  return createRateLimiter(
-    "admin_write_rate_limit_exceeded",
-    "Too many admin write requests. Please wait before trying again.",
-    config.rateLimits.platform.adminMax,
-    { writeOnly: true }
-  );
-}
-
-function createRateLimiter(
-  code: string,
-  message: string,
-  limit: number,
-  options: { writeOnly?: boolean } = {}
-) {
-  return rateLimit({
-    windowMs: config.rateLimits.platform.windowMs,
-    limit,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => {
-      if (!config.rateLimits.platform.enabled) return true;
-      if (!options.writeOnly) return false;
-      return !["POST", "PUT", "PATCH", "DELETE"].includes(req.method.toUpperCase());
-    },
-    handler: (req: Request, res: Response) => {
-      const rateLimitInfo = (req as Request & {
-        rateLimit?: { limit: number; used: number };
-      }).rateLimit;
-      if (!rateLimitInfo || rateLimitInfo.used === rateLimitInfo.limit + 1) {
-        void safeWriteAuditLog(prisma, {
-          actorUserId: req.user?.id,
-          action: "rate_limit.exceeded",
-          subject: "api",
-          ipAddress: req.ip,
-          userAgent: req.header("user-agent"),
-          requestId: req.requestId,
-          outcome: "DENIED",
-          severity: "HIGH",
-          metadata: {
-            code,
-            method: req.method,
-            path: req.originalUrl.split("?", 1)[0],
-            windowMs: config.rateLimits.platform.windowMs,
-            limit
-          }
-        });
-      }
-      res.status(429).json({
-        success: false,
-        data: null,
-        error: {
-          code,
-          message,
-          details: {
-            windowMs: config.rateLimits.platform.windowMs,
-            limit
-          }
-        },
-        meta: {
-          requestId: res.locals.requestId
-        }
-      });
-    }
-  });
-}
-
-function createHelmetOptions() {
-  const openerPolicy = config.features.payments
-    ? "same-origin-allow-popups" as const
-    : "same-origin" as const;
-  const stripeScriptSources = [
-    "https://js.stripe.com",
-    "https://*.js.stripe.com",
-    "https://maps.googleapis.com"
-  ];
-  const stripeFrameSources = [
-    "https://js.stripe.com",
-    "https://*.js.stripe.com",
-    "https://hooks.stripe.com"
-  ];
-  const contentSecurityPolicyDirectives = {
-    "img-src": ["'self'", "data:", "blob:", "https:"],
-    "script-src": ["'self'", ...(config.features.payments ? stripeScriptSources : [])],
-    "connect-src": [
-      "'self'",
-      "blob:",
-      ...(config.features.payments ? ["https://api.stripe.com", "https://maps.googleapis.com"] : [])
-    ],
-    "frame-src": ["'self'", "blob:", ...(config.features.payments ? stripeFrameSources : [])],
-    "child-src": ["'self'", "blob:", ...(config.features.payments ? stripeFrameSources : [])],
-    ...(config.env === "production" ? {} : { "upgrade-insecure-requests": null })
-  };
-
-  return {
-    contentSecurityPolicy: {
-      directives: contentSecurityPolicyDirectives
-    },
-    crossOriginOpenerPolicy: {
-      policy: openerPolicy
-    }
-  };
-}
 
 type SeoDocument = {
   title: string;
@@ -464,7 +275,11 @@ async function readPublicShopProductPage(
   const skip = (route.page - 1) * limit;
   const include = {
     category: true,
-    images: { orderBy: { sortOrder: "asc" as const } }
+    images: { orderBy: { sortOrder: "asc" as const } },
+    variants: {
+      where: { active: true },
+      orderBy: { createdAt: "asc" as const }
+    }
   };
 
   if (route.attributeName || route.attributeValue) {
@@ -487,7 +302,10 @@ async function readPublicShopProductPage(
       : [];
 
     return {
-      products: await enrichPublicMedia(prisma, orderProductsByIds(matchedProducts, result.ids)),
+      products: await enrichPublicMedia(
+        prisma,
+        orderProductsByIds(matchedProducts, result.ids).map(withAvailableInventory)
+      ),
       total: result.total
     };
   }
@@ -503,7 +321,10 @@ async function readPublicShopProductPage(
     prisma.product.count({ where })
   ]);
 
-  return { products: await enrichPublicMedia(prisma, products), total };
+  return {
+    products: await enrichPublicMedia(prisma, products.map(withAvailableInventory)),
+    total
+  };
 }
 
 async function readPublicModuleStates() {
@@ -593,7 +414,7 @@ async function readSiteSeoDefaults() {
         ? storedSettings.description
         : "",
     publicBaseUrl: typeof storedSettings.siteUrl === "string" && storedSettings.siteUrl.trim()
-      ? normalizeOrigin(storedSettings.siteUrl)
+      ? normalizeAllowedOrigin(storedSettings.siteUrl)
       : undefined,
     noindex: storedSettings.searchIndexing === false,
     design: storedSettings.design,
@@ -725,6 +546,7 @@ async function resolveProductSeo(
       priceCents: true,
       currency: true,
       stockQuantity: true,
+      reservedQuantity: true,
       metaTitle: true,
       metaDescription: true,
       seo: true,
@@ -740,6 +562,10 @@ async function resolveProductSeo(
           alt: true,
           isPrimary: true
         }
+      },
+      variants: {
+        where: { active: true },
+        select: { stockQuantity: true, reservedQuantity: true }
       }
     }
   });
@@ -758,7 +584,7 @@ async function resolveProductSeo(
     orderBy: { locale: "asc" }
   });
 
-  const enrichedProduct = await enrichPublicMedia(prisma, product);
+  const enrichedProduct = await enrichPublicMedia(prisma, withAvailableInventory(product));
 
   return renderer.createProductSeoDocument({ ...enrichedProduct, translations }, {
     ...seoDocumentContext(origin, site, localization),
@@ -1046,7 +872,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         }
       });
       if (!product) return { found: false, content: null, siteTitle, localization };
-      const enrichedProduct = await enrichPublicMedia(prisma, product);
+      const enrichedProduct = await enrichPublicMedia(prisma, withAvailableInventory(product));
 
       return {
         found: true,
@@ -1229,224 +1055,6 @@ function createStaticShellRenderer(root: string) {
   };
 }
 
-function normalizeUploadStorageKey(value = "") {
-  try {
-    const key = decodeURIComponent(value).replace(/^\/+/, "");
-    const keyParts = key.split("/");
-    const keyPrefix = config.storage.keyPrefix.replace(/^\/+|\/+$/g, "");
-
-    if (!key || keyParts.includes("..")) return "";
-    if (keyPrefix && key !== keyPrefix && !key.startsWith(`${keyPrefix}/`)) return "";
-
-    return key;
-  } catch {
-    return "";
-  }
-}
-
-function createS3UploadProxy() {
-  const storage = createStorageAdapter(config.storage);
-
-  return async function proxyS3Upload(req: Request, res: Response, next: NextFunction) {
-    try {
-      const key = normalizeUploadStorageKey(req.params[0] || "");
-      const responsePolicy = publicMediaResponsePolicy(key);
-      if (!key || !responsePolicy) {
-        res.status(404).end();
-        return;
-      }
-
-      if (await serveOptimizedUpload(req, res, storage, key)) {
-        return;
-      }
-
-      const storageResponse = await fetchStorageObject(storage, key);
-      if (!storageResponse.ok) {
-        res.status(storageResponse.status === 404 ? 404 : 502).end();
-        return;
-      }
-
-      await sendStorageResponse(res, storageResponse, {
-        contentType: responsePolicy.mimeType,
-        disposition: responsePolicy.disposition,
-        filename: key
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-function createLocalUploadVariantProxy(root: string) {
-  return async function proxyLocalUploadVariant(req: Request, res: Response, next: NextFunction) {
-    try {
-      const key = normalizeUploadStorageKey(req.params[0] || "");
-      const width = requestedImageWidth(req.query.w, config.storage.imageVariantWidths);
-      if (!key || !width || !acceptsWebp(req) || !isOptimizableImageKey(key)) {
-        next();
-        return;
-      }
-
-      const variantPath = resolve(root, optimizedImageStorageKey(key, width));
-      const relativePath = relative(root, variantPath);
-      if (!relativePath || relativePath === ".." || relativePath.startsWith("../") || isAbsolute(relativePath)) {
-        next();
-        return;
-      }
-
-      try {
-        await sendBufferResponse(res, await readFile(variantPath), "image/webp", true);
-      } catch (error) {
-        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-          next();
-          return;
-        }
-
-        throw error;
-      }
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-function createLocalUploadProxy(root: string) {
-  return async function proxyLocalUpload(req: Request, res: Response, next: NextFunction) {
-    try {
-      const key = normalizeUploadStorageKey(req.params[0] || "");
-      const responsePolicy = publicMediaResponsePolicy(key);
-      if (!key || !responsePolicy) {
-        res.status(404).end();
-        return;
-      }
-
-      const objectPath = resolve(root, key);
-      const relativePath = relative(root, objectPath);
-      if (!relativePath || relativePath === ".." || relativePath.startsWith("../") || isAbsolute(relativePath)) {
-        res.status(404).end();
-        return;
-      }
-
-      try {
-        await sendBufferResponse(
-          res,
-          await readFile(objectPath),
-          responsePolicy.mimeType,
-          false,
-          responsePolicy.disposition,
-          key
-        );
-      } catch (error) {
-        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-          res.status(404).end();
-          return;
-        }
-
-        throw error;
-      }
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-function acceptsWebp(req: Request) {
-  return /\bimage\/webp\b/i.test(req.header("accept") || "");
-}
-
-async function fetchStorageObject(storage: StorageAdapter, key: string) {
-  const download = await storage.createDownloadUrl(key);
-
-  return fetch(download.url);
-}
-
-function setPublicUploadHeaders(
-  res: Response,
-  varyAccept = false,
-  disposition: "attachment" | "inline" = "inline",
-  filename?: string
-) {
-  if (varyAccept) res.setHeader("vary", "Accept");
-  res.setHeader("cache-control", "public, max-age=31536000, immutable");
-  res.setHeader("content-security-policy", "default-src 'none'; sandbox");
-  res.setHeader("x-content-type-options", "nosniff");
-  if (filename) {
-    const safeFilename = basename(filename).replace(/[^a-z0-9._-]+/gi, "-");
-    res.setHeader("content-disposition", `${disposition}; filename="${safeFilename || "download"}"`);
-  }
-}
-
-async function sendBufferResponse(
-  res: Response,
-  body: Buffer,
-  contentType: string | null | undefined,
-  varyAccept = false,
-  disposition: "attachment" | "inline" = "inline",
-  filename?: string
-) {
-  if (contentType) res.type(contentType);
-  res.setHeader("content-length", String(body.byteLength));
-  setPublicUploadHeaders(res, varyAccept, disposition, filename);
-  res.send(body);
-}
-
-async function sendStorageResponse(
-  res: Response,
-  storageResponse: globalThis.Response,
-  options: {
-    contentType?: string;
-    disposition?: "attachment" | "inline";
-    filename?: string;
-    varyAccept?: boolean;
-  } = {}
-) {
-  const contentType = options.contentType ?? storageResponse.headers.get("content-type");
-  const contentLength = storageResponse.headers.get("content-length");
-
-  if (contentType) res.type(contentType);
-  if (contentLength) res.setHeader("content-length", contentLength);
-  setPublicUploadHeaders(
-    res,
-    options.varyAccept ?? false,
-    options.disposition ?? "inline",
-    options.filename
-  );
-
-  if (!storageResponse.body) {
-    res.end();
-    return;
-  }
-
-  await new Promise<void>((resolveStream, rejectStream) => {
-    const stream = Readable.fromWeb(storageResponse.body! as unknown as NodeReadableStream<Uint8Array>);
-
-    stream.on("error", rejectStream);
-    res.on("error", rejectStream);
-    res.on("finish", resolveStream);
-    stream.pipe(res);
-  });
-}
-
-async function serveOptimizedUpload(req: Request, res: Response, storage: StorageAdapter, key: string) {
-  if (!acceptsWebp(req) || !isOptimizableImageKey(key)) return false;
-
-  const width = requestedImageWidth(req.query.w, config.storage.imageVariantWidths);
-  if (!width) return false;
-
-  const variantKey = optimizedImageStorageKey(key, width);
-  const variantResponse = await fetchStorageObject(storage, variantKey);
-
-  if (variantResponse.ok) {
-    await sendStorageResponse(res, variantResponse, {
-      contentType: "image/webp",
-      varyAccept: true
-    });
-    return true;
-  }
-
-  return false;
-}
-
 export async function createApp() {
   const app = express();
   const webRoot = resolve(process.cwd(), "apps/web");
@@ -1455,6 +1063,7 @@ export async function createApp() {
   const renderPublicShell = createAppShellRenderer(webRoot, { publicRoute: true });
   const copiedRuntimeEnabled = true;
   const cmsService = new CmsService(prisma);
+  const security = createPlatformSecurityMiddleware(config, prisma);
 
   app.disable("x-powered-by");
   app.set("trust proxy", config.api.trustProxy);
@@ -1467,14 +1076,14 @@ export async function createApp() {
     },
     wrapSerializers: false
   }));
-  app.use(helmet(createHelmetOptions()));
-  app.use(cors(createCorsOptions()));
+  app.use(security.headers);
+  app.use(security.cors);
   app.use(compression());
   app.use(cookieParser());
   app.use(createAdminMutationAudit({ config, prisma, logger }));
-  app.use(config.api.prefix, createApiLimiter());
-  app.use(`${config.api.prefix}/auth`, createAuthLimiter());
-  app.use(`${config.api.prefix}/config`, createAdminWriteLimiter());
+  app.use(config.api.prefix, security.apiLimiter);
+  app.use(`${config.api.prefix}/auth`, security.authLimiter);
+  app.use(`${config.api.prefix}/config`, security.adminWriteLimiter);
   app.use(express.json({
     limit: config.storage.requestBodyLimit,
     verify: (req, _res, buffer) => {
@@ -1513,12 +1122,7 @@ export async function createApp() {
   if (copiedRuntimeEnabled) {
     app.use(express.static(webRoot, { index: false }));
   }
-  if (config.storage.driver === "local") {
-    app.get("/uploads/*", createLocalUploadVariantProxy(localStorageRoot));
-    app.get("/uploads/*", createLocalUploadProxy(localStorageRoot));
-  } else if (config.storage.driver === "s3") {
-    app.get("/uploads/*", createS3UploadProxy());
-  }
+  registerPublicMediaRoutes(app, config, localStorageRoot);
   app.get("/favicon.ico", (_req, res) => {
     res.status(204).end();
   });

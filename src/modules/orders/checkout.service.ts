@@ -1,8 +1,24 @@
 import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { encryptSecretEnvelope } from "../../core/security/secret-envelope.js";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
+import { CommerceAbuseService } from "./commerce-abuse.service.js";
+import {
+  expireInventoryReservations,
+  releaseInventoryReservation
+} from "./inventory-reservation.service.js";
 import { queueOrderEmail } from "./order-email.service.js";
+import {
+  adminOrderDto,
+  createOrderLookupCredential,
+  orderLookupTokenMatches,
+  publicOrderDto
+} from "./order-lookup.js";
+import {
+  availableStock as inventoryAvailableStock,
+  effectivePurchaseLimit
+} from "../products/product-inventory.js";
 
 type OrderItemInput = {
   productId: string;
@@ -39,17 +55,19 @@ export type CreateCartInput = {
 
 export type CheckoutCartInput = Omit<CreateOrderInput, "items">;
 
+export type OrderRequestMeta = {
+  ipAddress?: string;
+};
+
 export type LookupOrderInput = {
   orderNumber: string;
-  customerEmail: string;
+  lookupToken: string;
 };
 
 type ShopTransaction = Prisma.TransactionClient;
 type CartWithItems = Prisma.CartGetPayload<{ include: { items: true } }>;
 type OrderStatus = "PENDING" | "CONFIRMED" | "PAID" | "FULFILLED" | "CANCELLED" | "REFUNDED";
 type CheckoutStatus = "STARTED" | "SHIPPING_SELECTED" | "PAYMENT_PENDING" | "PAYMENT_AUTHORIZED" | "COMPLETE" | "ABANDONED";
-
-export const orderReservationTtlMs = 30 * 60 * 1000;
 
 const merchantOrderTransitions: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PENDING: ["CANCELLED"],
@@ -84,12 +102,6 @@ export function assertMerchantCheckoutTransition(
     "Checkout authorization and completion are controlled by the payment workflow."
   );
 }
-
-type ReservedOrderItem = {
-  productId: string | null;
-  variantId: string | null;
-  quantity: number;
-};
 
 function createOrderNumber() {
   return `ORD-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
@@ -160,6 +172,7 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
           currency: true,
           metadata: true,
           stockQuantity: true,
+          reservedQuantity: true,
           images: {
             orderBy: { sortOrder: "asc" },
             take: 1,
@@ -172,6 +185,7 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
               sku: true,
               priceCents: true,
               stockQuantity: true,
+              reservedQuantity: true,
               active: true
             }
           }
@@ -184,7 +198,11 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
     const variant = item.variantId
       ? product?.variants.find((candidate) => candidate.id === item.variantId)
       : undefined;
-    const availableStock = variant?.stockQuantity ?? product?.stockQuantity ?? 0;
+    const availableStock = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : product
+        ? inventoryAvailableStock(product.stockQuantity, product.reservedQuantity)
+        : 0;
     const unitPriceCents = variant?.priceCents ?? product?.priceCents ?? 0;
     const available = Boolean(
       product?.status === "ACTIVE" &&
@@ -203,6 +221,8 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
             status: product.status,
             currency: product.currency,
             stockQuantity: product.stockQuantity,
+            reservedQuantity: product.reservedQuantity,
+            availableStock: inventoryAvailableStock(product.stockQuantity, product.reservedQuantity),
             image: product.images[0] ?? null
           }
         : null,
@@ -222,22 +242,6 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
       0
     )
   };
-}
-
-function aggregateReservedItems(items: ReservedOrderItem[]) {
-  return items.reduce((quantities, item) => {
-    if (!item.productId) return quantities;
-
-    const key = `${item.productId}:${item.variantId ?? ""}`;
-    const current = quantities.get(key) ?? {
-      productId: item.productId,
-      variantId: item.variantId,
-      quantity: 0
-    };
-    current.quantity += item.quantity;
-    quantities.set(key, current);
-    return quantities;
-  }, new Map<string, { productId: string; variantId: string | null; quantity: number }>());
 }
 
 function shippingCountryFilter(country: string | undefined) {
@@ -384,7 +388,30 @@ async function resolveTax(
   return Math.floor((taxableCents * taxRule.rateBps) / 10_000);
 }
 
-async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderInput) {
+async function createOrderInTransaction(
+  tx: ShopTransaction,
+  context: ModuleContext,
+  input: CreateOrderInput,
+  requestMeta: OrderRequestMeta = {}
+) {
+  if (input.items.length > context.config.commerce.checkout.maxOrderItems) {
+    throw new AppError(
+      422,
+      "order_item_limit_exceeded",
+      `Orders cannot contain more than ${context.config.commerce.checkout.maxOrderItems} items.`
+    );
+  }
+  if (input.items.some((item) => item.quantity > context.config.commerce.checkout.maxItemQuantity)) {
+    throw new AppError(
+      422,
+      "order_quantity_limit_exceeded",
+      `An order item cannot exceed ${context.config.commerce.checkout.maxItemQuantity} units.`
+    );
+  }
+
+  const abuseService = new CommerceAbuseService(context.prisma, context.config);
+  const pendingOrderHashes = abuseService.pendingOrderHashes(input.customerEmail, requestMeta.ipAddress);
+  await abuseService.assertPendingOrderCapacity(tx, input.customerEmail, pendingOrderHashes);
   const requestedQuantities = input.items.reduce((totals, item) => {
     totals.set(itemKey(item), (totals.get(itemKey(item)) ?? 0) + item.quantity);
     return totals;
@@ -427,38 +454,23 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
 
   for (const [key, quantity] of requestedQuantities) {
     const [productId, variantId] = key.split(":");
-
-    if (variantId) {
-      const updated = await tx.productVariant.updateMany({
-        where: {
-          id: variantId,
-          productId,
-          active: true,
-          stockQuantity: { gte: quantity }
-        },
-        data: {
-          stockQuantity: { decrement: quantity }
-        }
-      });
-
-      if (updated.count !== 1) {
-        throw new AppError(409, "insufficient_stock", "One or more variants are out of stock.");
-      }
-
-      continue;
+    const product = productsById.get(productId);
+    const variant = variantId ? variantsById.get(variantId) : undefined;
+    const available = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : product
+        ? inventoryAvailableStock(product.stockQuantity, product.reservedQuantity)
+        : 0;
+    const purchaseLimit = effectivePurchaseLimit(product?.metadata, variant?.metadata);
+    if (purchaseLimit !== undefined && quantity > purchaseLimit) {
+      throw new AppError(
+        422,
+        "product_purchase_limit_exceeded",
+        `This item is limited to ${purchaseLimit} per order.`,
+        { limit: purchaseLimit }
+      );
     }
-
-    const updated = await tx.product.updateMany({
-      where: {
-        id: productId,
-        stockQuantity: { gte: quantity }
-      },
-      data: {
-        stockQuantity: { decrement: quantity }
-      }
-    });
-
-    if (updated.count !== 1) {
+    if (available < quantity) {
       throw new AppError(409, "insufficient_stock", "One or more products are out of stock.");
     }
   }
@@ -486,7 +498,7 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
     (total, item) => total + item.unitPriceCents * item.quantity,
     0
   );
-  const currency = products[0]!.currency;
+  const currency = products[0].currency;
   const { code, couponId, usageLimit, discountCents } = await resolveCoupon(
     tx,
     input.couponCode,
@@ -508,6 +520,7 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
     taxableCents
   );
   const totalCents = taxableCents + taxCents;
+  const lookupCredential = createOrderLookupCredential();
   const order = await tx.order.create({
     data: {
       orderNumber: createOrderNumber(),
@@ -523,6 +536,9 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
       couponCode: code,
       shippingCountry,
       shippingRateId,
+      checkoutEmailHash: pendingOrderHashes.emailHash,
+      checkoutIpHash: pendingOrderHashes.ipHash,
+      lookupTokenHash: lookupCredential.lookupTokenHash,
       metadata: checkoutMetadata(input) as Prisma.InputJsonValue | undefined,
       items: {
         create: orderItems
@@ -548,15 +564,32 @@ async function createOrderInTransaction(tx: ShopTransaction, input: CreateOrderI
   }
 
   await queueOrderEmail(tx, order, {
-    eventType: "ORDER_RECEIVED"
+    eventType: "ORDER_RECEIVED",
+    secretEnvelope: encryptSecretEnvelope(
+      context.config.security.credentialEncryptionKey,
+      { lookupToken: lookupCredential.lookupToken }
+    )
   });
 
-  return order;
+  return {
+    ...adminOrderDto(order),
+    lookupToken: lookupCredential.lookupToken
+  };
 }
 
-export async function createOrder(context: ModuleContext, input: CreateOrderInput) {
-  await releaseExpiredOrderReservations(context);
-  return context.prisma.$transaction((tx) => createOrderInTransaction(tx, input));
+export async function createOrder(
+  context: ModuleContext,
+  input: CreateOrderInput,
+  requestMeta: OrderRequestMeta = {}
+) {
+  try {
+    return await context.prisma.$transaction((tx) =>
+      createOrderInTransaction(tx, context, input, requestMeta)
+    );
+  } catch (error) {
+    await auditPendingOrderLimit(context, input.customerEmail, requestMeta, error);
+    throw error;
+  }
 }
 
 export async function createCart(context: ModuleContext, input: CreateCartInput) {
@@ -637,10 +670,26 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
       }
     });
     const nextQuantity = (existingItem?.quantity ?? 0) + input.quantity;
-    const availableStock = variant?.stockQuantity ?? product.stockQuantity;
+    const availableStock = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : inventoryAvailableStock(product.stockQuantity, product.reservedQuantity);
+    const purchaseLimit = effectivePurchaseLimit(product.metadata, variant?.metadata);
 
-    if (nextQuantity > 999) {
-      throw new AppError(422, "cart_quantity_too_large", "Cart item quantity cannot exceed 999.");
+    if (nextQuantity > context.config.commerce.checkout.maxItemQuantity) {
+      throw new AppError(
+        422,
+        "cart_quantity_too_large",
+        `Cart item quantity cannot exceed ${context.config.commerce.checkout.maxItemQuantity}.`
+      );
+    }
+
+    if (purchaseLimit !== undefined && nextQuantity > purchaseLimit) {
+      throw new AppError(
+        422,
+        "product_purchase_limit_exceeded",
+        `This item is limited to ${purchaseLimit} per order.`,
+        { limit: purchaseLimit }
+      );
     }
 
     if (nextQuantity > availableStock) {
@@ -690,6 +739,14 @@ export async function updateCartItem(
   itemId: string,
   quantity: number
 ) {
+  if (quantity > context.config.commerce.checkout.maxItemQuantity) {
+    throw new AppError(
+      422,
+      "cart_quantity_too_large",
+      `Cart item quantity cannot exceed ${context.config.commerce.checkout.maxItemQuantity}.`
+    );
+  }
+
   const cart = await context.prisma.$transaction(async (tx) => {
     await lockCart(tx, token);
     const activeCart = await tx.cart.findFirst({ where: activeCartWhere(token) });
@@ -709,9 +766,22 @@ export async function updateCartItem(
       }
     });
     const variant = item.variantId ? product?.variants[0] : undefined;
-    const availableStock = variant?.stockQuantity ?? product?.stockQuantity ?? 0;
+    const availableStock = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : product
+        ? inventoryAvailableStock(product.stockQuantity, product.reservedQuantity)
+        : 0;
+    const purchaseLimit = effectivePurchaseLimit(product?.metadata, variant?.metadata);
     if (!product || productRequiresQuote(product) || item.variantId && !variant) {
       throw new AppError(422, "invalid_cart_item", "Product is unavailable.");
+    }
+    if (purchaseLimit !== undefined && quantity > purchaseLimit) {
+      throw new AppError(
+        422,
+        "product_purchase_limit_exceeded",
+        `This item is limited to ${purchaseLimit} per order.`,
+        { limit: purchaseLimit }
+      );
     }
     if (quantity > availableStock) {
       throw new AppError(409, "insufficient_stock", "The requested quantity is not available.");
@@ -749,63 +819,85 @@ export async function removeCartItem(context: ModuleContext, token: string, item
   return hydrateCart(context, cart);
 }
 
-export async function checkoutCart(context: ModuleContext, token: string, input: CheckoutCartInput) {
-  await releaseExpiredOrderReservations(context);
+export async function checkoutCart(
+  context: ModuleContext,
+  token: string,
+  input: CheckoutCartInput,
+  requestMeta: OrderRequestMeta = {}
+) {
+  try {
+    return await context.prisma.$transaction(async (tx) => {
+      await lockCart(tx, token);
+      const cart = await tx.cart.findFirst({
+        where: activeCartWhere(token),
+        include: { items: true }
+      });
 
-  return context.prisma.$transaction(async (tx) => {
-    await lockCart(tx, token);
-    const cart = await tx.cart.findFirst({
-      where: activeCartWhere(token),
-      include: { items: true }
+      if (!cart) {
+        throw new AppError(404, "cart_not_found", "Cart not found.");
+      }
+
+      if (!cart.items.length) {
+        throw new AppError(422, "empty_cart", "Cart has no items.");
+      }
+
+      const order = await createOrderInTransaction(tx, context, {
+        ...input,
+        shippingCountry: input.shippingCountry ?? cart.shippingCountry ?? undefined,
+        shippingRateId: input.shippingRateId ?? cart.shippingRateId ?? undefined,
+        couponCode: input.couponCode ?? cart.couponCode ?? undefined,
+        items: cart.items.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId ?? undefined,
+          quantity: item.quantity,
+          metadata: item.metadata as Record<string, unknown> | undefined
+        }))
+      }, requestMeta);
+
+      await tx.cart.update({
+        where: { id: cart.id },
+        data: { status: "CONVERTED" }
+      });
+
+      return order;
     });
-
-    if (!cart) {
-      throw new AppError(404, "cart_not_found", "Cart not found.");
-    }
-
-    if (!cart.items.length) {
-      throw new AppError(422, "empty_cart", "Cart has no items.");
-    }
-
-    const order = await createOrderInTransaction(tx, {
-      ...input,
-      shippingCountry: input.shippingCountry ?? cart.shippingCountry ?? undefined,
-      shippingRateId: input.shippingRateId ?? cart.shippingRateId ?? undefined,
-      couponCode: input.couponCode ?? cart.couponCode ?? undefined,
-      items: cart.items.map((item) => ({
-        productId: item.productId,
-        variantId: item.variantId ?? undefined,
-        quantity: item.quantity,
-        metadata: item.metadata as Record<string, unknown> | undefined
-      }))
-    });
-
-    await tx.cart.update({
-      where: { id: cart.id },
-      data: { status: "CONVERTED" }
-    });
-
-    return order;
-  });
+  } catch (error) {
+    await auditPendingOrderLimit(context, input.customerEmail, requestMeta, error);
+    throw error;
+  }
 }
 
 export async function lookupOrder(context: ModuleContext, input: LookupOrderInput) {
-  const order = await context.prisma.order.findFirst({
-    where: {
-      orderNumber: input.orderNumber,
-      customerEmail: {
-        equals: input.customerEmail,
-        mode: "insensitive"
+  const order = await context.prisma.order.findUnique({
+    where: { orderNumber: input.orderNumber },
+    select: {
+      lookupTokenHash: true,
+      orderNumber: true,
+      status: true,
+      checkoutStatus: true,
+      currency: true,
+      subtotalCents: true,
+      discountCents: true,
+      shippingCents: true,
+      taxCents: true,
+      totalCents: true,
+      createdAt: true,
+      items: {
+        select: {
+          productName: true,
+          variantName: true,
+          quantity: true,
+          unitPriceCents: true
+        }
       }
-    },
-    include: { items: true }
+    }
   });
 
-  if (!order) {
+  if (!orderLookupTokenMatches(order?.lookupTokenHash, input.lookupToken) || !order) {
     throw new AppError(404, "order_not_found", "Order not found.");
   }
 
-  return order;
+  return publicOrderDto(order);
 }
 
 export async function releaseOrderInventoryReservation(
@@ -845,27 +937,7 @@ export async function releaseOrderInventoryReservation(
 
   if (claimed.count !== 1) return false;
 
-  for (const item of aggregateReservedItems(order.items).values()) {
-    if (item.variantId) {
-      await tx.productVariant.updateMany({
-        where: {
-          id: item.variantId,
-          productId: item.productId
-        },
-        data: {
-          stockQuantity: { increment: item.quantity }
-        }
-      });
-      continue;
-    }
-
-    await tx.product.updateMany({
-      where: { id: item.productId },
-      data: {
-        stockQuantity: { increment: item.quantity }
-      }
-    });
-  }
+  await releaseInventoryReservation(tx, order.id, { reason: "order_cancelled" });
 
   if (order.couponCode) {
     await tx.coupon.updateMany({
@@ -883,27 +955,22 @@ export async function releaseOrderInventoryReservation(
 }
 
 export async function releaseExpiredOrderReservations(context: ModuleContext, now = new Date()) {
-  const cutoff = new Date(now.getTime() - orderReservationTtlMs);
-  const expiredOrders = await context.prisma.order.findMany({
-    where: {
-      status: "PENDING",
-      checkoutStatus: "PAYMENT_PENDING",
-      createdAt: { lte: cutoff }
-    },
-    select: { id: true },
-    orderBy: { createdAt: "asc" },
-    take: 100
-  });
-  let released = 0;
+  return expireInventoryReservations(context, now);
+}
 
-  for (const order of expiredOrders) {
-    const didRelease = await context.prisma.$transaction((tx) =>
-      releaseOrderInventoryReservation(tx, order.id, {
-        checkoutStatuses: ["PAYMENT_PENDING"]
-      })
-    );
-    if (didRelease) released += 1;
-  }
+async function auditPendingOrderLimit(
+  context: ModuleContext,
+  customerEmail: string,
+  requestMeta: OrderRequestMeta,
+  error: unknown
+) {
+  if (!(error instanceof AppError) || error.code !== "pending_order_limit_exceeded") return;
+  const scope = !Array.isArray(error.details) ? error.details?.scope : undefined;
+  if (scope !== "email" && scope !== "ip") return;
 
-  return released;
+  const service = new CommerceAbuseService(context.prisma, context.config);
+  await service.auditPendingOrderDenial(
+    service.pendingOrderHashes(customerEmail, requestMeta.ipAddress),
+    scope
+  );
 }

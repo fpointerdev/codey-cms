@@ -10,6 +10,8 @@ export type AuthenticatedUser = {
   roles: string[];
   permissions: AuthenticatedPermission[];
   mfaEnabled: boolean;
+  authenticatedAt?: Date;
+  mfaVerifiedAt?: Date | null;
 };
 
 export type TokenPair = {
@@ -17,4 +19,10 @@ export type TokenPair = {
   refreshToken: string;
   tokenType: "Bearer";
   expiresIn: number;
+};
+
+export type AuthRequestMeta = {
+  userAgent?: string;
+  ipAddress?: string;
+  requestId?: string;
 };

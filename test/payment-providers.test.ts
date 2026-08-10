@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import test from "node:test";
 import { AppError } from "../src/core/errors/app-error.js";
+import type { AuthenticatedUser } from "../src/modules/auth/auth.types.js";
 import {
   decryptPaymentCredentials,
   encryptPaymentCredentials
@@ -15,6 +16,11 @@ import {
   createPaymentIntentSchema,
   updatePaymentProviderConfigSchema
 } from "../src/modules/payments/payments.schemas.js";
+import {
+  paymentProviderConfigRevision,
+  PaymentProviderConfigService
+} from "../src/modules/payments/payment-provider-config.service.js";
+import { assertSensitivePaymentProviderAccess } from "../src/modules/payments/payments.routes.js";
 import {
   createStripePaymentIntent,
   normalizeStripeWebhook,
@@ -172,9 +178,9 @@ test("PayPal order requests require buyer return URLs", async () => {
 
   assert.equal(order.id, "PAYPAL-ORDER-1");
   assert.equal(requests.length, 2);
-  assert.match(requests[0]!.url, /api-m\.sandbox\.paypal\.com\/v1\/oauth2\/token$/);
-  const createBody = JSON.parse(String(requests[1]!.init?.body)) as Record<string, unknown>;
-  assert.equal((createBody.purchase_units as Array<{ amount: { value: string } }>)[0]!.amount.value, "25.99");
+  assert.match(requests[0].url, /api-m\.sandbox\.paypal\.com\/v1\/oauth2\/token$/);
+  const createBody = JSON.parse(String(requests[1].init?.body)) as Record<string, unknown>;
+  assert.equal((createBody.purchase_units as Array<{ amount: { value: string } }>)[0].amount.value, "25.99");
   assert.equal(
     ((createBody.payment_source as { paypal: { experience_context: { return_url: string } } }).paypal.experience_context.return_url),
     "https://shop.example.com/payment/return"
@@ -250,4 +256,99 @@ test("provider secrets cannot be set and cleared in one request", () => {
   });
 
   assert.equal(parsed.success, false);
+});
+
+test("online payment configuration requires secret access and recent authentication", () => {
+  const baseUser: AuthenticatedUser = {
+    id: "payments-user",
+    email: "payments@example.com",
+    name: "Payments",
+    roles: ["payments"],
+    mfaEnabled: false,
+    permissions: [{ action: "update", subject: "payments" }]
+  };
+  assert.throws(
+    () => assertSensitivePaymentProviderAccess("STRIPE", undefined),
+    (error) => error instanceof AppError && error.code === "forbidden"
+  );
+  assert.doesNotThrow(() => assertSensitivePaymentProviderAccess("MANUAL", baseUser));
+  assert.throws(
+    () => assertSensitivePaymentProviderAccess("STRIPE", baseUser),
+    (error) => error instanceof AppError && error.code === "forbidden"
+  );
+
+  const secretManager = {
+    ...baseUser,
+    authenticatedAt: new Date(1_000),
+    permissions: [...baseUser.permissions, { action: "manage", subject: "secrets" }]
+  };
+  assert.throws(
+    () => assertSensitivePaymentProviderAccess("PAYPAL", secretManager, 16 * 60_000 + 1_000),
+    (error) => error instanceof AppError && error.code === "recent_authentication_required"
+  );
+  assert.doesNotThrow(() => assertSensitivePaymentProviderAccess("PAYPAL", secretManager, 2_000));
+  assert.doesNotThrow(() => assertSensitivePaymentProviderAccess("STRIPE", {
+    ...baseUser,
+    authenticatedAt: new Date(1_000),
+    permissions: [{ action: "manage", subject: "all" }]
+  }, 2_000));
+});
+
+test("a stale provider test cannot approve newly changed credentials", async () => {
+  const testedConfig = {
+    id: "stripe-config",
+    siteId: "site-1",
+    provider: "STRIPE" as const,
+    mode: "SANDBOX" as const,
+    enabled: false,
+    publishableKey: "pk_test_current",
+    clientId: null,
+    webhookId: null,
+    encryptedCredentials: "old-credentials",
+    instructions: null,
+    lastTestedAt: null,
+    lastTestSucceeded: null,
+    lastTestMessage: null,
+    lastWebhookAt: null,
+    createdAt: new Date(1_000),
+    updatedAt: new Date(1_000)
+  };
+  const currentConfig = {
+    ...testedConfig,
+    encryptedCredentials: "new-credentials",
+    updatedAt: new Date(2_000)
+  };
+  let lastTestSucceeded: boolean | null = null;
+  const prisma = {
+    site: {
+      upsert: async () => ({ id: "site-1" })
+    },
+    paymentProviderConfig: {
+      findUnique: async () => currentConfig,
+      update: async (input: { data: { lastTestSucceeded: boolean } }) => {
+        lastTestSucceeded = input.data.lastTestSucceeded;
+        return currentConfig;
+      }
+    },
+    $queryRaw: async () => [{ lock: "1" }],
+    $transaction: async (operation: (transaction: unknown) => Promise<unknown>) => operation(prisma)
+  };
+  const service = new PaymentProviderConfigService({
+    prisma,
+    config: {
+      payments: { credentialEncryptionKey: encryptionKey },
+      app: { name: "CodeY", mode: "shop" }
+    }
+  } as never);
+
+  assert.equal(
+    await service.recordTestResult(
+      "STRIPE",
+      paymentProviderConfigRevision(testedConfig),
+      true,
+      "Connected"
+    ),
+    false
+  );
+  assert.equal(lastTestSucceeded, null);
 });

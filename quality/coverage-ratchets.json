@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "criticalRoots": [
+    "src/modules/auth",
+    "src/modules/orders",
+    "src/modules/payments",
+    "src/runtime",
+    "src/infrastructure/operations"
+  ],
+  "files": {
+    "src/infrastructure/operations/backup-status.ts": {
+      "lines": 94.76,
+      "branches": 60.94,
+      "functions": 100
+    },
+    "src/modules/auth/account-recovery.service.ts": {
+      "lines": 69.39,
+      "branches": 73.33,
+      "functions": 76.92
+    },
+    "src/modules/auth/auth-email.service.ts": {
+      "lines": 52.3,
+      "branches": 63.16,
+      "functions": 73.33
+    },
+    "src/modules/auth/auth-session-cookie.ts": {
+      "lines": 100,
+      "branches": 84.62,
+      "functions": 100
+    },
+    "src/modules/auth/auth.middleware.ts": {
+      "lines": 54.46,
+      "branches": 88.89,
+      "functions": 28.57
+    },
+    "src/modules/auth/auth.module.ts": {
+      "lines": 0,
+      "branches": 0,
+      "functions": 0
+    },
+    "src/modules/auth/auth.routes.ts": {
+      "lines": 0,
+      "branches": 0,
+      "functions": 0
+    },
+    "src/modules/auth/auth.schemas.ts": {
+      "lines": 100,
+      "branches": 100,
+      "functions": 100
+    },
+    "src/modules/auth/auth.service.ts": {
+      "lines": 69.37,
+      "branches": 62.6,
+      "functions": 75.76
+    },
+    "src/modules/auth/auth-token.ts": {
+      "lines": 90.32,
+      "branches": 85.71,
+      "functions": 100
+    },
+    "src/modules/auth/auth.types.ts": {
+      "lines": 0,
+      "branches": 0,
+      "functions": 0
+    },
+    "src/modules/auth/auth-user.ts": {
+      "lines": 100,
+      "branches": 85.71,
+      "functions": 100
+    },
+    "src/modules/auth/login-protection.service.ts": {
+      "lines": 99.29,
+      "branches": 93.33,
+      "functions": 93.33
+    },
+    "src/modules/auth/mfa.ts": {
+      "lines": 72.97,
+      "branches": 94.12,
+      "functions": 66.67
+    },
+    "src/modules/orders/checkout.service.ts": {
+      "lines": 54.61,
+      "branches": 57.38,
+      "functions": 43.24
+    },
+    "src/modules/orders/commerce-abuse.service.ts": {
+      "lines": 38.37,
+      "branches": 75,
+      "functions": 22.22
+    },
+    "src/modules/orders/commerce-rate-limit.middleware.ts": {
+      "lines": 50,
+      "branches": 100,
+      "functions": 50
+    },
+    "src/modules/orders/customer-data.service.ts": {
+      "lines": 78.19,
+      "branches": 76.92,
+      "functions": 81.82
+    },
+    "src/modules/orders/inventory-reservation.service.ts": {
+      "lines": 33.98,
+      "branches": 62.5,
+      "functions": 21.05
+    },
+    "src/modules/orders/order-email.service.ts": {
+      "lines": 60.06,
+      "branches": 48.15,
+      "functions": 85.71
+    },
+    "src/modules/orders/order-lookup.ts": {
+      "lines": 100,
+      "branches": 85.71,
+      "functions": 100
+    },
+    "src/modules/orders/orders.module.ts": {
+      "lines": 0,
+      "branches": 0,
+      "functions": 0
+    },
+    "src/modules/orders/orders.routes.ts": {
+      "lines": 0,
+      "branches": 0,
+      "functions": 0
+    },
+    "src/modules/orders/orders.schemas.ts": {
+      "lines": 95.36,
+      "branches": 100,
+      "functions": 83.33
+    },
+    "src/modules/payments/payment-credentials.ts": {
+      "lines": 97.37,
+      "branches": 75,
+      "functions": 100
+    },
+    "src/modules/payments/payment-event.service.ts": {
+      "lines": 40,
+      "branches": 100,
+      "functions": 40
+    },
+    "src/modules/payments/payment-provider-config.service.ts": {
+      "lines": 43.64,
+      "branches": 75,
+      "functions": 11.11
+    },
+    "src/modules/payments/payment-provider-http.ts": {
+      "lines": 54.17,
+      "branches": 50,
+      "functions": 66.67
+    },
+    "src/modules/payments/payments.module.ts": {
+      "lines": 0,
+      "branches": 0,
+      "functions": 0
+    },
+    "src/modules/payments/payments.routes.ts": {
+      "lines": 29.31,
+      "branches": 100,
+      "functions": 6.25
+    },
+    "src/modules/payments/payments.schemas.ts": {
+      "lines": 100,
+      "branches": 85.71,
+      "functions": 66.67
+    },
+    "src/modules/payments/paypal-provider.ts": {
+      "lines": 73.21,
+      "branches": 51.72,
+      "functions": 68.75
+    },
+    "src/modules/payments/stripe-provider.ts": {
+      "lines": 81.19,
+      "branches": 61.76,
+      "functions": 81.25
+    },
+    "src/runtime/release.ts": {
+      "lines": 96.55,
+      "branches": 50,
+      "functions": 100
+    },
+    "src/runtime/runtime-update.scheduler.ts": {
+      "lines": 0,
+      "branches": 0,
+      "functions": 0
+    },
+    "src/runtime/runtime-update.service.ts": {
+      "lines": 78.85,
+      "branches": 51.85,
+      "functions": 79.17
+    }
+  }
+}

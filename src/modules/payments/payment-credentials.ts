@@ -27,7 +27,7 @@ export function decryptPaymentCredentials(
       throw new Error("Invalid credential payload");
     }
 
-    return credentials as PaymentProviderCredentials;
+    return credentials;
   } catch {
     throw new AppError(
       500,

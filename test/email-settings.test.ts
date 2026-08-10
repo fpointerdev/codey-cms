@@ -1,19 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AppError } from "../src/core/errors/app-error.js";
 import { EmailSettingsService } from "../src/infrastructure/email/email-settings.service.js";
+import {
+  assertSafeEmailEndpoint,
+  createPinnedEmailLookup,
+  isPublicEmailAddress,
+  parseEmailEndpoint
+} from "../src/infrastructure/email/http-email.js";
+import { assertRecentSensitiveAuthentication } from "../src/modules/auth/auth.middleware.js";
 import { emailSettingsSchema } from "../src/modules/config/config.schemas.js";
 
 function emailSettingsHarness(environmentEmail: Record<string, unknown> = {}, isProduction = false) {
   let storedValue: unknown = null;
+  let revision = 0;
+  let updatedAt: Date | undefined;
   const prisma = {
     site: {
       upsert: async () => ({ id: "site-1" })
     },
     moduleSetting: {
-      findUnique: async () => storedValue ? { value: storedValue } : null,
+      findUnique: async () => storedValue ? { value: storedValue, updatedAt } : null,
       upsert: async (input: { update: { value: unknown } }) => {
         storedValue = input.update.value;
-        return { value: storedValue };
+        revision += 1;
+        updatedAt = new Date(revision);
+        return { value: storedValue, updatedAt };
       }
     }
   };
@@ -62,6 +74,139 @@ test("email settings only accept HTTP endpoints and require HTTPS in production"
   );
 });
 
+test("email endpoints reject URL credentials and fragments", async () => {
+  assert.throws(
+    () => parseEmailEndpoint("https://user:password@mailer.example.com/send"),
+    /URL credentials/i
+  );
+  assert.throws(
+    () => parseEmailEndpoint("https://mailer.example.com/send#token"),
+    /fragment/i
+  );
+
+  const harness = emailSettingsHarness();
+  await assert.rejects(
+    harness.service.update({ httpEndpoint: "https://mailer.example.com/send#token" }),
+    /fragment/i
+  );
+});
+
+test("production email endpoints resolve only to public addresses", async () => {
+  assert.equal(isPublicEmailAddress("127.0.0.1"), false);
+  assert.equal(isPublicEmailAddress("::1"), false);
+  assert.equal(isPublicEmailAddress("10.20.30.40"), false);
+  assert.equal(isPublicEmailAddress("169.254.169.254"), false);
+  assert.equal(isPublicEmailAddress("192.31.196.1"), false);
+  assert.equal(isPublicEmailAddress("2001:10::1"), false);
+  assert.equal(isPublicEmailAddress("2606:4700:4700::1111"), true);
+
+  await assert.rejects(
+    assertSafeEmailEndpoint("https://127.0.0.1/send", { requireHttps: true }),
+    /public address/i
+  );
+  await assert.rejects(
+    assertSafeEmailEndpoint("https://[::1]/send", { requireHttps: true }),
+    /public address/i
+  );
+  await assert.rejects(
+    assertSafeEmailEndpoint("https://mailer.example.com/send", {
+      requireHttps: true,
+      lookup: async () => [{ address: "10.10.0.4", family: 4 }]
+    }),
+    /public addresses/i
+  );
+  const endpoint = await assertSafeEmailEndpoint("https://mailer.example.com/send", {
+    requireHttps: true,
+    lookup: async () => [
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:4700:4700::1111", family: 6 }
+    ]
+  });
+  assert.equal(endpoint.toString(), "https://mailer.example.com/send");
+});
+
+test("production email connections use only the addresses approved during validation", async () => {
+  const lookup = createPinnedEmailLookup([
+    { address: "93.184.216.34", family: 4 },
+    { address: "2606:4700:4700::1111", family: 6 }
+  ]);
+
+  const ipv4 = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+    lookup("changed.example.com", { family: 4 }, (error, address, family) => {
+      if (error) return reject(error);
+      if (typeof address !== "string" || !family) return reject(new Error("Expected one pinned address."));
+      resolve({ address, family });
+    });
+  });
+  assert.deepEqual(ipv4, { address: "93.184.216.34", family: 4 });
+
+  const ipv6 = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+    lookup("changed.example.com", { family: 6 }, (error, address) => {
+      if (error) return reject(error);
+      if (typeof address !== "string") return reject(new Error("Expected one pinned address."));
+      resolve({ address, family: 6 });
+    });
+  });
+  assert.deepEqual(ipv6, { address: "2606:4700:4700::1111", family: 6 });
+});
+
+test("secret changes require recent authentication at the service boundary", async () => {
+  const now = Date.now();
+  const baseUser = {
+    id: "user-1",
+    email: "owner@example.com",
+    name: "Owner",
+    roles: ["owner"],
+    permissions: [{ action: "manage", subject: "all" }]
+  };
+  assert.doesNotThrow(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: false,
+    authenticatedAt: new Date(now - 60_000)
+  }, now));
+  assert.throws(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: false,
+    authenticatedAt: new Date(now - 16 * 60_000)
+  }, now), /Sign in again/i);
+  assert.doesNotThrow(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: true,
+    authenticatedAt: new Date(now - 60_000),
+    mfaVerifiedAt: new Date(now - 60_000)
+  }, now));
+  assert.throws(() => assertRecentSensitiveAuthentication({
+    ...baseUser,
+    mfaEnabled: true,
+    authenticatedAt: new Date(now - 60_000),
+    mfaVerifiedAt: null
+  }, now), /two-step verification/i);
+});
+
+test("endpoint and credential changes require sensitive authorization", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer.example.com/send",
+    bearerToken: "email-token"
+  });
+
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    from: "accounts@example.com"
+  }), false);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    httpEndpoint: "https://other-mailer.example.com/send"
+  }), true);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    bearerToken: "replacement-token"
+  }), true);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({
+    clearBearerToken: true
+  }), true);
+});
+
 test("email settings encrypt credentials and never return the bearer token", async () => {
   const harness = emailSettingsHarness();
   const status = await harness.service.update({
@@ -78,6 +223,155 @@ test("email settings encrypt credentials and never return the bearer token", asy
   assert.equal(typeof stored.encryptedCredentials, "string");
   assert.doesNotMatch(String(stored.encryptedCredentials), /secret-email-token/);
   assert.equal((await harness.service.resolve()).httpBearerToken, "secret-email-token");
+});
+
+test("changing a generic endpoint invalidates its bound credential", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer-a.example.com/send",
+    bearerToken: "endpoint-a-token"
+  });
+  await harness.service.update({ enabled: false });
+
+  const changed = await harness.service.update({
+    httpEndpoint: "https://mailer-b.example.com/send"
+  });
+  const stored = harness.storedValue() as Record<string, unknown>;
+
+  assert.equal(changed.enabled, false);
+  assert.equal(changed.bearerTokenConfigured, false);
+  assert.equal(stored.encryptedCredentials, undefined);
+  assert.equal(stored.credentialsRequired, true);
+  assert.equal((await harness.service.resolve()).httpBearerToken, undefined);
+
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  let requestUrl = "";
+  let authorization: string | null = null;
+  globalThis.fetch = async (input, init) => {
+    requests += 1;
+    requestUrl = String(input);
+    authorization = new Headers(init?.headers).get("authorization");
+    return new Response(JSON.stringify({ id: "unexpected" }), { status: 200 });
+  };
+
+  try {
+    await assert.rejects(
+      harness.service.test("owner@example.com"),
+      /save and enable transactional email/i
+    );
+    await assert.rejects(
+      harness.service.update({ enabled: true }),
+      /new bearer token/i
+    );
+    assert.equal(requests, 0);
+
+    await harness.service.update({ enabled: true, bearerToken: "endpoint-b-token" });
+    await harness.service.test("owner@example.com");
+    assert.equal(requests, 1);
+    assert.equal(requestUrl, "https://mailer-b.example.com/send");
+    assert.equal(authorization, "Bearer endpoint-b-token");
+    assert.notEqual(authorization, "Bearer endpoint-a-token");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an in-flight email test cannot restore replaced settings or credentials", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer-a.example.com/send",
+    bearerToken: "endpoint-a-token"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let releaseRequest!: () => void;
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  globalThis.fetch = async () => {
+    markStarted();
+    await release;
+    return new Response(JSON.stringify({ id: "message-a" }), { status: 200 });
+  };
+
+  try {
+    const testRequest = harness.service.test("owner@example.com");
+    await started;
+    await harness.service.update({
+      httpEndpoint: "https://mailer-b.example.com/send",
+      bearerToken: "endpoint-b-token"
+    });
+    releaseRequest();
+
+    await assert.rejects(
+      testRequest,
+      (error) => error instanceof AppError && error.code === "email_settings_test_stale"
+    );
+    const current = await harness.service.resolve();
+    assert.equal(current.httpEndpoint, "https://mailer-b.example.com/send");
+    assert.equal(current.httpBearerToken, "endpoint-b-token");
+    assert.equal(current.lastTestedAt, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("equivalent endpoints and unrelated settings preserve the bound credential", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    recoveryEnabled: false,
+    from: "notifications@example.com",
+    httpEndpoint: "https://MAILER.example.com:443/old/../send",
+    bearerToken: "preserved-email-token"
+  });
+
+  const status = await harness.service.update({
+    recoveryEnabled: true,
+    from: "accounts@example.com",
+    httpEndpoint: "https://mailer.example.com/send"
+  });
+  const resolved = await harness.service.resolve();
+
+  assert.equal(status.from, "accounts@example.com");
+  assert.equal(status.recoveryEnabled, true);
+  assert.equal(status.httpEndpoint, "https://mailer.example.com/send");
+  assert.equal(resolved.httpBearerToken, "preserved-email-token");
+  assert.equal(resolved.credentialsRequired, false);
+});
+
+test("changing an established credential-free endpoint still requires a fresh binding", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer-a.example.com/send"
+  });
+  await harness.service.update({ enabled: false });
+
+  const changed = await harness.service.update({
+    httpEndpoint: "https://mailer-b.example.com/send"
+  });
+
+  assert.equal(changed.bearerTokenConfigured, false);
+  assert.equal((harness.storedValue() as Record<string, unknown>).credentialsRequired, true);
+  await assert.rejects(
+    harness.service.update({ enabled: true }),
+    /new bearer token/i
+  );
 });
 
 test("dashboard email settings can safely enable account recovery", async () => {
@@ -172,6 +466,71 @@ test("email connection tests use saved settings and record provider health", asy
     assert.equal(requestHeaders?.get("authorization"), "Bearer secret-email-token");
     assert.equal(status.lastTestSucceeded, true);
     assert.ok(status.lastTestedAt);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("generic email requests do not follow redirects or expose provider-echoed credentials", async () => {
+  const harness = emailSettingsHarness();
+  const credential = "redirect-secret-email-token";
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer.example.com/send",
+    bearerToken: credential
+  });
+
+  const originalFetch = globalThis.fetch;
+  let redirect: RequestRedirect | undefined;
+  globalThis.fetch = async (_input, init) => {
+    redirect = init?.redirect;
+    return new Response(credential, {
+      status: 302,
+      headers: { location: "https://attacker.example.com/collect" }
+    });
+  };
+
+  try {
+    let failure: unknown;
+    try {
+      await harness.service.test("owner@example.com");
+    } catch (error) {
+      failure = error;
+    }
+
+    assert.equal(redirect, "manual");
+    assert.ok(failure);
+    assert.doesNotMatch(JSON.stringify(failure), new RegExp(credential));
+    assert.doesNotMatch(JSON.stringify(await harness.service.getAdminStatus()), new RegExp(credential));
+    assert.doesNotMatch(JSON.stringify(harness.storedValue()), new RegExp(credential));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("provider message IDs cannot echo the configured credential", async () => {
+  const harness = emailSettingsHarness();
+  const credential = "provider-response-secret";
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer.example.com/send",
+    bearerToken: credential
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ id: `message-${credential}` }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+
+  try {
+    const result = await harness.service.test("owner@example.com");
+    assert.equal(result.providerMessageId, undefined);
+    assert.doesNotMatch(JSON.stringify(result), new RegExp(credential));
   } finally {
     globalThis.fetch = originalFetch;
   }

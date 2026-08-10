@@ -4,11 +4,18 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { config } from "../../src/config/index.js";
 import { createApp } from "../../src/core/app.js";
+import { AppError } from "../../src/core/errors/app-error.js";
 import { prisma } from "../../src/infrastructure/database/prisma.js";
 import { EmailSettingsService } from "../../src/infrastructure/email/email-settings.service.js";
 import { logger } from "../../src/infrastructure/logging/logger.js";
 import { createTotpCode } from "../../src/modules/auth/mfa.js";
+import { CommerceAbuseService } from "../../src/modules/orders/commerce-abuse.service.js";
 import { deliverQueuedOrderEmails } from "../../src/modules/orders/order-email.service.js";
+import { hashOrderLookupToken } from "../../src/modules/orders/order-lookup.js";
+import {
+  paymentProviderConfigRevision,
+  PaymentProviderConfigService
+} from "../../src/modules/payments/payment-provider-config.service.js";
 import { runtimeVersion } from "../../src/runtime/release.js";
 
 type ApiEnvelope = {
@@ -44,9 +51,27 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
   let uploadedAssetId: string | undefined;
   let managedUserId: string | undefined;
   let reusableTemplateId: string | undefined;
+  let commerceOrderId: string | undefined;
+  let commerceCartId: string | undefined;
+  const defaultSite = await prisma.site.findUniqueOrThrow({
+    where: { slug: "default" },
+    select: { id: true }
+  });
   const existingSiteSetting = await prisma.moduleSetting.findFirst({
     where: { moduleId: "config", key: "site", site: { slug: "default" } },
     select: { id: true, value: true }
+  });
+  const existingEmailSetting = await prisma.moduleSetting.findFirst({
+    where: { moduleId: "config", key: "email", site: { slug: "default" } },
+    select: { id: true, value: true }
+  });
+  const existingManualProvider = await prisma.paymentProviderConfig.findUnique({
+    where: {
+      siteId_provider: {
+        siteId: defaultSite.id,
+        provider: "MANUAL"
+      }
+    }
   });
 
   async function request(pathname: string, options: RequestInit = {}) {
@@ -112,6 +137,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(diagnosticsBody.data?.runtime.status, "ready");
     assert.equal(diagnosticsBody.data?.runtime.checks.database.status, "pass");
     assert.equal(diagnosticsBody.data?.operations.backup.blocking, false);
+    assert.equal(diagnosticsBody.data?.operations.inventory.status, "pass");
     assert.equal(typeof diagnosticsBody.data?.metrics.uptimeSeconds, "number");
 
     const metrics = await request("/api/v1/health/metrics", { headers: authorization });
@@ -143,6 +169,35 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(replayAudit.status, 200, JSON.stringify(replayAuditBody));
     assert.equal(replayAuditBody.data?.auditLogs[0]?.outcome, "DENIED");
     assert.equal(replayAuditBody.data?.auditLogs[0]?.integrity, "valid");
+
+    const emailCredential = `integration-email-secret-${runId}`;
+    const emailUpdate = await request("/api/v1/config/email", {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({
+        enabled: false,
+        provider: "generic",
+        recoveryEnabled: false,
+        from: "notifications@example.com",
+        httpEndpoint: "https://mailer.example.com/send",
+        bearerToken: emailCredential
+      })
+    });
+    const emailUpdateBody = await responseJson(emailUpdate);
+    assert.equal(emailUpdate.status, 200, JSON.stringify(emailUpdateBody));
+    assert.equal(emailUpdateBody.data?.email.bearerTokenConfigured, true);
+    assert.doesNotMatch(JSON.stringify(emailUpdateBody), new RegExp(emailCredential));
+
+    const emailAudit = await request(
+      "/api/v1/config/audit-logs?action=email.settings.update",
+      { headers: authorization }
+    );
+    const emailAuditBody = await responseJson(emailAudit);
+    assert.equal(emailAudit.status, 200, JSON.stringify(emailAuditBody));
+    assert.equal(emailAuditBody.data?.auditLogs[0]?.action, "email.settings.update");
+    assert.equal(emailAuditBody.data?.auditLogs[0]?.metadata?.endpointHostname, "mailer.example.com");
+    assert.equal("httpEndpoint" in emailAuditBody.data?.auditLogs[0]?.metadata, false);
+    assert.doesNotMatch(JSON.stringify(emailAuditBody), new RegExp(emailCredential));
 
     const invite = await request("/api/v1/auth/invites", {
       method: "POST",
@@ -329,7 +384,30 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
 
     const configResponse = await request("/api/v1/config");
     const configBody = await responseJson(configResponse);
+    assert.equal(configResponse.status, 200, JSON.stringify(configBody));
+    assert.deepEqual(Object.keys(configBody.data ?? {}), [
+      "app",
+      "features",
+      "localization",
+      "siteSettings",
+      "storage"
+    ]);
+    assert.equal(configBody.data?.env, undefined);
+    assert.equal(configBody.data?.api, undefined);
+    assert.equal(configBody.data?.modules, undefined);
+    assert.equal(configBody.data?.installedModules, undefined);
+    assert.equal(configBody.data?.storage?.driver, undefined);
+    assert.equal(configBody.data?.storage?.bucket, undefined);
+    assert.equal(configBody.data?.storage?.keyPrefix, undefined);
     const currentSiteSettings = configBody.data?.siteSettings;
+    const unauthorizedAdminConfig = await request("/api/v1/config/admin");
+    assert.equal(unauthorizedAdminConfig.status, 401);
+    const adminConfig = await request("/api/v1/config/admin", { headers: authorization });
+    const adminConfigBody = await responseJson(adminConfig);
+    assert.equal(adminConfig.status, 200, JSON.stringify(adminConfigBody));
+    assert.equal(adminConfigBody.data?.env, config.env);
+    assert.ok(adminConfigBody.data?.modules?.cms);
+    assert.ok(Array.isArray(adminConfigBody.data?.installedModules));
     const compatibility = await request("/api/v1/config/compatibility", { headers: authorization });
     const compatibilityBody = await responseJson(compatibility);
     assert.equal(compatibility.status, 200, JSON.stringify(compatibilityBody));
@@ -423,6 +501,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     });
     const createCartBody = await responseJson(createCart);
     const cartToken = String(createCartBody.data?.cart.sessionToken);
+    commerceCartId = String(createCartBody.data?.cart.id);
     assert.equal(createCart.status, 201, JSON.stringify(createCartBody));
     const addCartItem = await request(`/api/v1/orders/carts/${cartToken}/items`, {
       method: "POST",
@@ -458,6 +537,165 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const completedCheckoutBody = await responseJson(completedCheckout);
     assert.equal(completedCheckoutBody.data?.order.items.length, 1);
     assert.equal(completedCheckoutBody.data?.order.shippingCents, shippingRate.priceCents);
+    const orderId = String(completedCheckoutBody.data?.order.id);
+    const orderNumber = String(completedCheckoutBody.data?.order.orderNumber);
+    const lookupToken = String(completedCheckoutBody.data?.order.lookupToken);
+    commerceOrderId = orderId;
+    assert.match(lookupToken, /^[A-Za-z0-9_-]{43}$/);
+    const storedLookup = await prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { notifications: true }
+    });
+    assert.equal(storedLookup.lookupTokenHash, hashOrderLookupToken(lookupToken));
+    assert.equal(JSON.stringify(storedLookup).includes(lookupToken), false);
+
+    const validLookup = await request("/api/v1/orders/lookup", {
+      method: "POST",
+      body: JSON.stringify({ orderNumber, lookupToken })
+    });
+    const validLookupBody = await responseJson(validLookup);
+    assert.equal(validLookup.status, 200, JSON.stringify(validLookupBody));
+    assert.deepEqual(Object.keys(validLookupBody.data?.order), [
+      "orderNumber",
+      "status",
+      "checkoutStatus",
+      "currency",
+      "subtotalCents",
+      "discountCents",
+      "shippingCents",
+      "taxCents",
+      "totalCents",
+      "createdAt",
+      "items"
+    ]);
+    assert.deepEqual(Object.keys(validLookupBody.data?.order.items[0]), [
+      "productName",
+      "variantName",
+      "quantity",
+      "unitPriceCents"
+    ]);
+
+    const invalidTokenLookup = await request("/api/v1/orders/lookup", {
+      method: "POST",
+      body: JSON.stringify({ orderNumber, lookupToken: "x".repeat(43) })
+    });
+    const invalidTokenLookupBody = await responseJson(invalidTokenLookup);
+    const unknownOrderLookup = await request("/api/v1/orders/lookup", {
+      method: "POST",
+      body: JSON.stringify({ orderNumber: `UNKNOWN-${runId}`, lookupToken })
+    });
+    const unknownOrderLookupBody = await responseJson(unknownOrderLookup);
+    assert.equal(invalidTokenLookup.status, 404);
+    assert.equal(unknownOrderLookup.status, 404);
+    assert.deepEqual(invalidTokenLookupBody.error, unknownOrderLookupBody.error);
+
+    const adminOrders = await request("/api/v1/orders", { headers: authorization });
+    const adminOrdersBody = await responseJson(adminOrders);
+    assert.equal(adminOrders.status, 200, JSON.stringify(adminOrdersBody));
+    assert.equal(JSON.stringify(adminOrdersBody).includes("lookupTokenHash"), false);
+    assert.equal(JSON.stringify(adminOrdersBody).includes("secretEnvelope"), false);
+    const selectedVariant = starterProduct.variants[0];
+    const inventoryBeforePayment = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryBeforePayment.reservedQuantity, 0);
+
+    const enableManualPayments = await request("/api/v1/payments/providers/manual", {
+      method: "PUT",
+      headers: authorization,
+      body: JSON.stringify({
+        enabled: true,
+        instructions: "Use the order number when arranging payment."
+      })
+    });
+    assert.equal(enableManualPayments.status, 200, JSON.stringify(await responseJson(enableManualPayments)));
+
+    const firstIntent = await request("/api/v1/payments/intent", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        provider: "MANUAL",
+        idempotencyKey: `manual-failure-${runId}`
+      })
+    });
+    const firstIntentBody = await responseJson(firstIntent);
+    assert.equal(firstIntent.status, 201, JSON.stringify(firstIntentBody));
+    const firstPaymentId = String(firstIntentBody.data?.payment.id);
+    const inventoryAfterFirstIntent = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterFirstIntent.stockQuantity, inventoryBeforePayment.stockQuantity);
+    assert.equal(inventoryAfterFirstIntent.reservedQuantity, 1);
+    const reservedProductResponse = await request("/api/v1/products/starter-product");
+    const reservedProductBody = await responseJson(reservedProductResponse);
+    assert.equal(reservedProductResponse.status, 200, JSON.stringify(reservedProductBody));
+    const reservedProduct = reservedProductBody.data?.product;
+    if (selectedVariant) {
+      const publicVariant = reservedProduct?.variants.find((variant: { id: string }) =>
+        variant.id === selectedVariant.id
+      );
+      assert.equal(publicVariant.reservedQuantity, 1);
+      assert.equal(publicVariant.availableStock, inventoryBeforePayment.stockQuantity - 1);
+    } else {
+      assert.equal(reservedProduct?.reservedQuantity, 1);
+      assert.equal(reservedProduct?.availableStock, inventoryBeforePayment.stockQuantity - 1);
+    }
+    const reservedProductPage = await request("/product/starter-product");
+    const reservedProductHtml = await reservedProductPage.text();
+    assert.equal(reservedProductPage.status, 200);
+    assert.match(
+      reservedProductHtml,
+      new RegExp(`data-stock="${inventoryBeforePayment.stockQuantity - 1}"`)
+    );
+
+    const duplicateIntent = await request("/api/v1/payments/intent", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        provider: "MANUAL",
+        idempotencyKey: `manual-failure-${runId}`
+      })
+    });
+    assert.equal(duplicateIntent.status, 200, JSON.stringify(await responseJson(duplicateIntent)));
+    const inventoryAfterDuplicate = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterDuplicate.reservedQuantity, 1);
+
+    const failPayment = await request(`/api/v1/payments/manual/${firstPaymentId}/action`, {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({ action: "FAIL" })
+    });
+    assert.equal(failPayment.status, 200, JSON.stringify(await responseJson(failPayment)));
+    const inventoryAfterFailure = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterFailure.stockQuantity, inventoryBeforePayment.stockQuantity);
+    assert.equal(inventoryAfterFailure.reservedQuantity, 0);
+
+    const retryIntent = await request("/api/v1/payments/intent", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        provider: "MANUAL",
+        idempotencyKey: `manual-success-${runId}`
+      })
+    });
+    const retryIntentBody = await responseJson(retryIntent);
+    assert.equal(retryIntent.status, 201, JSON.stringify(retryIntentBody));
+    const retryPaymentId = String(retryIntentBody.data?.payment.id);
+    const succeedPayment = await request(`/api/v1/payments/manual/${retryPaymentId}/action`, {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({ action: "SUCCEED" })
+    });
+    assert.equal(succeedPayment.status, 200, JSON.stringify(await responseJson(succeedPayment)));
+    const inventoryAfterSuccess = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterSuccess.stockQuantity, inventoryBeforePayment.stockQuantity - 1);
+    assert.equal(inventoryAfterSuccess.reservedQuantity, 0);
 
     const createRedirect = await request("/api/v1/cms/redirects", {
       method: "POST",
@@ -512,6 +750,29 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(loginWithoutMfa.status, 401);
     assert.equal((await responseJson(loginWithoutMfa)).error?.code, "mfa_required");
 
+    const nextMfaCode = createTotpCode(mfaSecret, Date.now() + 30_000);
+    const concurrentMfaLogins = await Promise.all([
+      request("/api/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: adminEmail, password: adminPassword, mfaCode: nextMfaCode })
+      }),
+      request("/api/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: adminEmail, password: adminPassword, mfaCode: nextMfaCode })
+      })
+    ]);
+    assert.deepEqual(
+      concurrentMfaLogins.map((response) => response.status).sort(),
+      [200, 401]
+    );
+
+    const olderMfaLogin = await request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: adminEmail, password: adminPassword, mfaCode })
+    });
+    assert.equal(olderMfaLogin.status, 401);
+    assert.equal((await responseJson(olderMfaLogin)).error?.code, "invalid_mfa_code");
+
     const recoveryLogin = await request("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({
@@ -522,13 +783,26 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     });
     const recoveryLoginBody = await responseJson(recoveryLogin);
     assert.equal(recoveryLogin.status, 200, JSON.stringify(recoveryLoginBody));
+    const reusedRecoveryLogin = await request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: adminEmail,
+        password: adminPassword,
+        mfaCode: mfaConfirmBody.data?.recoveryCodes[0]
+      })
+    });
+    assert.equal(reusedRecoveryLogin.status, 401);
+    assert.equal((await responseJson(reusedRecoveryLogin)).error?.code, "invalid_mfa_code");
     const mfaAuthorization = {
       authorization: `Bearer ${String(recoveryLoginBody.data?.tokens.accessToken)}`
     };
     const disableMfa = await request("/api/v1/auth/mfa", {
       method: "DELETE",
       headers: mfaAuthorization,
-      body: JSON.stringify({ currentPassword: adminPassword, code: createTotpCode(mfaSecret) })
+      body: JSON.stringify({
+        currentPassword: adminPassword,
+        code: mfaConfirmBody.data?.recoveryCodes[1]
+      })
     });
     assert.equal(disableMfa.status, 200, JSON.stringify(await responseJson(disableMfa)));
 
@@ -548,6 +822,34 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     if (reusableTemplateId) {
       await prisma.cmsTemplate.deleteMany({ where: { id: reusableTemplateId } });
     }
+    if (commerceOrderId) {
+      await prisma.order.deleteMany({ where: { id: commerceOrderId } });
+    }
+    if (commerceCartId) {
+      await prisma.cart.deleteMany({ where: { id: commerceCartId } });
+    }
+    if (existingManualProvider) {
+      await prisma.paymentProviderConfig.update({
+        where: { id: existingManualProvider.id },
+        data: {
+          mode: existingManualProvider.mode,
+          enabled: existingManualProvider.enabled,
+          publishableKey: existingManualProvider.publishableKey,
+          encryptedCredentials: existingManualProvider.encryptedCredentials,
+          clientId: existingManualProvider.clientId,
+          webhookId: existingManualProvider.webhookId,
+          instructions: existingManualProvider.instructions,
+          lastTestedAt: existingManualProvider.lastTestedAt,
+          lastTestSucceeded: existingManualProvider.lastTestSucceeded,
+          lastTestMessage: existingManualProvider.lastTestMessage,
+          lastWebhookAt: existingManualProvider.lastWebhookAt
+        }
+      });
+    } else {
+      await prisma.paymentProviderConfig.deleteMany({
+        where: { provider: "MANUAL", siteId: defaultSite.id }
+      });
+    }
     if (existingSiteSetting) {
       await prisma.moduleSetting.update({
         where: { id: existingSiteSetting.id },
@@ -556,6 +858,16 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     } else {
       await prisma.moduleSetting.deleteMany({
         where: { moduleId: "config", key: "site", site: { slug: "default" } }
+      });
+    }
+    if (existingEmailSetting) {
+      await prisma.moduleSetting.update({
+        where: { id: existingEmailSetting.id },
+        data: { value: existingEmailSetting.value }
+      });
+    } else {
+      await prisma.moduleSetting.deleteMany({
+        where: { moduleId: "config", key: "email", site: { slug: "default" } }
       });
     }
     await prisma.userInvite.deleteMany({ where: { email: managedUserEmail } });
@@ -638,5 +950,247 @@ test("concurrent order email workers claim a notification once", async () => {
       await prisma.moduleSetting.delete({ where: settingKey }).catch(() => undefined);
     }
     await new Promise<void>((resolve, reject) => emailServer.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("checkout rate limits are shared and store only keyed hashes", async () => {
+  const scope = "cart.create" as const;
+  const rawKey = `198.51.100.${Math.floor(Math.random() * 200) + 1}`;
+  await prisma.commerceRateLimit.deleteMany({ where: { scope } });
+  const limitedConfig = {
+    ...config,
+    commerce: {
+      checkout: {
+        ...config.commerce.checkout,
+        rateLimitMax: 2
+      }
+    }
+  } as typeof config;
+  const firstInstance = new CommerceAbuseService(prisma, limitedConfig);
+  const secondInstance = new CommerceAbuseService(prisma, limitedConfig);
+
+  try {
+    await firstInstance.consumeRateLimit(scope, rawKey);
+    await secondInstance.consumeRateLimit(scope, rawKey);
+    await assert.rejects(
+      secondInstance.consumeRateLimit(scope, rawKey),
+      (error) => error instanceof AppError &&
+        error.code === "checkout_rate_limit_exceeded" &&
+        typeof error.details === "object" &&
+        !Array.isArray(error.details) &&
+        Number(error.details.retryAfterSeconds) > 0
+    );
+
+    const records = await prisma.commerceRateLimit.findMany({ where: { scope } });
+    assert.equal(records.length, 1);
+    assert.equal(records[0]?.requestCount, 3);
+    assert.doesNotMatch(JSON.stringify(records), new RegExp(rawKey.replaceAll(".", "\\.")));
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: "commerce.rate_limit.exceeded" },
+      orderBy: { createdAt: "desc" }
+    });
+    assert.ok(audit);
+    assert.doesNotMatch(JSON.stringify(audit), new RegExp(rawKey.replaceAll(".", "\\.")));
+  } finally {
+    await prisma.commerceRateLimit.deleteMany({ where: { scope } });
+    await prisma.$disconnect();
+  }
+});
+
+test("pending checkout limits normalize email and serialize concurrent clients", async () => {
+  const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const email = `Pending-${runId}@Example.com`;
+  const ipAddress = "203.0.113.42";
+  const limitedConfig = {
+    ...config,
+    commerce: {
+      checkout: {
+        ...config.commerce.checkout,
+        pendingOrderLimitPerEmail: 1,
+        pendingOrderLimitPerIp: 1
+      }
+    }
+  } as typeof config;
+  const firstInstance = new CommerceAbuseService(prisma, limitedConfig);
+  const secondInstance = new CommerceAbuseService(prisma, limitedConfig);
+  const firstHashes = firstInstance.pendingOrderHashes(email, ipAddress);
+  const secondHashes = secondInstance.pendingOrderHashes(email.toLowerCase(), ipAddress);
+
+  assert.equal(firstHashes.emailHash, secondHashes.emailHash);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await firstInstance.assertPendingOrderCapacity(tx, email, firstHashes);
+      await tx.order.create({
+        data: {
+          orderNumber: `LIMIT-${runId}`,
+          customerEmail: email,
+          checkoutEmailHash: firstHashes.emailHash,
+          checkoutIpHash: firstHashes.ipHash,
+          checkoutStatus: "PAYMENT_PENDING",
+          currency: "EUR",
+          subtotalCents: 1000,
+          totalCents: 1000
+        }
+      });
+    });
+
+    await assert.rejects(
+      prisma.$transaction(async (tx) => {
+        await secondInstance.assertPendingOrderCapacity(tx, email.toLowerCase(), secondHashes);
+      }),
+      (error) => error instanceof AppError && error.code === "pending_order_limit_exceeded"
+    );
+  } finally {
+    await prisma.order.deleteMany({ where: { orderNumber: `LIMIT-${runId}` } });
+    await prisma.$disconnect();
+  }
+});
+
+test("an email connection test cannot overwrite settings changed while it runs", async () => {
+  let releaseRequest!: () => void;
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  const emailServer = createHttpServer(async (_request, response) => {
+    markStarted();
+    await release;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ messageId: "stale-email-test" }));
+  });
+  await new Promise<void>((resolve) => emailServer.listen(0, "127.0.0.1", resolve));
+  const emailAddress = emailServer.address() as AddressInfo;
+  const site = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const settingKey = {
+    siteId_moduleId_key: { siteId: site.id, moduleId: "config", key: "email" }
+  };
+  const previousSetting = await prisma.moduleSetting.findUnique({
+    where: settingKey,
+    select: { value: true }
+  });
+  const service = new EmailSettingsService(prisma, config);
+
+  try {
+    await service.update({
+      enabled: true,
+      provider: "generic",
+      from: "orders@example.com",
+      httpEndpoint: `http://127.0.0.1:${emailAddress.port}/first`,
+      bearerToken: "first-endpoint-token"
+    });
+    const testRequest = service.test("owner@example.com");
+    await started;
+    await service.update({
+      httpEndpoint: `http://127.0.0.1:${emailAddress.port}/second`,
+      bearerToken: "second-endpoint-token"
+    });
+    releaseRequest();
+
+    await assert.rejects(
+      testRequest,
+      (error) => error instanceof AppError && error.code === "email_settings_test_stale"
+    );
+    const current = await service.resolve();
+    assert.equal(current.httpEndpoint, `http://127.0.0.1:${emailAddress.port}/second`);
+    assert.equal(current.httpBearerToken, "second-endpoint-token");
+    assert.equal(current.lastTestedAt, undefined);
+  } finally {
+    releaseRequest();
+    if (previousSetting) {
+      await prisma.moduleSetting.update({ where: settingKey, data: { value: previousSetting.value } });
+    } else {
+      await prisma.moduleSetting.delete({ where: settingKey }).catch(() => undefined);
+    }
+    await new Promise<void>((resolve, reject) => {
+      emailServer.close((error) => error ? reject(error) : resolve());
+    });
+    await prisma.$disconnect();
+  }
+});
+
+test("concurrent payment updates preserve each credential change and reject stale tests", async () => {
+  const site = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const providerKey = {
+    siteId_provider: { siteId: site.id, provider: "STRIPE" as const }
+  };
+  const previousProvider = await prisma.paymentProviderConfig.findUnique({ where: providerKey });
+  const service = new PaymentProviderConfigService({ prisma, config, logger });
+
+  try {
+    await service.updateConfig("STRIPE", {
+      mode: "SANDBOX",
+      publishableKey: "pk_test_initial",
+      secretKey: "sk_test_initial",
+      webhookSecret: "whsec_initial"
+    });
+    await Promise.all([
+      service.updateConfig("STRIPE", { publishableKey: "pk_test_concurrent" }),
+      service.updateConfig("STRIPE", { secretKey: "sk_test_concurrent" })
+    ]);
+
+    const tested = await service.resolveConfig("STRIPE");
+    assert.equal(tested.config.publishableKey, "pk_test_concurrent");
+    assert.equal(tested.credentials.secretKey, "sk_test_concurrent");
+    const testedRevision = paymentProviderConfigRevision(tested.config);
+
+    await service.updateConfig("STRIPE", { webhookSecret: "whsec_replaced" });
+    assert.equal(await service.recordTestResult("STRIPE", testedRevision, true, "Connected"), false);
+    const current = await service.resolveConfig("STRIPE");
+    assert.equal(current.credentials.webhookSecret, "whsec_replaced");
+    assert.equal(current.config.lastTestSucceeded, null);
+  } finally {
+    await prisma.paymentProviderConfig.deleteMany({
+      where: { siteId: site.id, provider: "STRIPE" }
+    });
+    if (previousProvider) {
+      await prisma.paymentProviderConfig.create({ data: previousProvider });
+    }
+    await prisma.$disconnect();
+  }
+});
+
+test("checkout rate-limit responses use the API envelope and retry header", async () => {
+  await prisma.commerceRateLimit.deleteMany({ where: { scope: "cart.create" } });
+  const app = await createApp();
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+    const listeningServer = app.listen(0, "127.0.0.1", () => resolve(listeningServer));
+  });
+  const address = server.address() as AddressInfo;
+  const createdCartIds: string[] = [];
+
+  try {
+    for (let attempt = 0; attempt < config.commerce.checkout.rateLimitMax; attempt += 1) {
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/orders/carts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}"
+      });
+      const body = await responseJson(response);
+      assert.equal(response.status, 201, JSON.stringify(body));
+      createdCartIds.push(String(body.data?.cart.id));
+    }
+
+    const limited = await fetch(`http://127.0.0.1:${address.port}/api/v1/orders/carts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    });
+    const limitedBody = await responseJson(limited);
+    assert.equal(limited.status, 429);
+    assert.equal(limitedBody.success, false);
+    assert.equal(limitedBody.error?.code, "checkout_rate_limit_exceeded");
+    assert.ok(Number(limited.headers.get("retry-after")) > 0);
+  } finally {
+    await prisma.cart.deleteMany({ where: { id: { in: createdCartIds } } });
+    await prisma.commerceRateLimit.deleteMany({ where: { scope: "cart.create" } });
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+    await prisma.$disconnect();
   }
 });

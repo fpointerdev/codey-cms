@@ -85,6 +85,17 @@ export const config = {
       adminMax: 60
     }
   },
+  commerce: {
+    checkout: {
+      maxItemQuantity: env.CHECKOUT_MAX_ITEM_QUANTITY,
+      maxOrderItems: env.CHECKOUT_MAX_ORDER_ITEMS,
+      rateLimitMax: env.CHECKOUT_RATE_LIMIT_MAX,
+      rateLimitWindowMs: 15 * 60_000,
+      pendingOrderLimitPerEmail: env.CHECKOUT_PENDING_ORDER_LIMIT_PER_EMAIL,
+      pendingOrderLimitPerIp: env.CHECKOUT_PENDING_ORDER_LIMIT_PER_IP,
+      reservationTtlMinutes: env.ORDER_RESERVATION_TTL_MINUTES
+    }
+  },
   maintenance: {
     enabled: env.MAINTENANCE_MODE,
     message: env.MAINTENANCE_MESSAGE,
@@ -112,6 +123,13 @@ export const config = {
       shop: megabytesToBytes(env.STORAGE_QUOTA_SHOP_MB),
       saas: megabytesToBytes(env.STORAGE_QUOTA_SAAS_MB)
     }
+  },
+  media: {
+    maxPixels: env.MEDIA_MAX_PIXELS,
+    maxWidth: env.MEDIA_MAX_WIDTH,
+    maxHeight: env.MEDIA_MAX_HEIGHT,
+    maxFrames: env.MEDIA_MAX_FRAMES,
+    processingConcurrency: env.MEDIA_PROCESSING_CONCURRENCY
   },
   payments: {
     credentialEncryptionKey: env.CMS_CREDENTIAL_ENCRYPTION_KEY ?? env.JWT_ACCESS_SECRET

@@ -41,7 +41,21 @@ function canonicalQuery(entries: Array<[string, string]>) {
 }
 
 function trimSlashes(value: string) {
-  return value.replace(/^\/+|\/+$/g, "");
+  let start = 0;
+  let end = value.length;
+
+  while (start < end && value.charCodeAt(start) === 47) start += 1;
+  while (end > start && value.charCodeAt(end - 1) === 47) end -= 1;
+
+  return value.slice(start, end);
+}
+
+function trimTrailingSlashes(value: string) {
+  let end = value.length;
+
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+
+  return value.slice(0, end);
 }
 
 function required(value: string | undefined, name: string) {
@@ -106,7 +120,7 @@ class LocalStorageAdapter implements StorageAdapter {
     const localUrl = `/uploads/${encodedKey}`;
 
     if (this.config.publicBaseUrl) {
-      return `${this.config.publicBaseUrl.replace(/\/+$/g, "")}${localUrl}`;
+      return `${trimTrailingSlashes(this.config.publicBaseUrl)}${localUrl}`;
     }
 
     return localUrl;
@@ -231,7 +245,7 @@ export class S3StorageAdapter implements StorageAdapter {
 
   publicUrl(key: string) {
     if (this.config.publicBaseUrl) {
-      return `${this.config.publicBaseUrl.replace(/\/+$/g, "")}/${this.encodeKey(key)}`;
+      return `${trimTrailingSlashes(this.config.publicBaseUrl)}/${this.encodeKey(key)}`;
     }
 
     return `s3://${this.bucket}/${key}`;

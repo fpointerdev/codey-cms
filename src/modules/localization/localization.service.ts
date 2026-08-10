@@ -193,11 +193,7 @@ export function normalizeLocalizationSettings(value: unknown, moduleEnabled = fa
 }
 
 export async function readLocalizationSettings(prisma: LocalizationDatabase) {
-  const database = prisma as LocalizationDatabase & {
-    site?: LocalizationDatabase["site"];
-    installedModule?: LocalizationDatabase["installedModule"];
-    moduleSetting?: LocalizationDatabase["moduleSetting"];
-  };
+  const database = prisma;
 
   if (!database.site?.findUnique || !database.installedModule?.findUnique || !database.moduleSetting?.findUnique) {
     return defaultSettings;

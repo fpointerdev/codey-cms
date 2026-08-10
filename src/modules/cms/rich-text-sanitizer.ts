@@ -47,7 +47,7 @@ export function sanitizePostContent<T>(content: T): T {
   return {
     ...content,
     ...(typeof content.body === "string" ? { body: sanitizeRichText(content.body) } : {})
-  } as T;
+  };
 }
 
 export function sanitizeContentBlockValue<T>(type: string, value: T): T {

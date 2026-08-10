@@ -1,5 +1,5 @@
 import type { Router } from "express";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { ModuleContext } from "../../core/types/module.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
@@ -31,6 +31,11 @@ import {
 } from "./product-attribute-filter.js";
 import { enrichPublicMedia } from "../cms/public-media.js";
 import { writeAuditLog } from "../../core/audit/audit-log.js";
+import {
+  availableStock,
+  canSetOnHandStock,
+  withAvailableInventory
+} from "./product-inventory.js";
 
 function productInclude(canReadInactiveVariants = false) {
   return {
@@ -322,7 +327,7 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
           : [];
         const products = await enrichPublicMedia(
           context.prisma,
-          orderProductsByIds(matchedProducts, result.ids)
+          orderProductsByIds(matchedProducts, result.ids).map(withAvailableInventory)
         );
 
         return sendSuccess(res, { products }, {
@@ -344,7 +349,9 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         context.prisma.product.count({ where })
       ]);
 
-      return sendSuccess(res, { products: await enrichPublicMedia(context.prisma, products) }, {
+      return sendSuccess(res, {
+        products: await enrichPublicMedia(context.prisma, products.map(withAvailableInventory))
+      }, {
         page,
         limit,
         total,
@@ -392,7 +399,10 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
       });
 
       return sendSuccess(res, {
-        product: await enrichPublicMedia(context.prisma, { ...product, translations })
+        product: await enrichPublicMedia(
+          context.prisma,
+          withAvailableInventory({ ...product, translations })
+        )
       });
     })
   );
@@ -466,7 +476,7 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         include: productInclude(true)
       });
 
-      return sendCreated(res, { product });
+      return sendCreated(res, { product: withAvailableInventory(product) });
     })
   );
 
@@ -515,28 +525,44 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         seo?: Record<string, unknown>;
         metadata?: Record<string, unknown>;
       };
-      const existingProduct = await context.prisma.product.findFirstOrThrow({
-        where: {
-          slug: req.params.slug,
-          locale: await requestLocale(context, req.query.locale ?? locale)
-        },
-        select: {
-          id: true
+      const currentLocale = await requestLocale(context, req.query.locale ?? locale);
+      const product = await context.prisma.$transaction(async (tx) => {
+        const existingProduct = await tx.product.findFirstOrThrow({
+          where: { slug: req.params.slug, locale: currentLocale },
+          select: { id: true }
+        });
+        await tx.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "Product" WHERE "id" = ${existingProduct.id} FOR UPDATE`
+        );
+        const inventory = await tx.product.findUniqueOrThrow({
+          where: { id: existingProduct.id },
+          select: { reservedQuantity: true }
+        });
+        if (
+          input.stockQuantity !== undefined &&
+          !canSetOnHandStock(input.stockQuantity, inventory.reservedQuantity)
+        ) {
+          throw new AppError(
+            409,
+            "stock_below_reserved",
+            "On-hand stock cannot be lower than currently reserved stock."
+          );
         }
-      });
-      const product = await context.prisma.product.update({
-        where: { id: existingProduct.id },
-        data: {
-          ...input,
-          locale: locale ? normalizeLocale(locale) : undefined,
-          currency: currency?.toUpperCase(),
-          seo: seo as Prisma.ProductUncheckedUpdateInput["seo"],
-          metadata: metadata as Prisma.ProductUncheckedUpdateInput["metadata"]
-        },
-        include: productInclude(true)
+
+        return tx.product.update({
+          where: { id: existingProduct.id },
+          data: {
+            ...input,
+            locale: locale ? normalizeLocale(locale) : undefined,
+            currency: currency?.toUpperCase(),
+            seo: seo as Prisma.ProductUncheckedUpdateInput["seo"],
+            metadata: metadata as Prisma.ProductUncheckedUpdateInput["metadata"]
+          },
+          include: productInclude(true)
+        });
       });
 
-      return sendSuccess(res, { product });
+      return sendSuccess(res, { product: withAvailableInventory(product) });
     })
   );
 
@@ -584,7 +610,12 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         }
       });
 
-      return sendCreated(res, { variant });
+      return sendCreated(res, {
+        variant: {
+          ...variant,
+          availableStock: availableStock(variant.stockQuantity, variant.reservedQuantity)
+        }
+      });
     })
   );
 }

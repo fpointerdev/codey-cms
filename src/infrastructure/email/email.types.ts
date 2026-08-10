@@ -19,6 +19,8 @@ export type EmailDeliveryConfig = {
   from?: string;
   httpEndpoint?: string;
   httpBearerToken?: string;
+  credentialsRequired?: boolean;
+  protectInternalEndpoints?: boolean;
   timeoutMs: number;
 };
 

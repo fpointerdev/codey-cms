@@ -1,8 +1,10 @@
-import type {
-  PaymentProvider,
-  PaymentProviderConfig,
-  PaymentProviderMode,
-  Prisma
+import { createHash } from "node:crypto";
+import {
+  Prisma,
+  type PaymentProvider,
+  type PaymentProviderConfig,
+  type PaymentProviderMode,
+  type PrismaClient
 } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
 import { writeAuditLog } from "../../core/audit/audit-log.js";
@@ -28,10 +30,26 @@ export type UpdatePaymentProviderConfig = {
   instructions?: string;
 };
 
+type PaymentProviderDatabase = PrismaClient | Prisma.TransactionClient;
+
 export type ResolvedPaymentProviderConfig = {
   config: PaymentProviderConfig;
   credentials: PaymentProviderCredentials;
 };
+
+export function paymentProviderConfigRevision(config: PaymentProviderConfig) {
+  return createHash("sha256").update(JSON.stringify({
+    id: config.id,
+    provider: config.provider,
+    mode: config.mode,
+    enabled: config.enabled,
+    publishableKey: config.publishableKey,
+    clientId: config.clientId,
+    webhookId: config.webhookId,
+    encryptedCredentials: config.encryptedCredentials,
+    instructions: config.instructions
+  })).digest("hex");
+}
 
 const providers: PaymentProvider[] = ["STRIPE", "PAYPAL", "MANUAL"];
 
@@ -199,10 +217,21 @@ export class PaymentProviderConfigService {
 
   async updateConfig(provider: PaymentProvider, input: UpdatePaymentProviderConfig) {
     const site = await this.getOrCreateDefaultSite();
-    const current = await this.context.prisma.paymentProviderConfig.findUnique({
+    return this.withProviderLock(site.id, provider, (database) =>
+      this.updateConfigLocked(database, site.id, provider, input)
+    );
+  }
+
+  private async updateConfigLocked(
+    database: PaymentProviderDatabase,
+    siteId: string,
+    provider: PaymentProvider,
+    input: UpdatePaymentProviderConfig
+  ) {
+    const current = await database.paymentProviderConfig.findUnique({
       where: {
         siteId_provider: {
-          siteId: site.id,
+          siteId,
           provider
         }
       }
@@ -288,10 +317,10 @@ export class PaymentProviderConfigService {
       : null;
     const resetTest = provider !== "MANUAL" && configurationChanged;
 
-    return this.context.prisma.paymentProviderConfig.upsert({
+    return database.paymentProviderConfig.upsert({
       where: {
         siteId_provider: {
-          siteId: site.id,
+          siteId,
           provider
         }
       },
@@ -310,7 +339,7 @@ export class PaymentProviderConfigService {
         } : {})
       },
       create: {
-        siteId: site.id,
+        siteId,
         provider,
         mode,
         enabled,
@@ -368,22 +397,32 @@ export class PaymentProviderConfigService {
     return { config, credentials } satisfies ResolvedPaymentProviderConfig;
   }
 
-  async recordTestResult(provider: PaymentProvider, succeeded: boolean, message: string) {
+  async recordTestResult(
+    provider: PaymentProvider,
+    testedRevision: string,
+    succeeded: boolean,
+    message: string
+  ) {
     const site = await this.getOrCreateDefaultSite();
 
-    return this.context.prisma.paymentProviderConfig.update({
-      where: {
-        siteId_provider: {
-          siteId: site.id,
-          provider
+    return this.withProviderLock(site.id, provider, async (database) => {
+      const current = await database.paymentProviderConfig.findUnique({
+        where: {
+          siteId_provider: { siteId: site.id, provider }
         }
-      },
-      data: {
-        lastTestedAt: new Date(),
-        lastTestSucceeded: succeeded,
-        lastTestMessage: message.slice(0, 500),
-        ...(!succeeded ? { enabled: false } : {})
-      }
+      });
+      if (!current || paymentProviderConfigRevision(current) !== testedRevision) return false;
+
+      await database.paymentProviderConfig.update({
+        where: { id: current.id },
+        data: {
+          lastTestedAt: new Date(),
+          lastTestSucceeded: succeeded,
+          lastTestMessage: message.slice(0, 500),
+          ...(!succeeded ? { enabled: false } : {})
+        }
+      });
+      return true;
     });
   }
 
@@ -422,6 +461,19 @@ export class PaymentProviderConfigService {
       this.context.config.payments.credentialEncryptionKey,
       config?.encryptedCredentials
     );
+  }
+
+  private async withProviderLock<T>(
+    siteId: string,
+    provider: PaymentProvider,
+    operation: (database: PaymentProviderDatabase) => Promise<T>
+  ) {
+    return this.context.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`payment-provider:${siteId}:${provider}`}, 0))::text AS "lock"`
+      );
+      return operation(transaction);
+    });
   }
 
   private async getOrCreateDefaultSite() {

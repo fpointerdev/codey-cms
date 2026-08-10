@@ -101,6 +101,11 @@ export const moduleCatalog = {
         description: "Install, enable, disable, uninstall, and configure modules"
       },
       {
+        action: "manage",
+        subject: "secrets",
+        description: "Configure credential-bearing service connections"
+      },
+      {
         action: "read",
         subject: "audit",
         description: "Read structured audit logs"

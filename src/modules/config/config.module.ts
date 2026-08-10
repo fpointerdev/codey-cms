@@ -3,7 +3,12 @@ import type { AppModule, ModuleContext, ModuleId } from "../../core/types/module
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
-import { requirePermission } from "../auth/auth.middleware.js";
+import {
+  assertRecentSensitiveAuthentication,
+  hasPermission,
+  requireAuth,
+  requirePermission
+} from "../auth/auth.middleware.js";
 import {
   deploymentProfiles,
   moduleCatalog,
@@ -47,9 +52,15 @@ import {
 import { normalizeDesignSystemSettings } from "./site-design.js";
 import { RuntimeUpdateService } from "../../runtime/runtime-update.service.js";
 import { runtimeVersion } from "../../runtime/release.js";
-import { verifyAuditLogIntegrity, writeAuditLog } from "../../core/audit/audit-log.js";
+import {
+  safeWriteAuditLog,
+  verifyAuditLogIntegrity,
+  writeAuditLog
+} from "../../core/audit/audit-log.js";
+import { AppError } from "../../core/errors/app-error.js";
 import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
 import { buildLaunchReadiness } from "./launch-readiness.js";
+import { buildPublicRuntimeConfig } from "./public-runtime-config.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -163,6 +174,15 @@ function auditMeta(req: { user?: { id: string }; header: (name: string) => strin
   };
 }
 
+function emailEndpointHostname(value?: string) {
+  if (!value) return undefined;
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
 export const configModule: AppModule = {
   id: "config",
   basePath: "/config",
@@ -178,6 +198,19 @@ export const configModule: AppModule = {
     const emailSettingsService = new EmailSettingsService(context.prisma, context.config);
 
     router.get("/", asyncHandler(async (_req, res) => {
+      const [siteSettings, localization] = await Promise.all([
+        readSiteSettings(context),
+        readLocalizationSettings(context.prisma)
+      ]);
+
+      return sendSuccess(res, buildPublicRuntimeConfig(
+        context.config,
+        siteSettings,
+        localization
+      ));
+    }));
+
+    router.get("/admin", requireAuth(context), asyncHandler(async (_req, res) => {
       let installedModules: unknown[] = [];
       const siteSettings = await readSiteSettings(context);
       const localization = await readLocalizationSettings(context.prisma);
@@ -290,6 +323,27 @@ export const configModule: AppModule = {
       requirePermission(context, "manage", "modules"),
       validateRequest({ body: emailSettingsSchema }),
       asyncHandler(async (req, res) => {
+        const sensitiveChange = await emailSettingsService.requiresSensitiveAuthorization(req.body);
+        if (sensitiveChange && !hasPermission(req.user, "manage", "secrets")) {
+          await safeWriteAuditLog(context.prisma, {
+            actorUserId: req.user?.id,
+            action: "authorization.denied",
+            subject: "secrets",
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            requestId: req.requestId,
+            outcome: "DENIED",
+            severity: "HIGH",
+            metadata: {
+              requiredAction: "manage",
+              method: req.method,
+              path: req.originalUrl.split("?", 1)[0]
+            }
+          });
+          throw new AppError(403, "forbidden", "You do not have permission to change secrets.");
+        }
+        if (sensitiveChange) assertRecentSensitiveAuthentication(req.user);
+
         const email = await emailSettingsService.update(req.body);
         await writeAuditLog(context.prisma, {
           actorUserId: req.user?.id,
@@ -303,7 +357,7 @@ export const configModule: AppModule = {
             provider: email.provider,
             recoveryEnabled: email.recoveryEnabled,
             from: email.from,
-            httpEndpoint: email.httpEndpoint,
+            endpointHostname: emailEndpointHostname(email.httpEndpoint),
             bearerTokenConfigured: email.bearerTokenConfigured
           }
         });
@@ -314,9 +368,10 @@ export const configModule: AppModule = {
 
     router.post(
       "/email/test",
-      requirePermission(context, "manage", "modules"),
+      requirePermission(context, "manage", "secrets"),
       validateRequest({ body: emailTestSchema }),
       asyncHandler(async (req, res) => {
+        assertRecentSensitiveAuthentication(req.user);
         const recipient = req.body.recipient ?? req.user?.email;
         if (!recipient) {
           return res.status(422).json({
