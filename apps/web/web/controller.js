@@ -117,7 +117,7 @@ export async function loadAdminRoute(route) {
       const canReadProducts = hasPermission("read", "products");
       const canReadOrders = hasPermission("read", "orders");
       const [config, draftProducts, activeProducts, archivedProducts, orders, categories, attributes, providers, shippingZones] = await Promise.all([
-        api("/config"),
+        api("/config/admin"),
         canReadProducts ? api(adminLocaleUrl("/products", { status: "DRAFT" })) : Promise.resolve({ products: [] }),
         canReadProducts ? api(adminLocaleUrl("/products", { status: "ACTIVE" })) : Promise.resolve({ products: [] }),
         canReadProducts ? api(adminLocaleUrl("/products", { status: "ARCHIVED" })) : Promise.resolve({ products: [] }),
@@ -233,7 +233,7 @@ export async function loadAdminRoute(route) {
     const { renderShopConfigurationPage } = await adminViews();
     const canReadOrders = hasPermission("read", "orders");
     const [config, shopResponse, shippingResponse, taxResponse, couponResponse] = await Promise.all([
-      api("/config"),
+      api("/config/admin"),
       api("/products/settings"),
       canReadOrders ? api("/orders/shipping/zones") : Promise.resolve({ zones: [] }),
       canReadOrders ? api("/orders/tax-rules") : Promise.resolve({ taxRules: [] }),
@@ -419,7 +419,7 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "settings") {
     const { renderSettingsPage } = await adminViews();
-    const config = await api("/config");
+    const config = await api("/config/admin");
     const [emailResult, updateResult, auditResult, diagnosticsResult, readinessResult] = await Promise.allSettled([
       api("/config/email"),
       api("/config/runtime-update"),
@@ -453,7 +453,7 @@ export async function loadAdminRoute(route) {
 
   const { renderDashboardHome } = await adminViews();
   try {
-    renderDashboardHome(await api("/config"));
+    renderDashboardHome(await api("/config/admin"));
   } catch {
     renderDashboardHome();
   }
@@ -496,7 +496,7 @@ export async function refreshPageBuilderIfStale(changedStorageKey = "") {
 
 async function loadRuntimeConfig() {
   try {
-    return setRuntimeConfig(await api("/config"));
+    return setRuntimeConfig(await api(state.user ? "/config/admin" : "/config"));
   } catch {
     return setRuntimeConfig(null);
   }

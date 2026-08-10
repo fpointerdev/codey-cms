@@ -6,6 +6,7 @@ import { validateRequest } from "../../core/http/validation.middleware.js";
 import {
   assertRecentSensitiveAuthentication,
   hasPermission,
+  requireAuth,
   requirePermission
 } from "../auth/auth.middleware.js";
 import {
@@ -59,6 +60,7 @@ import {
 import { AppError } from "../../core/errors/app-error.js";
 import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
 import { buildLaunchReadiness } from "./launch-readiness.js";
+import { buildPublicRuntimeConfig } from "./public-runtime-config.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -196,6 +198,19 @@ export const configModule: AppModule = {
     const emailSettingsService = new EmailSettingsService(context.prisma, context.config);
 
     router.get("/", asyncHandler(async (_req, res) => {
+      const [siteSettings, localization] = await Promise.all([
+        readSiteSettings(context),
+        readLocalizationSettings(context.prisma)
+      ]);
+
+      return sendSuccess(res, buildPublicRuntimeConfig(
+        context.config,
+        siteSettings,
+        localization
+      ));
+    }));
+
+    router.get("/admin", requireAuth(context), asyncHandler(async (_req, res) => {
       let installedModules: unknown[] = [];
       const siteSettings = await readSiteSettings(context);
       const localization = await readLocalizationSettings(context.prisma);

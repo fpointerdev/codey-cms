@@ -380,7 +380,30 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
 
     const configResponse = await request("/api/v1/config");
     const configBody = await responseJson(configResponse);
+    assert.equal(configResponse.status, 200, JSON.stringify(configBody));
+    assert.deepEqual(Object.keys(configBody.data ?? {}), [
+      "app",
+      "features",
+      "localization",
+      "siteSettings",
+      "storage"
+    ]);
+    assert.equal(configBody.data?.env, undefined);
+    assert.equal(configBody.data?.api, undefined);
+    assert.equal(configBody.data?.modules, undefined);
+    assert.equal(configBody.data?.installedModules, undefined);
+    assert.equal(configBody.data?.storage?.driver, undefined);
+    assert.equal(configBody.data?.storage?.bucket, undefined);
+    assert.equal(configBody.data?.storage?.keyPrefix, undefined);
     const currentSiteSettings = configBody.data?.siteSettings;
+    const unauthorizedAdminConfig = await request("/api/v1/config/admin");
+    assert.equal(unauthorizedAdminConfig.status, 401);
+    const adminConfig = await request("/api/v1/config/admin", { headers: authorization });
+    const adminConfigBody = await responseJson(adminConfig);
+    assert.equal(adminConfig.status, 200, JSON.stringify(adminConfigBody));
+    assert.equal(adminConfigBody.data?.env, config.env);
+    assert.ok(adminConfigBody.data?.modules?.cms);
+    assert.ok(Array.isArray(adminConfigBody.data?.installedModules));
     const compatibility = await request("/api/v1/config/compatibility", { headers: authorization });
     const compatibilityBody = await responseJson(compatibility);
     assert.equal(compatibility.status, 200, JSON.stringify(compatibilityBody));

@@ -137,6 +137,19 @@ Stable `/api/v1` endpoint families:
 - `payments`: site payment-provider configuration, public provider discovery, Stripe intents, PayPal orders/capture, manual settlement, and verified idempotent webhooks.
 - `health`: minimal public liveness/readiness plus authenticated operational diagnostics and metrics.
 
+Runtime configuration is split by audience:
+
+```text
+GET /api/v1/config        # public rendering contract
+GET /api/v1/config/admin  # authenticated dashboard contract
+```
+
+The public contract is limited to app identity, public feature flags, localization, public
+site settings, the public media base URL, and responsive image widths. Environment names,
+proxy settings, storage locations, module lifecycle metadata, deployment profiles, update
+configuration, and builder compatibility internals are available only through authenticated
+administrative endpoints.
+
 Transactional email configuration is site-owned:
 
 ```text

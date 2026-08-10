@@ -1097,7 +1097,7 @@ export async function toggleLocalizationModule(action) {
       method: "POST"
     });
     const { renderSettingsPage } = await import("./admin-views.js");
-    renderSettingsPage(await api("/config"));
+    renderSettingsPage(await api("/config/admin"));
     setStatus(`Localization ${nextAction === "enable" ? "enabled" : "disabled"}.`);
   } catch (error) {
     setStatus(error.message || "Unable to update localization module.", true);
