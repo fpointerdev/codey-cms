@@ -129,8 +129,8 @@ export const checkoutCartSchema = z.object({
 
 export const lookupOrderSchema = z.object({
   orderNumber: z.string().trim().min(1).max(80),
-  customerEmail: z.string().email()
-});
+  lookupToken: z.string().trim().min(40).max(100)
+}).strict();
 
 export const customerDataExportSchema = z.object({
   email: z.string().email()

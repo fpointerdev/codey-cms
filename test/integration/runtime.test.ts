@@ -11,6 +11,7 @@ import { logger } from "../../src/infrastructure/logging/logger.js";
 import { createTotpCode } from "../../src/modules/auth/mfa.js";
 import { CommerceAbuseService } from "../../src/modules/orders/commerce-abuse.service.js";
 import { deliverQueuedOrderEmails } from "../../src/modules/orders/order-email.service.js";
+import { hashOrderLookupToken } from "../../src/modules/orders/order-lookup.js";
 import { runtimeVersion } from "../../src/runtime/release.js";
 
 type ApiEnvelope = {
@@ -508,7 +509,62 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(completedCheckoutBody.data?.order.items.length, 1);
     assert.equal(completedCheckoutBody.data?.order.shippingCents, shippingRate.priceCents);
     const orderId = String(completedCheckoutBody.data?.order.id);
+    const orderNumber = String(completedCheckoutBody.data?.order.orderNumber);
+    const lookupToken = String(completedCheckoutBody.data?.order.lookupToken);
     commerceOrderId = orderId;
+    assert.match(lookupToken, /^[A-Za-z0-9_-]{43}$/);
+    const storedLookup = await prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { notifications: true }
+    });
+    assert.equal(storedLookup.lookupTokenHash, hashOrderLookupToken(lookupToken));
+    assert.equal(JSON.stringify(storedLookup).includes(lookupToken), false);
+
+    const validLookup = await request("/api/v1/orders/lookup", {
+      method: "POST",
+      body: JSON.stringify({ orderNumber, lookupToken })
+    });
+    const validLookupBody = await responseJson(validLookup);
+    assert.equal(validLookup.status, 200, JSON.stringify(validLookupBody));
+    assert.deepEqual(Object.keys(validLookupBody.data?.order), [
+      "orderNumber",
+      "status",
+      "checkoutStatus",
+      "currency",
+      "subtotalCents",
+      "discountCents",
+      "shippingCents",
+      "taxCents",
+      "totalCents",
+      "createdAt",
+      "items"
+    ]);
+    assert.deepEqual(Object.keys(validLookupBody.data?.order.items[0]), [
+      "productName",
+      "variantName",
+      "quantity",
+      "unitPriceCents"
+    ]);
+
+    const invalidTokenLookup = await request("/api/v1/orders/lookup", {
+      method: "POST",
+      body: JSON.stringify({ orderNumber, lookupToken: "x".repeat(43) })
+    });
+    const invalidTokenLookupBody = await responseJson(invalidTokenLookup);
+    const unknownOrderLookup = await request("/api/v1/orders/lookup", {
+      method: "POST",
+      body: JSON.stringify({ orderNumber: `UNKNOWN-${runId}`, lookupToken })
+    });
+    const unknownOrderLookupBody = await responseJson(unknownOrderLookup);
+    assert.equal(invalidTokenLookup.status, 404);
+    assert.equal(unknownOrderLookup.status, 404);
+    assert.deepEqual(invalidTokenLookupBody.error, unknownOrderLookupBody.error);
+
+    const adminOrders = await request("/api/v1/orders", { headers: authorization });
+    const adminOrdersBody = await responseJson(adminOrders);
+    assert.equal(adminOrders.status, 200, JSON.stringify(adminOrdersBody));
+    assert.equal(JSON.stringify(adminOrdersBody).includes("lookupTokenHash"), false);
+    assert.equal(JSON.stringify(adminOrdersBody).includes("secretEnvelope"), false);
     const selectedVariant = starterProduct.variants[0];
     const inventoryBeforePayment = selectedVariant
       ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })

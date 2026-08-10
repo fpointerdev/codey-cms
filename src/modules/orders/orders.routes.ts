@@ -47,6 +47,7 @@ import {
   exportCustomerData
 } from "./customer-data.service.js";
 import { deliverQueuedOrderEmails, queueOrderEmail, requeueOrderEmail } from "./order-email.service.js";
+import { adminOrderDto } from "./order-lookup.js";
 
 function createCheckoutLimiter(context: ModuleContext) {
   return rateLimit({
@@ -102,7 +103,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
         take: 100
       });
 
-      return sendSuccess(res, { orders });
+      return sendSuccess(res, { orders: orders.map(adminOrderDto) });
     })
   );
 
@@ -115,7 +116,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       const order = await createOrder(context, req.body, { ipAddress: req.ip });
       await deliverQueuedOrderEmails(context, { orderId: order.id });
 
-      return sendCreated(res, { order });
+      return sendCreated(res, { order: adminOrderDto(order) });
     })
   );
 
@@ -199,7 +200,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       const order = await checkoutCart(context, req.params.token, req.body, { ipAddress: req.ip });
       await deliverQueuedOrderEmails(context, { orderId: order.id });
 
-      return sendCreated(res, { order });
+      return sendCreated(res, { order: adminOrderDto(order) });
     })
   );
 
@@ -439,7 +440,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
         });
       });
 
-      return sendSuccess(res, { order });
+      return sendSuccess(res, { order: adminOrderDto(order) });
     })
   );
 
@@ -484,7 +485,7 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       });
       await deliverQueuedOrderEmails(context, { orderId: order.id });
 
-      return sendSuccess(res, { order });
+      return sendSuccess(res, { order: adminOrderDto(order) });
     })
   );
 }

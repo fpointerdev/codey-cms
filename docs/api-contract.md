@@ -155,6 +155,22 @@ PATCH /api/v1/products/settings  # update:products
 
 The settings contract covers catalog copy, listing and product-detail presentation, page size, and category, attribute, SKU, and stock visibility.
 
+Public order lookup uses a bearer credential returned once at checkout and included in the
+confirmation email:
+
+```text
+POST /api/v1/orders/lookup
+{ "orderNumber": "ORD-...", "lookupToken": "..." }
+```
+
+The database stores only the SHA-256 token hash. Confirmation-email retries keep the raw
+token in an authenticated encrypted envelope and clear that envelope after delivery. The
+public response is a dedicated customer-safe order projection without database IDs,
+metadata, payment details, notification records, or token hashes. Orders created before
+the secure lookup migration have no anonymous fallback; they remain available to
+authenticated administrators and can only gain a public token through a future verified
+reissue workflow.
+
 ## Contract Source
 
 `docs/openapi-v1.json` is a generated OpenAPI 3.1 route inventory with source locations for every module endpoint. `pnpm api:check` fails when route additions, removals, or version changes are not regenerated. Express route files and their referenced Zod schemas remain authoritative for request and response details; the inventory deliberately does not invent schema guarantees that are not generated from those validators.

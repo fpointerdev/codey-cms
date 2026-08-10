@@ -1,5 +1,6 @@
 import { Prisma, type OrderNotification, type OrderNotificationEvent, type OrderStatus } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
+import { decryptSecretEnvelope } from "../../core/security/secret-envelope.js";
 import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { createEmailClient, isEmailDeliveryConfigured } from "../../infrastructure/email/http-email.js";
 import type { ModuleContext } from "../../core/types/module.js";
@@ -15,6 +16,7 @@ type OrderForEmail = Prisma.OrderGetPayload<{
 type QueueOrderEmailOptions = {
   eventType: OrderNotificationEvent;
   previousStatus?: OrderStatus;
+  secretEnvelope?: string;
 };
 
 type DeliverQueuedOrderEmailsOptions = {
@@ -26,6 +28,7 @@ type DeliverQueuedOrderEmailsOptions = {
 const maximumDeliveryAttempts = 6;
 const staleClaimAgeMs = 5 * 60 * 1000;
 const maximumRetryDelayMs = 60 * 60 * 1000;
+const lookupTokenPlaceholder = "{{CODEY_ORDER_LOOKUP_TOKEN}}";
 
 export function orderEmailRetryDelayMs(attempts: number) {
   return Math.min(maximumRetryDelayMs, 60_000 * (2 ** Math.max(0, attempts - 1)));
@@ -129,11 +132,40 @@ function buildOrderEmail(order: OrderForEmail, options: QueueOrderEmailOptions) 
       `Thank you. Your order ${order.orderNumber} was received.`,
       "",
       `Total: ${total}`,
+      ...(options.secretEnvelope
+        ? ["", "Order lookup token:", lookupTokenPlaceholder]
+        : []),
       "",
       "Items:",
       itemsText
     ].join("\n"),
-    htmlBody: `<p>Thank you. Your order <strong>${escapeHtml(order.orderNumber)}</strong> was received.</p><p>Total: ${escapeHtml(total)}</p><ul>${itemsHtml}</ul>`
+    htmlBody: `<p>Thank you. Your order <strong>${escapeHtml(order.orderNumber)}</strong> was received.</p><p>Total: ${escapeHtml(total)}</p>${options.secretEnvelope ? `<p>Order lookup token:<br><code>${lookupTokenPlaceholder}</code></p>` : ""}<ul>${itemsHtml}</ul>`
+  };
+}
+
+export function orderNotificationMessage(
+  notification: Pick<OrderNotification, "body" | "htmlBody" | "secretEnvelope">,
+  credentialEncryptionKey: string
+) {
+  if (!notification.secretEnvelope) {
+    return { text: notification.body, html: notification.htmlBody ?? undefined };
+  }
+
+  const payload = decryptSecretEnvelope<unknown>(
+    credentialEncryptionKey,
+    notification.secretEnvelope
+  );
+  const lookupToken = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>).lookupToken
+    : undefined;
+  if (typeof lookupToken !== "string" || !lookupToken) {
+    throw new Error("Invalid order notification secret envelope");
+  }
+
+  return {
+    text: notification.body.replaceAll(lookupTokenPlaceholder, lookupToken),
+    html: notification.htmlBody
+      ?.replaceAll(lookupTokenPlaceholder, escapeHtml(lookupToken))
   };
 }
 
@@ -151,7 +183,8 @@ export async function queueOrderEmail(
       recipient: order.customerEmail,
       subject: email.subject,
       body: email.body,
-      htmlBody: email.htmlBody
+      htmlBody: email.htmlBody,
+      secretEnvelope: options.secretEnvelope
     }
   });
 }
@@ -230,12 +263,16 @@ export async function deliverQueuedOrderEmails(
 
   for (const notification of notifications) {
     try {
+      const message = orderNotificationMessage(
+        notification,
+        context.config.security.credentialEncryptionKey
+      );
       await emailClient.send({
         to: notification.recipient,
         from: emailSettings.from!,
         subject: notification.subject,
-        text: notification.body,
-        html: notification.htmlBody ?? undefined,
+        text: message.text,
+        html: message.html,
         metadata: {
           orderId: notification.orderId,
           notificationId: notification.id,
@@ -249,7 +286,8 @@ export async function deliverQueuedOrderEmails(
           status: "SENT",
           sentAt: new Date(),
           nextAttemptAt: new Date(),
-          failureReason: null
+          failureReason: null,
+          secretEnvelope: null
         }
       });
       sent += 1;

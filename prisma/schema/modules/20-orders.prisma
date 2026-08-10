@@ -70,6 +70,7 @@ model Order {
   shippingRateId     String?
   checkoutEmailHash  String?
   checkoutIpHash     String?
+  lookupTokenHash    String?       @unique
   metadata           Json?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
@@ -80,7 +81,6 @@ model Order {
   @@index([status, createdAt])
   @@index([checkoutStatus, createdAt])
   @@index([customerEmail])
-  @@index([orderNumber, customerEmail])
   @@index([checkoutEmailHash, status, checkoutStatus])
   @@index([checkoutIpHash, status, checkoutStatus])
 }
@@ -249,6 +249,7 @@ model OrderNotification {
   subject   String
   body      String
   htmlBody  String?
+  secretEnvelope String?
   attempts  Int                @default(0)
   failureReason String?
   lastAttemptAt DateTime?

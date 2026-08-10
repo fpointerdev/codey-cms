@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { encryptSecretEnvelope } from "../../core/security/secret-envelope.js";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
 import { CommerceAbuseService } from "./commerce-abuse.service.js";
@@ -8,6 +9,12 @@ import {
   releaseInventoryReservation
 } from "./inventory-reservation.service.js";
 import { queueOrderEmail } from "./order-email.service.js";
+import {
+  adminOrderDto,
+  createOrderLookupCredential,
+  orderLookupTokenMatches,
+  publicOrderDto
+} from "./order-lookup.js";
 import {
   availableStock as inventoryAvailableStock,
   effectivePurchaseLimit
@@ -54,7 +61,7 @@ export type OrderRequestMeta = {
 
 export type LookupOrderInput = {
   orderNumber: string;
-  customerEmail: string;
+  lookupToken: string;
 };
 
 type ShopTransaction = Prisma.TransactionClient;
@@ -513,6 +520,7 @@ async function createOrderInTransaction(
     taxableCents
   );
   const totalCents = taxableCents + taxCents;
+  const lookupCredential = createOrderLookupCredential();
   const order = await tx.order.create({
     data: {
       orderNumber: createOrderNumber(),
@@ -530,6 +538,7 @@ async function createOrderInTransaction(
       shippingRateId,
       checkoutEmailHash: pendingOrderHashes.emailHash,
       checkoutIpHash: pendingOrderHashes.ipHash,
+      lookupTokenHash: lookupCredential.lookupTokenHash,
       metadata: checkoutMetadata(input) as Prisma.InputJsonValue | undefined,
       items: {
         create: orderItems
@@ -555,10 +564,17 @@ async function createOrderInTransaction(
   }
 
   await queueOrderEmail(tx, order, {
-    eventType: "ORDER_RECEIVED"
+    eventType: "ORDER_RECEIVED",
+    secretEnvelope: encryptSecretEnvelope(
+      context.config.security.credentialEncryptionKey,
+      { lookupToken: lookupCredential.lookupToken }
+    )
   });
 
-  return order;
+  return {
+    ...adminOrderDto(order),
+    lookupToken: lookupCredential.lookupToken
+  };
 }
 
 export async function createOrder(
@@ -852,22 +868,36 @@ export async function checkoutCart(
 }
 
 export async function lookupOrder(context: ModuleContext, input: LookupOrderInput) {
-  const order = await context.prisma.order.findFirst({
-    where: {
-      orderNumber: input.orderNumber,
-      customerEmail: {
-        equals: input.customerEmail,
-        mode: "insensitive"
+  const order = await context.prisma.order.findUnique({
+    where: { orderNumber: input.orderNumber },
+    select: {
+      lookupTokenHash: true,
+      orderNumber: true,
+      status: true,
+      checkoutStatus: true,
+      currency: true,
+      subtotalCents: true,
+      discountCents: true,
+      shippingCents: true,
+      taxCents: true,
+      totalCents: true,
+      createdAt: true,
+      items: {
+        select: {
+          productName: true,
+          variantName: true,
+          quantity: true,
+          unitPriceCents: true
+        }
       }
-    },
-    include: { items: true }
+    }
   });
 
-  if (!order) {
+  if (!orderLookupTokenMatches(order?.lookupTokenHash, input.lookupToken) || !order) {
     throw new AppError(404, "order_not_found", "Order not found.");
   }
 
-  return order;
+  return publicOrderDto(order);
 }
 
 export async function releaseOrderInventoryReservation(
