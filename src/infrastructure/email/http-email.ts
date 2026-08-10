@@ -55,10 +55,10 @@ function isPublicIpv4(address: string) {
   const bytes = ipv4Bytes(address);
   if (!bytes) return false;
   const [first, second, third] = bytes;
-  if (first === 0 || first === 10 || first === 127 || first! >= 224) return false;
-  if (first === 100 && second! >= 64 && second! <= 127) return false;
+  if (first === 0 || first === 10 || first === 127 || first >= 224) return false;
+  if (first === 100 && second >= 64 && second <= 127) return false;
   if (first === 169 && second === 254) return false;
-  if (first === 172 && second! >= 16 && second! <= 31) return false;
+  if (first === 172 && second >= 16 && second <= 31) return false;
   if (first === 192 && second === 168) return false;
   if (first === 192 && second === 0 && third === 0) return false;
   if (first === 192 && second === 0 && third === 2) return false;
@@ -69,13 +69,13 @@ function isPublicIpv4(address: string) {
 }
 
 function ipv6Bytes(address: string) {
-  let normalized = address.toLowerCase().split("%", 1)[0]!;
+  let normalized = address.toLowerCase().split("%", 1)[0];
   const ipv4Tail = normalized.match(/(?:^|:)(\d+\.\d+\.\d+\.\d+)$/)?.[1];
   if (ipv4Tail) {
     const bytes = ipv4Bytes(ipv4Tail);
     if (!bytes) return null;
-    const first = (bytes[0]! << 8 | bytes[1]!).toString(16);
-    const second = (bytes[2]! << 8 | bytes[3]!).toString(16);
+    const first = (bytes[0] << 8 | bytes[1]).toString(16);
+    const second = (bytes[2] << 8 | bytes[3]).toString(16);
     normalized = normalized.slice(0, -ipv4Tail.length) + `${first}:${second}`;
   }
   const halves = normalized.split("::");
@@ -98,7 +98,7 @@ function isPublicIpv6(address: string) {
   const isIpv4Mapped = bytes.slice(0, 10).every((byte) => byte === 0) &&
     bytes[10] === 0xff && bytes[11] === 0xff;
   if (isIpv4Mapped) return isPublicIpv4(bytes.slice(12).join("."));
-  const globalUnicast = bytes[0]! >= 0x20 && bytes[0]! <= 0x3f;
+  const globalUnicast = bytes[0] >= 0x20 && bytes[0] <= 0x3f;
   if (!globalUnicast) return false;
   if (bytes[0] === 0x20 && bytes[1] === 0x01) {
     if (bytes[2] === 0x0d && bytes[3] === 0xb8) return false;

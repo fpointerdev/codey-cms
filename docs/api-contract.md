@@ -199,7 +199,7 @@ Before changing an existing `/api/v1` endpoint, verify:
 - Auth and permission requirements are unchanged or explicitly documented.
 - Public visibility rules still block drafts, archived records, and private data.
 - Generated-site contract docs are updated when CMS, media, shop, config, or auth behavior changes.
-- `pnpm validate` passes and focused route/service tests cover the changed behavior.
+- `pnpm validate` passes, including backend TypeScript linting and critical-module coverage ratchets, and focused route/service tests cover the changed behavior.
 - Existing route/contract tests either stay green or the change moves to `/api/v2`.
 
 ## Contract Tests

@@ -3,6 +3,7 @@ import type { RequestHandler } from "express";
 import type { AppConfig } from "../../config/index.js";
 import type { AppLogger } from "../../infrastructure/logging/logger.js";
 import type { PrismaClient } from "@prisma/client";
+import { asyncHandler } from "./async-handler.js";
 
 type MaintenanceSettings = {
   enabled?: boolean;
@@ -58,7 +59,7 @@ export function createMaintenanceMiddleware(input: {
   prisma: PrismaClient;
   logger: AppLogger;
 }): RequestHandler {
-  return async (req, res, next) => {
+  return asyncHandler(async (req, res, next) => {
     try {
       const envMaintenance: MaintenanceSettings = input.config.maintenance.enabled
         ? {
@@ -117,5 +118,5 @@ export function createMaintenanceMiddleware(input: {
       input.logger.error({ err: error, requestId: res.locals.requestId }, "Maintenance check failed");
       next(error);
     }
-  };
+  });
 }

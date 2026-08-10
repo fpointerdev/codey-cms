@@ -454,7 +454,7 @@ async function createOrderInTransaction(
 
   for (const [key, quantity] of requestedQuantities) {
     const [productId, variantId] = key.split(":");
-    const product = productsById.get(productId!);
+    const product = productsById.get(productId);
     const variant = variantId ? variantsById.get(variantId) : undefined;
     const available = variant
       ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
@@ -498,7 +498,7 @@ async function createOrderInTransaction(
     (total, item) => total + item.unitPriceCents * item.quantity,
     0
   );
-  const currency = products[0]!.currency;
+  const currency = products[0].currency;
   const { code, couponId, usageLimit, discountCents } = await resolveCoupon(
     tx,
     input.couponCode,

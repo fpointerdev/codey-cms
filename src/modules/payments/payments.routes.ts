@@ -176,7 +176,7 @@ async function providerPayload(
         paymentId: payment.id,
         amountCents: intent.amount,
         currency: intent.currency.toUpperCase(),
-        payload: intent as unknown as Record<string, unknown>
+        payload: intent
       });
     }
 
@@ -208,7 +208,7 @@ async function providerPayload(
       providerEventId: `paypal-sync:${order.id}:${order.status}`,
       providerReference: order.id,
       paymentId: payment.id,
-      payload: order as unknown as Record<string, unknown>
+      payload: order
     });
   }
 
@@ -289,7 +289,7 @@ async function initializeProviderPayment(input: {
         paymentId: updated.id,
         amountCents: intent.amount,
         currency: intent.currency.toUpperCase(),
-        payload: intent as unknown as Record<string, unknown>
+        payload: intent
       });
       return context.prisma.payment.findUniqueOrThrow({ where: { id: updated.id } });
     }
@@ -333,7 +333,7 @@ async function initializeProviderPayment(input: {
       providerEventId: `paypal-create:${paypalOrder.id}:${paypalOrder.status}`,
       providerReference: paypalOrder.id,
       paymentId: updated.id,
-      payload: paypalOrder as unknown as Record<string, unknown>
+      payload: paypalOrder
     });
     return context.prisma.payment.findUniqueOrThrow({ where: { id: updated.id } });
   }
@@ -382,7 +382,7 @@ async function applyCompletedPayPalOrder(
     paymentId: payment.id,
     amountCents: centsFromPayPalAmount(capture.amount),
     currency: capture.amount?.currency_code?.toUpperCase(),
-    payload: paypalOrder as unknown as Record<string, unknown>
+    payload: paypalOrder
   });
 }
 
@@ -713,7 +713,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
           providerEventId: `paypal-capture-sync:${existingOrder.id}:${existingOrder.status}`,
           providerReference: payment.providerReference!,
           paymentId: payment.id,
-          payload: existingOrder as unknown as Record<string, unknown>
+          payload: existingOrder
         }));
       }
       if (existingOrder.status !== "APPROVED") {
@@ -746,7 +746,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
             providerEventId: `paypal-capture-failed:${paypalOrder.id}:${paypalOrder.status}`,
             providerReference: payment.providerReference!,
             paymentId: payment.id,
-            payload: paypalOrder as unknown as Record<string, unknown>
+            payload: paypalOrder
           }));
         }
         const updatedPayment = await context.prisma.payment.update({

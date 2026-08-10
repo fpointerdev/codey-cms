@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { sanitizeGeneratedStylesheet } from "../../core/security/css-sanitizer.js";
 import type { ModuleContext, ModuleId } from "../../core/types/module.js";
 import { CmsService } from "../cms/cms.service.js";
@@ -1055,7 +1055,7 @@ async function syncMediaPlaceholders(
               prompt: media.prompt,
               placement: media.placement,
               usedBy: media.usedBy
-            } as Prisma.InputJsonValue
+            }
           }
         })
       : await context.prisma.mediaAsset.create({
@@ -1072,7 +1072,7 @@ async function syncMediaPlaceholders(
               prompt: media.prompt,
               placement: media.placement,
               usedBy: media.usedBy
-            } as Prisma.InputJsonValue
+            }
           }
         });
 

@@ -30,7 +30,7 @@ export function statusFromWebhook(eventType: string): PaymentStatus | undefined 
 
 function jsonRecord(value: Prisma.JsonValue | null) {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Prisma.JsonObject
+    ? value
     : {};
 }
 
@@ -218,7 +218,7 @@ export async function processPaymentEvent(
               metadata: {
                 ...metadata,
                 refundedCents
-              } as Prisma.InputJsonObject
+              }
             }
           });
         } else {
@@ -231,7 +231,7 @@ export async function processPaymentEvent(
                   metadata: {
                     ...metadata,
                     refundedCents
-                  } as Prisma.InputJsonObject
+                  }
                 }
               });
 

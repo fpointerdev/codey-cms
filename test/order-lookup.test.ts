@@ -58,7 +58,7 @@ test("public and admin order DTOs exclude lookup internals", () => {
     "createdAt",
     "items"
   ]);
-  assert.deepEqual(Object.keys(publicOrder.items[0]!), [
+  assert.deepEqual(Object.keys(publicOrder.items[0]), [
     "productName",
     "variantName",
     "quantity",

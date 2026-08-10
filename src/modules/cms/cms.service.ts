@@ -188,7 +188,7 @@ function sanitizePageRecord<T extends {
         value: sanitizeContentBlockValue(block.type, block.value)
       }))
     }))
-  } as T;
+  };
 }
 
 function sanitizePostRecord<T extends { content: unknown }>(post: T): T {
@@ -1909,7 +1909,7 @@ export class CmsService {
     if (products.length > 0) {
       const lastmod = products.reduce(
         (latest, product) => product.updatedAt > latest ? product.updatedAt : latest,
-        products[0]!.updatedAt
+        products[0].updatedAt
       );
       urls.push(...locales.map((locale) => ({
         loc: `${origin}${normalizeLocale(locale) === normalizeLocale(localization.defaultLocale) ? "/shop" : `/${normalizeLocale(locale)}/shop`}`,

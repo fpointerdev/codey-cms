@@ -287,13 +287,13 @@ export class ModuleAdminService {
           }
         },
         update: {
-          value: normalizedSettings as Prisma.InputJsonValue
+          value: normalizedSettings
         },
         create: {
           siteId: site.id,
           moduleId,
           key: "settings",
-          value: normalizedSettings as Prisma.InputJsonValue
+          value: normalizedSettings
         }
       });
 

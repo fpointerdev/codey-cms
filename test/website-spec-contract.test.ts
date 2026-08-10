@@ -211,7 +211,7 @@ test("custom WebsiteSpec sections reject non-generator-safe element selection", 
   const spec = customElementsWebsiteSpec() as unknown as {
     pages: Array<{ sections: Array<{ settings: Record<string, unknown> }> }>;
   };
-  spec.pages[0]!.sections[0]!.settings.elementId = "structured-content";
+  spec.pages[0].sections[0].settings.elementId = "structured-content";
 
   const section = buildWebsiteGenerationPlan(spec).cmsPages[0]?.sections[0];
   assert.equal(section?.settings.elementId, "structured-content");
@@ -224,7 +224,7 @@ test("non-custom WebsiteSpec section settings remain backward compatible", () =>
   const spec = customElementsWebsiteSpec() as unknown as {
     pages: Array<{ sections: Array<Record<string, unknown>> }>;
   };
-  spec.pages[0]!.sections = [{
+  spec.pages[0].sections = [{
     key: "intro",
     type: "text",
     body: "Existing generated content.",

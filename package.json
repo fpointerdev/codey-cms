@@ -19,7 +19,8 @@
     "build": "pnpm prisma:generate && tsc -p tsconfig.build.json",
     "start": "node dist/src/server.js",
     "test": "node --import tsx --test test/*.test.ts",
-    "test:coverage": "node --import tsx --experimental-test-coverage --test-coverage-include=\"src/**/*.ts\" --test-coverage-include=\"apps/web/web/**/*.js\" --test-coverage-lines=60 --test-coverage-branches=58 --test-coverage-functions=58 --test test/*.test.ts",
+    "test:coverage": "node scripts/run-test-coverage.mjs",
+    "test:coverage:update": "node scripts/run-test-coverage.mjs --update",
     "test:installation": "node scripts/run-installation-integration-tests.mjs",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "test:recovery": "node scripts/run-recovery-integration-tests.mjs",
@@ -44,7 +45,7 @@
     "release:verify": "node scripts/verify-release.mjs",
     "release:qualify": "node scripts/qualify-selfhost-package.mjs",
     "release:qualify-upgrade": "node scripts/qualify-runtime-upgrade.mjs",
-    "lint": "eslint apps/web/web scripts",
+    "lint": "eslint apps/web/web scripts src test",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
     "audit": "pnpm audit --prod --audit-level high",
     "api:generate": "node scripts/generate-openapi.mjs",
@@ -89,7 +90,8 @@
     "eslint": "^9.39.5",
     "globals": "^16.5.0",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.66.0"
   },
   "description": "Reusable CodeY CMS runtime for generated websites."
 }

@@ -245,7 +245,7 @@ export class InstallationService {
   private defaultProfile(): DeploymentProfileId {
     if (this.config.app.mode === "landing") return "presentation";
     if (["presentation", "cms", "shop"].includes(this.config.app.mode)) {
-      return this.config.app.mode as DeploymentProfileId;
+      return this.config.app.mode;
     }
     return "cms";
   }
@@ -376,13 +376,13 @@ export class InstallationService {
         siteId_moduleId_key: key
       },
       update: {
-        value: value as Prisma.InputJsonValue
+        value: value
       },
       create: {
         siteId,
         moduleId: "config",
         key: "site",
-        value: value as Prisma.InputJsonValue
+        value: value
       }
     });
   }

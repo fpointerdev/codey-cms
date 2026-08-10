@@ -172,9 +172,9 @@ test("PayPal order requests require buyer return URLs", async () => {
 
   assert.equal(order.id, "PAYPAL-ORDER-1");
   assert.equal(requests.length, 2);
-  assert.match(requests[0]!.url, /api-m\.sandbox\.paypal\.com\/v1\/oauth2\/token$/);
-  const createBody = JSON.parse(String(requests[1]!.init?.body)) as Record<string, unknown>;
-  assert.equal((createBody.purchase_units as Array<{ amount: { value: string } }>)[0]!.amount.value, "25.99");
+  assert.match(requests[0].url, /api-m\.sandbox\.paypal\.com\/v1\/oauth2\/token$/);
+  const createBody = JSON.parse(String(requests[1].init?.body)) as Record<string, unknown>;
+  assert.equal((createBody.purchase_units as Array<{ amount: { value: string } }>)[0].amount.value, "25.99");
   assert.equal(
     ((createBody.payment_source as { paypal: { experience_context: { return_url: string } } }).paypal.experience_context.return_url),
     "https://shop.example.com/payment/return"

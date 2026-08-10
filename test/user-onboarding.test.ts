@@ -164,7 +164,7 @@ test("manual invitations can be accepted end to end when email delivery is disab
   assert.match(invitation.inviteUrl || "", /^https:\/\/cms\.example\.com\/auth\/invite\?token=/);
   assert.equal(invitation.invite.email, "new.editor@example.com");
 
-  const token = new URL(invitation.inviteUrl!).searchParams.get("token");
+  const token = new URL(invitation.inviteUrl).searchParams.get("token");
   assert.ok(token);
   const accepted = await harness.service.acceptInvite({
     token,
