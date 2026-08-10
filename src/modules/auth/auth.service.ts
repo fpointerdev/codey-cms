@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { jwtVerify, SignJWT } from "jose";
 import { safeWriteAuditLog, writeAuditLog } from "../../core/audit/audit-log.js";
@@ -6,10 +6,12 @@ import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { hashPassword, verifyPassword } from "../../core/security/password.js";
 import { decryptSecretEnvelope, encryptSecretEnvelope } from "../../core/security/secret-envelope.js";
-import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
-import { createEmailClient, isEmailDeliveryConfigured } from "../../infrastructure/email/http-email.js";
 import { assertRolesCanBeAssigned } from "../roles/role-assignment.js";
-import type { AuthenticatedUser, TokenPair } from "./auth.types.js";
+import { AccountRecoveryService } from "./account-recovery.service.js";
+import { AuthEmailService } from "./auth-email.service.js";
+import { addSeconds, createOpaqueToken, hashToken, parseDurationToSeconds } from "./auth-token.js";
+import type { AuthenticatedUser, AuthRequestMeta, TokenPair } from "./auth.types.js";
+import { authUserInclude, toAuthenticatedUser } from "./auth-user.js";
 import { LoginProtectionService } from "./login-protection.service.js";
 import {
   createMfaRecoveryCodes,
@@ -21,11 +23,7 @@ import {
 
 const encoder = new TextEncoder();
 
-type RequestMeta = {
-  userAgent?: string;
-  ipAddress?: string;
-  requestId?: string;
-};
+type RequestMeta = AuthRequestMeta;
 
 type RefreshTokenWriter = Pick<PrismaClient, "refreshToken">;
 
@@ -42,8 +40,6 @@ type AuditInput = RequestMeta & {
 type InviteAuditInput = AuditInput & {
   actorPermissions: AuthenticatedUser["permissions"];
 };
-
-type RecoveryFlow = "emailVerification" | "passwordReset" | "invite";
 
 const publicInviteSelect = {
   id: true,
@@ -79,88 +75,17 @@ const inviteRoleInclude = {
   }
 } as const;
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-function parseDurationToSeconds(value: string) {
-  const match = value.match(/^(\d+)([smhd])$/);
-  if (!match) {
-    throw new Error(`Invalid duration: ${value}. Use formats like 15m, 24h, 30d.`);
-  }
-
-  const amount = Number(match[1]);
-  const unit = match[2];
-  const multipliers: Record<string, number> = {
-    s: 1,
-    m: 60,
-    h: 60 * 60,
-    d: 60 * 60 * 24
-  };
-
-  return amount * multipliers[unit];
-}
-
-function addSeconds(seconds: number) {
-  return new Date(Date.now() + seconds * 1000);
-}
-
-function createOpaqueToken() {
-  return randomBytes(48).toString("base64url");
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function toAuthenticatedUser(user: {
-  id: string;
-  email: string;
-  name: string | null;
-  roles: Array<{
-    role: {
-      name: string;
-      permissions: Array<{
-        permission: {
-          action: string;
-          subject: string;
-        };
-      }>;
-    };
-  }>;
-  mfaCredential?: { enabledAt: Date | null } | null;
-}): AuthenticatedUser {
-  const permissions = user.roles.flatMap((userRole) =>
-    userRole.role.permissions.map((rolePermission) => ({
-      action: rolePermission.permission.action,
-      subject: rolePermission.permission.subject
-    }))
-  );
-
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    roles: user.roles.map((userRole) => userRole.role.name),
-    permissions,
-    mfaEnabled: Boolean(user.mfaCredential?.enabledAt)
-  };
-}
-
 export class AuthService {
-  private readonly emailSettings: EmailSettingsService;
+  private readonly authEmail: AuthEmailService;
+  private readonly recovery: AccountRecoveryService;
   private readonly loginProtection: LoginProtectionService;
 
   constructor(
     private readonly prisma: PrismaClient,
     private readonly config: AppConfig
   ) {
-    this.emailSettings = new EmailSettingsService(prisma, config);
+    this.authEmail = new AuthEmailService(prisma, config);
+    this.recovery = new AccountRecoveryService(prisma, this.authEmail);
     this.loginProtection = new LoginProtectionService(prisma, config);
   }
 
@@ -170,7 +95,7 @@ export class AuthService {
     }
 
     if (this.config.auth.requireEmailVerification) {
-      await this.assertRecoveryTokenDeliveryConfigured("Email verification");
+      await this.authEmail.assertRecoveryTokenDeliveryConfigured("Email verification");
     }
 
     const existing = await this.prisma.user.findUnique({
@@ -198,14 +123,14 @@ export class AuthService {
             }
           : undefined
       },
-      include: this.authUserInclude()
+      include: authUserInclude
     });
     const verificationToken = this.config.auth.requireEmailVerification
-      ? await this.createEmailVerificationToken(user.id)
+      ? await this.recovery.createEmailVerificationToken(user.id)
       : null;
 
     if (verificationToken) {
-      await this.deliverRecoveryToken("emailVerification", {
+      await this.authEmail.deliverRecoveryToken("emailVerification", {
         email: user.email,
         token: verificationToken,
         name: user.name ?? undefined
@@ -226,7 +151,7 @@ export class AuthService {
         : await this.issueTokens(user.id, user.authVersion, meta),
       emailVerification: {
         required: this.config.auth.requireEmailVerification,
-        token: this.exposeSensitiveToken(verificationToken)
+        token: this.authEmail.exposeSensitiveToken(verificationToken)
       }
     };
   }
@@ -237,7 +162,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: this.authUserInclude()
+      include: authUserInclude
     });
 
     if (!user || user.status !== "ACTIVE") {
@@ -301,7 +226,7 @@ export class AuthService {
         where: { tokenHash },
         include: {
           user: {
-            include: this.authUserInclude()
+            include: authUserInclude
           }
         }
       });
@@ -438,7 +363,7 @@ export class AuthService {
   ) {
     const existing = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: this.authUserInclude()
+      include: authUserInclude
     });
     if (!existing || existing.status !== "ACTIVE") {
       throw new AppError(401, "unauthorized", "Authentication required.");
@@ -471,7 +396,7 @@ export class AuthService {
 
       const user = await tx.user.findUniqueOrThrow({
         where: { id: userId },
-        include: this.authUserInclude()
+        include: authUserInclude
       });
       await tx.refreshToken.updateMany({
         where: { userId, revokedAt: null },
@@ -670,7 +595,7 @@ export class AuthService {
       const user = await tx.user.update({
         where: { id: userId },
         data: { authVersion: { increment: 1 } },
-        include: this.authUserInclude()
+        include: authUserInclude
       });
       await tx.refreshToken.updateMany({
         where: { userId, revokedAt: null },
@@ -708,7 +633,7 @@ export class AuthService {
   ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: this.authUserInclude()
+      include: authUserInclude
     });
     if (!user || user.status !== "ACTIVE") {
       throw new AppError(401, "unauthorized", "Authentication required.");
@@ -728,7 +653,7 @@ export class AuthService {
       const updatedUser = await tx.user.update({
         where: { id: userId },
         data: { authVersion: { increment: 1 } },
-        include: this.authUserInclude()
+        include: authUserInclude
       });
       await tx.refreshToken.updateMany({
         where: { userId, revokedAt: null },
@@ -755,188 +680,19 @@ export class AuthService {
   }
 
   async requestPasswordReset(input: { email: string }, meta: RequestMeta) {
-    await this.assertRecoveryTokenDeliveryConfigured("Password reset");
-
-    const user = await this.prisma.user.findUnique({
-      where: { email: input.email.toLowerCase() }
-    });
-
-    if (!user || user.status !== "ACTIVE") {
-      return { requested: true, token: null };
-    }
-
-    const token = await this.createPasswordResetToken(user.id);
-    await this.deliverRecoveryToken("passwordReset", {
-      email: user.email,
-      token,
-      name: user.name ?? undefined
-    });
-
-    await this.audit({
-      actorUserId: user.id,
-      action: "password_reset.request",
-      subject: "user",
-      subjectId: user.id,
-      meta
-    });
-
-    return {
-      requested: true,
-      token: this.exposeSensitiveToken(token)
-    };
+    return this.recovery.requestPasswordReset(input, meta);
   }
 
   async confirmPasswordReset(input: { token: string; password: string }, meta: RequestMeta) {
-    const tokenHash = hashToken(input.token);
-
-    await this.prisma.$transaction(async (tx) => {
-      const storedToken = await tx.passwordResetToken.findUnique({
-        where: { tokenHash },
-        include: { user: true }
-      });
-
-      if (
-        !storedToken ||
-        storedToken.consumedAt ||
-        storedToken.expiresAt.getTime() <= Date.now() ||
-        storedToken.user.status !== "ACTIVE"
-      ) {
-        throw new AppError(401, "invalid_password_reset_token", "Password reset token is invalid or expired.");
-      }
-
-      const consumedToken = await tx.passwordResetToken.updateMany({
-        where: {
-          id: storedToken.id,
-          consumedAt: null
-        },
-        data: { consumedAt: new Date() }
-      });
-
-      if (consumedToken.count !== 1) {
-        throw new AppError(401, "invalid_password_reset_token", "Password reset token is invalid or expired.");
-      }
-
-      await tx.passwordResetToken.updateMany({
-        where: {
-          userId: storedToken.userId,
-          consumedAt: null
-        },
-        data: { consumedAt: new Date() }
-      });
-
-      await tx.user.update({
-        where: { id: storedToken.userId },
-        data: {
-          passwordHash: await hashPassword(input.password),
-          authVersion: { increment: 1 }
-        }
-      });
-      await tx.refreshToken.updateMany({
-        where: {
-          userId: storedToken.userId,
-          revokedAt: null
-        },
-        data: {
-          revokedAt: new Date()
-        }
-      });
-      await writeAuditLog(tx, {
-        actorUserId: storedToken.userId,
-        action: "password_reset.confirm",
-        subject: "user",
-        subjectId: storedToken.userId,
-        ipAddress: meta.ipAddress,
-        userAgent: meta.userAgent
-      });
-    });
-
-    return { reset: true };
+    return this.recovery.confirmPasswordReset(input, meta);
   }
 
   async requestEmailVerification(input: { email: string }, meta: RequestMeta) {
-    await this.assertRecoveryTokenDeliveryConfigured("Email verification");
-
-    const user = await this.prisma.user.findUnique({
-      where: { email: input.email.toLowerCase() }
-    });
-
-    if (!user || user.emailVerifiedAt) {
-      return { requested: true, token: null };
-    }
-
-    const token = await this.createEmailVerificationToken(user.id);
-    await this.deliverRecoveryToken("emailVerification", {
-      email: user.email,
-      token,
-      name: user.name ?? undefined
-    });
-
-    await this.audit({
-      actorUserId: user.id,
-      action: "email_verification.request",
-      subject: "user",
-      subjectId: user.id,
-      meta
-    });
-
-    return {
-      requested: true,
-      token: this.exposeSensitiveToken(token)
-    };
+    return this.recovery.requestEmailVerification(input, meta);
   }
 
   async confirmEmailVerification(input: { token: string }, meta: RequestMeta) {
-    const tokenHash = hashToken(input.token);
-
-    const user = await this.prisma.$transaction(async (tx) => {
-      const storedToken = await tx.emailVerificationToken.findUnique({
-        where: { tokenHash },
-        include: {
-          user: {
-            include: this.authUserInclude()
-          }
-        }
-      });
-
-      if (
-        !storedToken ||
-        storedToken.consumedAt ||
-        storedToken.expiresAt.getTime() <= Date.now() ||
-        storedToken.user.status !== "ACTIVE"
-      ) {
-        throw new AppError(401, "invalid_email_verification_token", "Email verification token is invalid or expired.");
-      }
-
-      const consumedToken = await tx.emailVerificationToken.updateMany({
-        where: {
-          id: storedToken.id,
-          consumedAt: null
-        },
-        data: { consumedAt: new Date() }
-      });
-
-      if (consumedToken.count !== 1) {
-        throw new AppError(401, "invalid_email_verification_token", "Email verification token is invalid or expired.");
-      }
-
-      const verifiedUser = await tx.user.update({
-        where: { id: storedToken.userId },
-        data: { emailVerifiedAt: new Date() },
-        include: this.authUserInclude()
-      });
-      await writeAuditLog(tx, {
-        actorUserId: storedToken.userId,
-        action: "email_verification.confirm",
-        subject: "user",
-        subjectId: storedToken.userId,
-        ipAddress: meta.ipAddress,
-        userAgent: meta.userAgent
-      });
-
-      return verifiedUser;
-    });
-
-    return { verified: true, user: toAuthenticatedUser(user) };
+    return this.recovery.confirmEmailVerification(input, meta);
   }
 
   async createInvite(
@@ -1003,7 +759,7 @@ export class AuthService {
         roleNames
       }
     });
-    const delivery = await this.deliverRecoveryToken("invite", {
+    const delivery = await this.authEmail.deliverRecoveryToken("invite", {
       email: invite.email,
       token,
       roleNames
@@ -1011,7 +767,7 @@ export class AuthService {
 
     return {
       invite,
-      ...this.inviteDelivery(token, delivery === "email")
+      ...this.authEmail.inviteDelivery(token, delivery === "email")
     };
   }
 
@@ -1112,7 +868,7 @@ export class AuthService {
         roleNames: invite.roleNames
       }
     });
-    const delivery = await this.deliverRecoveryToken("invite", {
+    const delivery = await this.authEmail.deliverRecoveryToken("invite", {
       email: invite.email,
       token,
       roleNames: invite.roleNames
@@ -1120,7 +876,7 @@ export class AuthService {
 
     return {
       invite,
-      ...this.inviteDelivery(token, delivery === "email")
+      ...this.authEmail.inviteDelivery(token, delivery === "email")
     };
   }
 
@@ -1241,7 +997,7 @@ export class AuthService {
             }))
           }
         },
-        include: this.authUserInclude()
+        include: authUserInclude
       });
 
       await tx.userInvite.update({
@@ -1278,7 +1034,7 @@ export class AuthService {
   async resolveUser(userId: string, sessionVersion?: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: this.authUserInclude()
+      include: authUserInclude
     });
 
     if (
@@ -1372,156 +1128,6 @@ export class AuthService {
     };
   }
 
-  private async createEmailVerificationToken(userId: string) {
-    const token = createOpaqueToken();
-
-    await this.prisma.emailVerificationToken.create({
-      data: {
-        tokenHash: hashToken(token),
-        userId,
-        expiresAt: addSeconds(60 * 60 * 24)
-      }
-    });
-
-    return token;
-  }
-
-  private async createPasswordResetToken(userId: string) {
-    const token = createOpaqueToken();
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.passwordResetToken.updateMany({
-        where: {
-          userId,
-          consumedAt: null
-        },
-        data: { consumedAt: new Date() }
-      });
-      await tx.passwordResetToken.create({
-        data: {
-          tokenHash: hashToken(token),
-          userId,
-          expiresAt: addSeconds(60 * 30)
-        }
-      });
-    }, { isolationLevel: "Serializable" });
-
-    return token;
-  }
-
-  private canReturnRecoveryTokens() {
-    return this.config.auth.recoveryTokenDelivery === "response" && !this.config.isProduction;
-  }
-
-  private async canEmailRecoveryTokens() {
-    if (!this.config.app.publicUrl) return false;
-
-    const settings = await this.emailSettings.resolve();
-    return settings.recoveryEnabled && isEmailDeliveryConfigured(settings);
-  }
-
-  private async assertRecoveryTokenDeliveryConfigured(flowName: string) {
-    if (this.canReturnRecoveryTokens() || await this.canEmailRecoveryTokens()) return;
-
-    throw new AppError(
-      503,
-      "auth_delivery_not_configured",
-      `${flowName} token delivery is not configured.`
-    );
-  }
-
-  private exposeSensitiveToken(token: string | null) {
-    if (!this.canReturnRecoveryTokens()) return undefined;
-    return token;
-  }
-
-  private inviteDelivery(token: string, deliveredByEmail: boolean) {
-    if (deliveredByEmail) {
-      return {
-        delivery: "email" as const,
-        inviteUrl: undefined
-      };
-    }
-
-    return {
-      delivery: "manual" as const,
-      inviteUrl: this.inviteUrl(token)
-    };
-  }
-
-  private inviteUrl(token: string) {
-    const path = `/auth/invite?token=${encodeURIComponent(token)}`;
-    if (!this.config.app.publicUrl) return path;
-
-    return new URL(path, this.config.app.publicUrl).toString();
-  }
-
-  private async deliverRecoveryToken(
-    flow: RecoveryFlow,
-    input: { email: string; token: string; name?: string; roleNames?: string[] }
-  ) {
-    if (this.canReturnRecoveryTokens()) return "response" as const;
-    if (!await this.canEmailRecoveryTokens()) return "manual" as const;
-
-    const emailSettings = await this.emailSettings.resolve();
-    const emailClient = createEmailClient(emailSettings);
-    const message = this.createRecoveryEmail(flow, input, emailSettings.from!);
-    await emailClient.send(message);
-    return "email" as const;
-  }
-
-  private createRecoveryEmail(
-    flow: RecoveryFlow,
-    input: { email: string; token: string; name?: string; roleNames?: string[] },
-    from: string
-  ) {
-    const url = this.recoveryUrl(flow, input.token);
-    const label =
-      flow === "emailVerification"
-        ? "Verify email"
-        : flow === "passwordReset"
-          ? "Reset password"
-          : "Accept invite";
-    const subject =
-      flow === "emailVerification"
-        ? `Verify your ${this.config.app.name} email`
-        : flow === "passwordReset"
-          ? `Reset your ${this.config.app.name} password`
-          : `You have been invited to ${this.config.app.name}`;
-    const intro =
-      flow === "invite"
-        ? `You have been invited to ${this.config.app.name}${input.roleNames?.length ? ` as ${input.roleNames.join(", ")}` : ""}.`
-        : `Use this secure link to continue with ${this.config.app.name}.`;
-
-    return {
-      to: input.email,
-      from,
-      subject,
-      text: `${intro}\n\n${label}: ${url}\n\nIf you did not request this, you can ignore this email.`,
-      html: `<p>${escapeHtml(intro)}</p><p><a href="${escapeHtml(url)}">${escapeHtml(label)}</a></p><p>If you did not request this, you can ignore this email.</p>`,
-      metadata: {
-        flow,
-        app: this.config.app.name
-      }
-    };
-  }
-
-  private recoveryUrl(flow: RecoveryFlow, token: string) {
-    if (!this.config.app.publicUrl) {
-      throw new AppError(503, "auth_delivery_not_configured", "APP_PUBLIC_URL is required for auth email delivery.");
-    }
-
-    const path =
-      flow === "emailVerification"
-        ? "/auth/verify-email"
-        : flow === "passwordReset"
-          ? "/auth/reset-password"
-          : "/auth/invite";
-    const url = new URL(path, this.config.app.publicUrl);
-    url.searchParams.set("token", token);
-    return url.toString();
-  }
-
   private async audit(input: {
     actorUserId?: string;
     action: string;
@@ -1562,7 +1168,7 @@ export class AuthService {
       }
     });
     if (failure.shouldAlert) {
-      void this.sendLoginSecurityAlert(email, meta).catch(async (error) => {
+      void this.authEmail.sendLoginSecurityAlert(email, meta).catch(async (error) => {
         await safeWriteAuditLog(this.prisma, {
           action: "security_alert.delivery_failed",
           subject: "notification",
@@ -1576,40 +1182,6 @@ export class AuthService {
         });
       });
     }
-  }
-
-  private async sendLoginSecurityAlert(email: string, meta: RequestMeta) {
-    const settings = await this.emailSettings.resolve();
-    if (!isEmailDeliveryConfigured(settings)) return;
-
-    const recipients = await this.prisma.user.findMany({
-      where: {
-        status: "ACTIVE",
-        roles: {
-          some: {
-            role: { name: { in: ["owner", "admin"] } }
-          }
-        }
-      },
-      select: { email: true }
-    });
-    if (recipients.length === 0) return;
-
-    const client = createEmailClient(settings);
-    const attemptedAccount = email.toLowerCase();
-    const source = meta.ipAddress || "unknown source";
-    await Promise.all(recipients.map(({ email: recipient }) => client.send({
-      to: recipient,
-      from: settings.from!,
-      subject: `Security alert for ${this.config.app.name}`,
-      text: `Repeated failed sign-in attempts were delayed for ${attemptedAccount} from ${source}. Review Security activity in the dashboard.`,
-      html: `<p>Repeated failed sign-in attempts were delayed for <strong>${escapeHtml(attemptedAccount)}</strong> from ${escapeHtml(source)}.</p><p>Review Security activity in the dashboard.</p>`,
-      metadata: {
-        flow: "securityAlert",
-        type: "login_throttle",
-        app: this.config.app.name
-      }
-    })));
   }
 
   private async verifyMfaCode(userId: string, code: string) {
@@ -1712,26 +1284,4 @@ export class AuthService {
     ])];
   }
 
-  private authUserInclude() {
-    return {
-      mfaCredential: {
-        select: {
-          enabledAt: true
-        }
-      },
-      roles: {
-        include: {
-          role: {
-            include: {
-              permissions: {
-                include: {
-                  permission: true
-                }
-              }
-            }
-          }
-        }
-      }
-    } as const;
-  }
 }

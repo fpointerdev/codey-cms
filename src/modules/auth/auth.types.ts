@@ -20,3 +20,9 @@ export type TokenPair = {
   tokenType: "Bearer";
   expiresIn: number;
 };
+
+export type AuthRequestMeta = {
+  userAgent?: string;
+  ipAddress?: string;
+  requestId?: string;
+};

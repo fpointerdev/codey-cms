@@ -73,5 +73,16 @@ export default [
         ignoreVoid: true
       }]
     }
+  },
+  {
+    files: ["src/**/*.service.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        paths: [{
+          name: "express",
+          message: "Domain services must not depend on Express request or response types."
+        }]
+      }]
+    }
   }
 ];

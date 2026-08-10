@@ -13,6 +13,16 @@
       "branches": 60.94,
       "functions": 100
     },
+    "src/modules/auth/account-recovery.service.ts": {
+      "lines": 69.39,
+      "branches": 73.33,
+      "functions": 76.92
+    },
+    "src/modules/auth/auth-email.service.ts": {
+      "lines": 52.3,
+      "branches": 63.16,
+      "functions": 73.33
+    },
     "src/modules/auth/auth-session-cookie.ts": {
       "lines": 100,
       "branches": 84.62,
@@ -43,10 +53,20 @@
       "branches": 62.6,
       "functions": 75.76
     },
+    "src/modules/auth/auth-token.ts": {
+      "lines": 90.32,
+      "branches": 85.71,
+      "functions": 100
+    },
     "src/modules/auth/auth.types.ts": {
       "lines": 0,
       "branches": 0,
       "functions": 0
+    },
+    "src/modules/auth/auth-user.ts": {
+      "lines": 100,
+      "branches": 85.71,
+      "functions": 100
     },
     "src/modules/auth/login-protection.service.ts": {
       "lines": 99.29,

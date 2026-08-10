@@ -13,6 +13,13 @@ import {
 } from "./rich-text-sanitizer.js";
 import { buildSitemapXml, emptySitemapXml, type SitemapEntry } from "./sitemap.js";
 import { enrichPublicMedia } from "./public-media.js";
+import {
+  ContactSubmissionService,
+  type ContactSubmissionInput,
+  type ContactSubmissionMeta
+} from "./contact-submission.service.js";
+import { RedirectService, type RedirectInput } from "./redirect.service.js";
+import { MenuService, type MenuItemInput } from "./menu.service.js";
 
 type CmsDatabase = PrismaClient | Prisma.TransactionClient;
 
@@ -101,32 +108,6 @@ type PostQueryInput = {
   includeDrafts?: boolean;
 };
 
-type MenuItemInput = {
-  parentId?: string | null;
-  pageId?: string | null;
-  label: string;
-  url?: string | null;
-  sortOrder: number;
-  openInNewTab: boolean;
-};
-
-type ContactSubmissionInput = {
-  formKey: string;
-  name: string;
-  email: string;
-  phone?: string;
-  subject?: string;
-  message: string;
-  metadata?: Record<string, unknown>;
-  website?: string;
-  startedAt?: Date;
-};
-
-type RequestMeta = {
-  ipAddress?: string;
-  userAgent?: string;
-};
-
 type SeoSettings = {
   baseUrl: string;
   searchIndexing: boolean;
@@ -147,17 +128,6 @@ const pageInclude = {
           mediaAsset: true
         }
       }
-    }
-  }
-} as const;
-
-const menuInclude = {
-  items: {
-    orderBy: {
-      sortOrder: "asc"
-    },
-    include: {
-      page: true
     }
   }
 } as const;
@@ -482,46 +452,6 @@ function createPostData(input: CreatePostInput) {
   };
 }
 
-function normalizeSourcePath(path: string) {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith("//") || path.includes("\\")) {
-    throw new AppError(422, "invalid_redirect_source", "Redirect source must be a local path.");
-  }
-
-  const parsed = new URL(path.startsWith("/") ? path : `/${path}`, "https://example.local");
-  const sourcePath = parsed.pathname.replace(/\/{2,}/g, "/");
-
-  return sourcePath === "/" ? "/" : sourcePath.replace(/\/$/g, "");
-}
-
-function normalizeTargetPath(path: string) {
-  if (path.startsWith("//") || path.includes("\\")) {
-    throw new AppError(422, "invalid_redirect_target", "Redirect target must be a local path or an HTTP URL.");
-  }
-  if (/^https?:\/\//i.test(path)) return new URL(path).toString();
-  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) {
-    throw new AppError(422, "invalid_redirect_target", "Redirect target must be a local path or an HTTP URL.");
-  }
-
-  const parsed = new URL(path.startsWith("/") ? path : `/${path}`, "https://example.local");
-  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-}
-
-function appendRedirectQuery(targetPath: string, search: string) {
-  const external = /^https?:\/\//i.test(targetPath);
-  const target = new URL(targetPath, "https://example.local");
-  const incoming = new URLSearchParams(search);
-  for (const [key, value] of incoming) target.searchParams.append(key, value);
-
-  return external ? target.toString() : `${target.pathname}${target.search}${target.hash}`;
-}
-
-function assertRedirectDoesNotLoop(sourcePath: string, targetPath: string) {
-  if (/^https?:\/\//i.test(targetPath)) return;
-  if (normalizeSourcePath(sourcePath) === normalizeSourcePath(targetPath)) {
-    throw new AppError(422, "redirect_loop", "Redirect source and target must be different.");
-  }
-}
-
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/g, "");
 }
@@ -548,20 +478,6 @@ function localizedResourcePath(prefix: string, slug: string, locale: string, def
   const path = `/${prefix}/${normalizedSlug}`;
 
   return localeCode === defaultLocaleCode ? path : `/${localeCode}${path}`;
-}
-
-function detectSpam(input: ContactSubmissionInput, now = new Date()) {
-  if (input.website?.trim()) return "honeypot";
-
-  if (input.startedAt) {
-    const elapsedMs = now.getTime() - input.startedAt.getTime();
-    if (elapsedMs >= 0 && elapsedMs < 3000) return "too_fast";
-  }
-
-  const links = input.message.match(/https?:\/\//gi) ?? [];
-  if (links.length > 3) return "too_many_links";
-
-  return null;
 }
 
 function cleanPageData(input: UpdatePageInput) {
@@ -651,49 +567,16 @@ function changedFields(
   return fields;
 }
 
-function visibleMenuItems(
-  items: Prisma.MenuItemGetPayload<{ include: { page: true } }>[],
-  canReadDrafts: boolean,
-  defaultLocale = "en"
-) {
-  const allowedItems = items.filter((item) => {
-    if (!item.page) return true;
-    return item.page.status === "PUBLISHED" || canReadDrafts;
-  });
-  const byParent = allowedItems.reduce<Map<string | null, typeof allowedItems>>((groups, item) => {
-    const key = item.parentId ?? null;
-    const group = groups.get(key) ?? [];
-    group.push(item);
-    groups.set(key, group);
-    return groups;
-  }, new Map());
-
-  const buildItems = (
-    parentId: string | null,
-    visited = new Set<string>()
-  ): Array<Record<string, unknown>> =>
-    (byParent.get(parentId) ?? []).flatMap((item) => {
-      if (visited.has(item.id)) return [];
-
-      const nextVisited = new Set(visited);
-      nextVisited.add(item.id);
-
-      return {
-        id: item.id,
-        label: item.label,
-        url: item.url ?? (item.page ? localizedPath(item.page.slug, item.page.locale, defaultLocale) : null),
-        pageId: item.pageId,
-        sortOrder: item.sortOrder,
-        openInNewTab: item.openInNewTab,
-        children: buildItems(item.id, nextVisited)
-      };
-    });
-
-  return buildItems(null);
-}
-
 export class CmsService {
-  constructor(private readonly prisma: CmsDatabase) {}
+  private readonly contactSubmissions: ContactSubmissionService;
+  private readonly menus: MenuService;
+  private readonly redirects: RedirectService;
+
+  constructor(private readonly prisma: CmsDatabase) {
+    this.contactSubmissions = new ContactSubmissionService(prisma);
+    this.menus = new MenuService(prisma);
+    this.redirects = new RedirectService(prisma);
+  }
 
   private transaction<T>(operation: (transaction: Prisma.TransactionClient) => Promise<T>) {
     if ("$transaction" in this.prisma) {
@@ -1483,236 +1366,43 @@ export class CmsService {
   }
 
   async createMenu(input: { slug: string; name: string; location: string; locale?: string }) {
-    return this.prisma.menu.create({
-      data: {
-        ...input,
-        locale: normalizeLocale(input.locale)
-      }
-    });
+    return this.menus.create(input);
   }
 
   async getMenu(slug: string, canReadDrafts: boolean, locale = "en") {
-    const [menu, localization] = await Promise.all([
-      this.prisma.menu.findFirstOrThrow({
-        where: {
-          slug,
-          locale: normalizeLocale(locale)
-        },
-        include: menuInclude
-      }),
-      readLocalizationSettings(this.prisma)
-    ]);
-
-    return {
-      id: menu.id,
-      slug: menu.slug,
-      locale: menu.locale,
-      name: menu.name,
-      location: menu.location,
-      items: visibleMenuItems(menu.items, canReadDrafts, localization.defaultLocale)
-    };
+    return this.menus.get(slug, canReadDrafts, locale);
   }
 
   async createMenuItem(menuSlug: string, input: MenuItemInput, locale = "en") {
-    const menu = await this.prisma.menu.findFirstOrThrow({
-      where: {
-        slug: menuSlug,
-        locale: normalizeLocale(locale)
-      }
-    });
-
-    if (!input.url && !input.pageId) {
-      throw new AppError(422, "invalid_menu_item", "Menu item needs a url or pageId.");
-    }
-
-    await this.assertMenuParent(menu.id, input.parentId);
-
-    return this.prisma.menuItem.create({
-      data: {
-        menuId: menu.id,
-        parentId: input.parentId,
-        pageId: input.pageId,
-        label: input.label,
-        url: input.url,
-        sortOrder: input.sortOrder,
-        openInNewTab: input.openInNewTab
-      }
-    });
+    return this.menus.createItem(menuSlug, input, locale);
   }
 
   async updateMenuItem(menuSlug: string, itemId: string, input: Partial<MenuItemInput>, locale = "en") {
-    const menu = await this.prisma.menu.findFirstOrThrow({
-      where: {
-        slug: menuSlug,
-        locale: normalizeLocale(locale)
-      }
-    });
-    const item = await this.prisma.menuItem.findFirst({
-      where: {
-        id: itemId,
-        menuId: menu.id
-      }
-    });
-
-    if (!item) {
-      throw new AppError(404, "menu_item_not_found", "Menu item not found.");
-    }
-
-    if (input.parentId === item.id) {
-      throw new AppError(422, "invalid_menu_parent", "Menu item cannot be its own parent.");
-    }
-
-    await this.assertMenuParent(menu.id, input.parentId, item.id);
-
-    return this.prisma.menuItem.update({
-      where: {
-        id: item.id
-      },
-      data: input
-    });
+    return this.menus.updateItem(menuSlug, itemId, input, locale);
   }
 
   async deleteMenuItem(menuSlug: string, itemId: string, locale = "en") {
-    const menu = await this.prisma.menu.findFirstOrThrow({
-      where: {
-        slug: menuSlug,
-        locale: normalizeLocale(locale)
-      }
-    });
-    const deleted = await this.prisma.menuItem.deleteMany({
-      where: {
-        id: itemId,
-        menuId: menu.id
-      }
-    });
-
-    if (deleted.count === 0) {
-      throw new AppError(404, "menu_item_not_found", "Menu item not found.");
-    }
+    await this.menus.deleteItem(menuSlug, itemId, locale);
   }
 
   async listRedirects() {
-    return this.prisma.cmsRedirect.findMany({
-      orderBy: {
-        createdAt: "desc"
-      }
-    });
+    return this.redirects.list();
   }
 
-  async createRedirect(input: {
-    sourcePath: string;
-    targetPath: string;
-    statusCode: 301 | 302 | 307 | 308;
-    preserveQuery: boolean;
-    active: boolean;
-  }) {
-    const sourcePath = normalizeSourcePath(input.sourcePath);
-    const targetPath = normalizeTargetPath(input.targetPath);
-    assertRedirectDoesNotLoop(sourcePath, targetPath);
-    if (input.active) await this.assertRedirectChainDoesNotLoop(sourcePath, targetPath);
-
-    return this.prisma.cmsRedirect.create({
-      data: {
-        ...input,
-        sourcePath,
-        targetPath
-      }
-    });
+  async createRedirect(input: RedirectInput) {
+    return this.redirects.create(input);
   }
 
-  async updateRedirect(
-    redirectId: string,
-    input: Partial<{
-      sourcePath: string;
-      targetPath: string;
-      statusCode: 301 | 302 | 307 | 308;
-      preserveQuery: boolean;
-      active: boolean;
-    }>
-  ) {
-    const current = await this.prisma.cmsRedirect.findUniqueOrThrow({
-      where: { id: redirectId }
-    });
-    const sourcePath = input.sourcePath ? normalizeSourcePath(input.sourcePath) : current.sourcePath;
-    const targetPath = input.targetPath ? normalizeTargetPath(input.targetPath) : current.targetPath;
-    assertRedirectDoesNotLoop(sourcePath, targetPath);
-    if (input.active ?? current.active) {
-      await this.assertRedirectChainDoesNotLoop(sourcePath, targetPath, redirectId);
-    }
-
-    return this.prisma.cmsRedirect.update({
-      where: {
-        id: redirectId
-      },
-      data: {
-        ...input,
-        sourcePath,
-        targetPath
-      }
-    });
+  async updateRedirect(redirectId: string, input: Partial<RedirectInput>) {
+    return this.redirects.update(redirectId, input);
   }
 
   async deleteRedirect(redirectId: string) {
-    await this.prisma.cmsRedirect.delete({
-      where: {
-        id: redirectId
-      }
-    });
+    await this.redirects.delete(redirectId);
   }
 
   async resolveRedirect(path: string) {
-    const parsed = new URL(path, "https://example.local");
-    let redirect;
-
-    try {
-      redirect = await this.prisma.cmsRedirect.findFirst({
-        where: {
-          sourcePath: normalizeSourcePath(path),
-          active: true
-        }
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") return null;
-      throw error;
-    }
-
-    if (!redirect) return null;
-
-    const targetPath = redirect.preserveQuery && parsed.search
-      ? appendRedirectQuery(redirect.targetPath, parsed.search)
-      : redirect.targetPath;
-
-    return {
-      ...redirect,
-      targetPath
-    };
-  }
-
-  private async assertRedirectChainDoesNotLoop(sourcePath: string, targetPath: string, excludedId?: string) {
-    if (/^https?:\/\//i.test(targetPath)) return;
-
-    const visited = new Set([sourcePath]);
-    let currentPath = normalizeSourcePath(targetPath);
-
-    for (let depth = 0; depth < 50; depth += 1) {
-      if (visited.has(currentPath)) {
-        throw new AppError(422, "redirect_loop", "Redirect would create a loop.");
-      }
-      visited.add(currentPath);
-
-      const redirect = await this.prisma.cmsRedirect.findFirst({
-        where: {
-          sourcePath: currentPath,
-          active: true,
-          ...(excludedId ? { id: { not: excludedId } } : {})
-        },
-        select: { targetPath: true }
-      });
-      if (!redirect || /^https?:\/\//i.test(redirect.targetPath)) return;
-      currentPath = normalizeSourcePath(redirect.targetPath);
-    }
-
-    throw new AppError(422, "redirect_chain_too_deep", "Redirect chain is too long.");
+    return this.redirects.resolve(path);
   }
 
   private async readSeoSettings(baseUrl: string): Promise<SeoSettings> {
@@ -1946,37 +1636,12 @@ export class CmsService {
     return rules.join("\n");
   }
 
-  async createContactSubmission(input: ContactSubmissionInput, meta: RequestMeta = {}) {
-    const spamReason = detectSpam(input);
-    const submission = await this.prisma.contactSubmission.create({
-      data: {
-        formKey: input.formKey,
-        name: input.name,
-        email: input.email,
-        phone: input.phone,
-        subject: input.subject,
-        message: input.message,
-        metadata: input.metadata ? toJson(input.metadata) : undefined,
-        status: spamReason ? "SPAM" : "NEW",
-        spamReason,
-        ipAddress: meta.ipAddress,
-        userAgent: meta.userAgent
-      }
-    });
-
-    return {
-      received: true,
-      flagged: submission.status === "SPAM"
-    };
+  async createContactSubmission(input: ContactSubmissionInput, meta: ContactSubmissionMeta = {}) {
+    return this.contactSubmissions.create(input, meta);
   }
 
   async listContactSubmissions() {
-    return this.prisma.contactSubmission.findMany({
-      orderBy: {
-        createdAt: "desc"
-      },
-      take: 100
-    });
+    return this.contactSubmissions.list();
   }
 
   async listScheduledContent(now = new Date()) {
@@ -2052,49 +1717,6 @@ export class CmsService {
     return this.prisma.mediaAsset.create({
       data: input
     });
-  }
-
-  private async assertMenuParent(menuId: string, parentId?: string | null, currentItemId?: string) {
-    if (!parentId) return;
-
-    const parent = await this.prisma.menuItem.findFirst({
-      where: {
-        id: parentId,
-        menuId
-      },
-      select: {
-        id: true
-      }
-    });
-
-    if (!parent) {
-      throw new AppError(422, "invalid_menu_parent", "Parent menu item must belong to the same menu.");
-    }
-
-    if (!currentItemId) return;
-
-    const menuItems = await this.prisma.menuItem.findMany({
-      where: {
-        menuId
-      },
-      select: {
-        id: true,
-        parentId: true
-      }
-    });
-    const menuItemsById = new Map(menuItems.map((item) => [item.id, item]));
-    const visited = new Set<string>();
-    let ancestorId: string | null = parentId;
-
-    while (ancestorId) {
-      if (ancestorId === currentItemId) {
-        throw new AppError(422, "invalid_menu_parent", "Menu item cannot use one of its descendants as parent.");
-      }
-
-      if (visited.has(ancestorId)) return;
-      visited.add(ancestorId);
-      ancestorId = menuItemsById.get(ancestorId)?.parentId ?? null;
-    }
   }
 
   private async findPageById(database: CmsDatabase, pageId: string) {
