@@ -60,11 +60,18 @@ Production media storage must be S3-compatible. The platform default is Cloudfla
 - `STORAGE_MAX_UPLOAD_BYTES`
 - `STORAGE_UPLOAD_BODY_LIMIT`
 - `STORAGE_IMAGE_VARIANT_WIDTHS`
+- `MEDIA_MAX_PIXELS`
+- `MEDIA_MAX_WIDTH`
+- `MEDIA_MAX_HEIGHT`
+- `MEDIA_MAX_FRAMES`
+- `MEDIA_PROCESSING_CONCURRENCY`
 - `STORAGE_QUOTA_DEFAULT_MB`
 - `STORAGE_QUOTA_PRESENTATION_MB`
 - `STORAGE_QUOTA_CMS_MB`
 - `STORAGE_QUOTA_SHOP_MB`
 - `STORAGE_QUOTA_SAAS_MB`
+
+`MEDIA_MAX_PIXELS`, `MEDIA_MAX_WIDTH`, `MEDIA_MAX_HEIGHT`, and `MEDIA_MAX_FRAMES` bound decoded image work, including animated files. `MEDIA_PROCESSING_CONCURRENCY` limits simultaneous variant jobs per CMS process. Keep the defaults unless the host has been sized and monitored for larger workloads; raising upload bytes alone does not relax decoded-image protections.
 
 Codey supports one shared S3-compatible account and bucket for many copied customer runtimes. Keep the connection values managed by the platform, but assign each copied runtime a unique `STORAGE_KEY_PREFIX`. Media objects are written below that directory, for example `sites/project-123/media/...`.
 

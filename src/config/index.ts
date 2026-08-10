@@ -124,6 +124,13 @@ export const config = {
       saas: megabytesToBytes(env.STORAGE_QUOTA_SAAS_MB)
     }
   },
+  media: {
+    maxPixels: env.MEDIA_MAX_PIXELS,
+    maxWidth: env.MEDIA_MAX_WIDTH,
+    maxHeight: env.MEDIA_MAX_HEIGHT,
+    maxFrames: env.MEDIA_MAX_FRAMES,
+    processingConcurrency: env.MEDIA_PROCESSING_CONCURRENCY
+  },
   payments: {
     credentialEncryptionKey: env.CMS_CREDENTIAL_ENCRYPTION_KEY ?? env.JWT_ACCESS_SECRET
   },

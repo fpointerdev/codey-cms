@@ -5,9 +5,10 @@ import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { createStorageAdapter } from "../../infrastructure/storage/s3-storage.js";
 import type { StorageAdapter } from "../../infrastructure/storage/storage.types.js";
-import { extractImageMetadata } from "./media-metadata.js";
 import {
+  inspectImageBuffer,
   isOptimizableImageMimeType,
+  MediaProcessingQueue,
   optimizedImageMimeType,
   optimizedImageStorageKey
 } from "./media-optimizer.js";
@@ -148,11 +149,15 @@ export function containsMediaReference(value: unknown, references: ReadonlySet<s
 }
 
 export class MediaService {
+  private readonly processingQueue: MediaProcessingQueue;
+
   constructor(
     private readonly prisma: MediaDatabase,
     private readonly config: AppConfig,
     private readonly storage: StorageAdapter = createStorageAdapter(config.storage)
-  ) {}
+  ) {
+    this.processingQueue = new MediaProcessingQueue(config.media.processingConcurrency);
+  }
 
   async listMediaAssets() {
     return this.prisma.mediaAsset.findMany({
@@ -194,10 +199,10 @@ export class MediaService {
     }
 
     const site = await this.getDefaultSite();
-    await this.assertQuota(site, input.sizeBytes ?? 0);
-
-    return this.prisma.mediaAsset.create({
-      data: {
+    return this.createAssetWithinQuota(
+      site,
+      input.sizeBytes ?? 0,
+      {
         siteId: site.id,
         kind,
         storageKey: input.storageKey,
@@ -208,7 +213,7 @@ export class MediaService {
         height: input.height,
         altText: input.altText
       }
-    });
+    );
   }
 
   async createSignedUpload(input: SignedUploadInput) {
@@ -255,9 +260,11 @@ export class MediaService {
 
       const body = await this.storage.getObject(input.storageKey);
       const media = inspectMediaFile(input.filename, declaredMedia.mimeType, body, input.kind);
-      const imageMetadata = media.kind === "IMAGE" ? extractImageMetadata(body, media.mimeType) : {};
-      const width = input.width ?? imageMetadata.width;
-      const height = input.height ?? imageMetadata.height;
+      const imageMetadata = media.kind === "IMAGE"
+        ? await inspectImageBuffer(body, this.config.media)
+        : null;
+      const width = imageMetadata?.width ?? input.width;
+      const height = imageMetadata?.height ?? input.height;
       const variantPlan = this.createImageVariantPlan(input.storageKey, {
         kind: media.kind,
         width,
@@ -272,8 +279,10 @@ export class MediaService {
         await this.assertQuota(site, totalIncomingBytes);
       }
 
-      return await this.prisma.mediaAsset.create({
-        data: {
+      return await this.createAssetWithinQuota(
+        site,
+        totalIncomingBytes,
+        {
           siteId: site.id,
           kind: media.kind,
           storageKey: input.storageKey,
@@ -283,10 +292,10 @@ export class MediaService {
           sizeBytes,
           width,
           height,
-          variants: variants.length > 0 ? (variants as Prisma.InputJsonValue) : undefined,
+          variants: variants.length > 0 ? variants : undefined,
           altText: input.altText
         }
-      });
+      );
     } catch (error) {
       await this.deleteStorageKeys(uploadedKeys);
       throw error;
@@ -305,11 +314,13 @@ export class MediaService {
 
     const storageKey = this.createStorageKey(site.slug, input.filename);
     const uploadedKeys = [storageKey];
-    const imageMetadata = media.kind === "IMAGE" ? extractImageMetadata(body, media.mimeType) : {};
+    const imageMetadata = media.kind === "IMAGE"
+      ? await inspectImageBuffer(body, this.config.media)
+      : null;
     const variantPlan = this.createImageVariantPlan(storageKey, {
       kind: media.kind,
-      width: imageMetadata.width,
-      height: imageMetadata.height,
+      width: imageMetadata?.width,
+      height: imageMetadata?.height,
       mimeType: media.mimeType
     });
 
@@ -324,8 +335,10 @@ export class MediaService {
         await this.assertQuota(site, totalIncomingBytes);
       }
 
-      return await this.prisma.mediaAsset.create({
-        data: {
+      return await this.createAssetWithinQuota(
+        site,
+        totalIncomingBytes,
+        {
           siteId: site.id,
           kind: media.kind,
           storageKey,
@@ -334,12 +347,12 @@ export class MediaService {
           url: this.storage.publicUrl(storageKey),
           mimeType: media.mimeType,
           sizeBytes: body.byteLength,
-          width: imageMetadata.width,
-          height: imageMetadata.height,
-          variants: variants.length > 0 ? (variants as Prisma.InputJsonValue) : undefined,
+          width: imageMetadata?.width,
+          height: imageMetadata?.height,
+          variants: variants.length > 0 ? variants : undefined,
           altText: input.altText
         }
-      });
+      );
     } catch (error) {
       await this.deleteStorageKeys(uploadedKeys);
       throw error;
@@ -537,6 +550,10 @@ export class MediaService {
     const quotaBytes = this.quotaBytes(site.deploymentProfile);
     const usedBytes = await this.currentUsage(site.id);
 
+    this.assertQuotaAvailable(usedBytes, incomingBytes, quotaBytes);
+  }
+
+  private assertQuotaAvailable(usedBytes: number, incomingBytes: number, quotaBytes: number) {
     if (usedBytes + incomingBytes > quotaBytes) {
       throw new AppError(413, "storage_quota_exceeded", "Storage quota exceeded.", {
         usedBytes,
@@ -546,9 +563,41 @@ export class MediaService {
     }
   }
 
-  private async currentUsage(siteId: string) {
+  private async createAssetWithinQuota(
+    site: SiteRecord,
+    incomingBytes: number,
+    data: Prisma.MediaAssetUncheckedCreateInput
+  ) {
+    return this.withQuotaLock(site.id, async (database) => {
+      const quotaBytes = this.quotaBytes(site.deploymentProfile);
+      const usedBytes = await this.currentUsage(site.id, database);
+      this.assertQuotaAvailable(usedBytes, incomingBytes, quotaBytes);
+
+      return database.mediaAsset.create({ data });
+    });
+  }
+
+  private async withQuotaLock<T>(
+    siteId: string,
+    operation: (database: MediaDatabase) => Promise<T>
+  ): Promise<T> {
+    const run = async (database: MediaDatabase) => {
+      await database.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`media-quota:${siteId}`}, 0))`
+      );
+      return operation(database);
+    };
+
+    if ("$transaction" in this.prisma) {
+      return this.prisma.$transaction((transaction) => run(transaction));
+    }
+
+    return run(this.prisma);
+  }
+
+  private async currentUsage(siteId: string, database: MediaDatabase = this.prisma) {
     const assets: Array<{ sizeBytes: number | null; variants: Prisma.JsonValue | null }> =
-      await this.prisma.mediaAsset.findMany({
+      await database.mediaAsset.findMany({
         where: {
           siteId,
           deletedAt: null
@@ -595,9 +644,12 @@ export class MediaService {
     if (!isOptimizableImageMimeType(mimeType)) return variants;
 
     return Promise.all(
-      variants.map(async (variant): Promise<ImageVariant> => {
+      variants.map((variant) => this.processingQueue.run(async (): Promise<ImageVariant> => {
         try {
-          const variantBody = await sharp(body)
+          const variantBody = await sharp(body, {
+            failOn: "error",
+            limitInputPixels: this.config.media.maxPixels
+          })
             .rotate()
             .resize({ width: variant.width, withoutEnlargement: true })
             .webp({ quality: 78, effort: 4 })
@@ -619,7 +671,7 @@ export class MediaService {
             error: errorMessage(error)
           };
         }
-      })
+      }))
     );
   }
 
