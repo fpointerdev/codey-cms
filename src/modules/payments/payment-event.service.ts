@@ -1,10 +1,11 @@
 import { Prisma, type PaymentProvider, type PaymentStatus } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
+import { releaseExpiredOrderReservations } from "../orders/checkout.service.js";
 import {
-  releaseExpiredOrderReservations,
-  releaseOrderInventoryReservation
-} from "../orders/checkout.service.js";
+  consumeInventoryReservation,
+  releaseInventoryReservation
+} from "../orders/inventory-reservation.service.js";
 import { deliverQueuedOrderEmails, queueOrderEmail } from "../orders/order-email.service.js";
 
 export type NormalizedPaymentEvent = {
@@ -132,6 +133,8 @@ export async function processPaymentEvent(
             throw new AppError(409, "order_not_payable", "The inventory reservation has expired or was cancelled.");
           }
 
+          await consumeInventoryReservation(tx, order.id);
+
           const claimedOrder = await tx.order.updateMany({
             where: {
               id: order.id,
@@ -171,13 +174,7 @@ export async function processPaymentEvent(
           throw new AppError(409, "invalid_payment_transition", "A completed payment cannot be marked as failed.");
         }
 
-        const released = await releaseOrderInventoryReservation(tx, order.id);
-        const currentOrder = released
-          ? null
-          : await tx.order.findUniqueOrThrow({ where: { id: order.id } });
-        if (!released && currentOrder?.checkoutStatus !== "ABANDONED") {
-          throw new AppError(409, "invalid_payment_transition", "Order status changed before payment failure could be applied.");
-        }
+        await releaseInventoryReservation(tx, order.id, { reason: "payment_failed" });
 
         const claimedPayment = await tx.payment.updateMany({
           where: {
@@ -191,17 +188,6 @@ export async function processPaymentEvent(
         }
 
         updatedPayment = await tx.payment.findUniqueOrThrow({ where: { id: payment.id } });
-        if (released) {
-          const cancelledOrder = await tx.order.findUniqueOrThrow({
-            where: { id: order.id },
-            include: { items: true }
-          });
-          await queueOrderEmail(tx, cancelledOrder, {
-            eventType: "ORDER_STATUS_CHANGED",
-            previousStatus: order.status
-          });
-          orderId = cancelledOrder.id;
-        }
       } else {
         if (!["SUCCEEDED", "REFUNDED"].includes(payment.status)) {
           throw new AppError(409, "invalid_payment_transition", "Only a successful payment can be refunded.");

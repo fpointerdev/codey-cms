@@ -128,10 +128,12 @@ async function selectedCategoryId(formData, locale) {
 function productMetadataPayload(formData, existingProduct = null) {
   const existingMetadata =
     existingProduct?.metadata && typeof existingProduct.metadata === "object" ? existingProduct.metadata : {};
+  const maxPurchaseQuantity = normalizeStock(formData.get("maxPurchaseQuantity"));
 
   return {
     ...existingMetadata,
     purchaseMode: String(formData.get("purchaseMode") || "buy") === "quote" ? "quote" : "buy",
+    maxPurchaseQuantity: maxPurchaseQuantity > 0 ? maxPurchaseQuantity : undefined,
     attributes: attributeRows(formData)
   };
 }

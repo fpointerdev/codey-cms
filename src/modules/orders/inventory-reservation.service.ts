@@ -1,6 +1,9 @@
 import { Prisma, type InventoryReservationStatus } from "@prisma/client";
+import { writeAuditLog } from "../../core/audit/audit-log.js";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
+import { effectivePurchaseLimit } from "../products/product-inventory.js";
+export { availableStock, withAvailableInventory } from "../products/product-inventory.js";
 
 type InventoryTransaction = Prisma.TransactionClient;
 
@@ -50,14 +53,6 @@ function aggregateOrderItems(items: Array<{
   );
 }
 
-function configuredPurchaseLimit(value: Prisma.JsonValue | null) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const limit = value.maxPurchaseQuantity;
-  return typeof limit === "number" && Number.isSafeInteger(limit) && limit > 0
-    ? limit
-    : undefined;
-}
-
 async function assertPurchaseLimits(
   tx: InventoryTransaction,
   selections: InventorySelection[]
@@ -84,9 +79,7 @@ async function assertPurchaseLimits(
       throw new AppError(422, "inventory_item_unavailable", "One or more products are unavailable.");
     }
 
-    const limits = [configuredPurchaseLimit(product.metadata), configuredPurchaseLimit(variant?.metadata ?? null)]
-      .filter((limit): limit is number => limit !== undefined);
-    const limit = limits.length ? Math.min(...limits) : undefined;
+    const limit = effectivePurchaseLimit(product.metadata, variant?.metadata);
     if (limit !== undefined && selection.quantity > limit) {
       throw new AppError(
         422,
@@ -341,29 +334,238 @@ export async function assertActiveInventoryReservation(
   return reservations;
 }
 
-export function availableStock(stockQuantity: number, reservedQuantity: number) {
-  return Math.max(stockQuantity - reservedQuantity, 0);
+export function reservationExpiry(context: ModuleContext, now = new Date()) {
+  return new Date(now.getTime() + context.config.commerce.checkout.reservationTtlMinutes * 60_000);
 }
 
-export function withAvailableInventory<T extends {
-  stockQuantity: number;
-  reservedQuantity: number;
-  variants?: Array<{ stockQuantity: number; reservedQuantity: number }>;
-}>(product: T) {
+export async function expireInventoryReservations(
+  context: ModuleContext,
+  now = new Date(),
+  batchSize = 100
+) {
+  const candidates = await context.prisma.inventoryReservation.findMany({
+    where: { status: "ACTIVE", expiresAt: { lte: now } },
+    select: { orderId: true },
+    distinct: ["orderId"],
+    orderBy: { expiresAt: "asc" },
+    take: batchSize
+  });
+  let expired = 0;
+
+  for (const candidate of candidates) {
+    const didExpire = await context.prisma.$transaction(async (tx) => {
+      const result = await releaseInventoryReservation(tx, candidate.orderId, {
+        status: "EXPIRED",
+        reason: "reservation_expired",
+        now
+      });
+      if (!result.released) return false;
+
+      const order = await tx.order.findUnique({
+        where: { id: candidate.orderId },
+        select: { couponCode: true }
+      });
+      const abandoned = await tx.order.updateMany({
+        where: {
+          id: candidate.orderId,
+          status: { in: ["PENDING", "CONFIRMED"] },
+          checkoutStatus: { in: ["PAYMENT_PENDING", "PAYMENT_AUTHORIZED"] }
+        },
+        data: { status: "CANCELLED", checkoutStatus: "ABANDONED" }
+      });
+      if (abandoned.count === 1 && order?.couponCode) {
+        await tx.coupon.updateMany({
+          where: { code: order.couponCode, usageCount: { gt: 0 } },
+          data: { usageCount: { decrement: 1 } }
+        });
+      }
+      return abandoned.count === 1;
+    });
+    if (didExpire) expired += 1;
+  }
+
+  return expired;
+}
+
+type InventoryMismatch = {
+  kind: "product" | "variant" | "orphan";
+  id: string;
+  storedReservedQuantity: number | null;
+  expectedReservedQuantity: number;
+};
+
+async function inventoryMismatches(context: ModuleContext) {
+  const [groups, products, variants] = await Promise.all([
+    context.prisma.inventoryReservation.groupBy({
+      by: ["productId", "variantId"],
+      where: { status: "ACTIVE" },
+      _sum: { quantity: true }
+    }),
+    context.prisma.product.findMany({
+      select: { id: true, reservedQuantity: true }
+    }),
+    context.prisma.productVariant.findMany({
+      select: { id: true, reservedQuantity: true }
+    })
+  ]);
+  const expectedProducts = new Map<string, number>();
+  const expectedVariants = new Map<string, number>();
+  for (const group of groups) {
+    const quantity = group._sum.quantity ?? 0;
+    if (group.variantId) expectedVariants.set(group.variantId, quantity);
+    else expectedProducts.set(group.productId, quantity);
+  }
+
+  const mismatches: InventoryMismatch[] = [];
+  const productIds = new Set(products.map((product) => product.id));
+  const variantIds = new Set(variants.map((variant) => variant.id));
+  for (const product of products) {
+    const expected = expectedProducts.get(product.id) ?? 0;
+    if (product.reservedQuantity !== expected) {
+      mismatches.push({
+        kind: "product",
+        id: product.id,
+        storedReservedQuantity: product.reservedQuantity,
+        expectedReservedQuantity: expected
+      });
+    }
+  }
+  for (const variant of variants) {
+    const expected = expectedVariants.get(variant.id) ?? 0;
+    if (variant.reservedQuantity !== expected) {
+      mismatches.push({
+        kind: "variant",
+        id: variant.id,
+        storedReservedQuantity: variant.reservedQuantity,
+        expectedReservedQuantity: expected
+      });
+    }
+  }
+  for (const [productId, quantity] of expectedProducts) {
+    if (!productIds.has(productId)) {
+      mismatches.push({
+        kind: "orphan",
+        id: productId,
+        storedReservedQuantity: null,
+        expectedReservedQuantity: quantity
+      });
+    }
+  }
+  for (const [variantId, quantity] of expectedVariants) {
+    if (!variantIds.has(variantId)) {
+      mismatches.push({
+        kind: "orphan",
+        id: variantId,
+        storedReservedQuantity: null,
+        expectedReservedQuantity: quantity
+      });
+    }
+  }
+
   return {
-    ...product,
-    availableStock: availableStock(product.stockQuantity, product.reservedQuantity),
-    ...(product.variants
-      ? {
-          variants: product.variants.map((variant) => ({
-            ...variant,
-            availableStock: availableStock(variant.stockQuantity, variant.reservedQuantity)
-          }))
-        }
-      : {})
+    checked: { products: products.length, variants: variants.length },
+    mismatches: mismatches.sort((left, right) => `${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`))
   };
 }
 
-export function reservationExpiry(context: ModuleContext, now = new Date()) {
-  return new Date(now.getTime() + context.config.commerce.checkout.reservationTtlMinutes * 60_000);
+async function repairMismatch(context: ModuleContext, mismatch: InventoryMismatch) {
+  if (mismatch.kind === "orphan") return false;
+
+  return context.prisma.$transaction(async (tx) => {
+    const table = mismatch.kind === "product" ? "Product" : "ProductVariant";
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`SELECT "id" FROM ${Prisma.raw(`"${table}"`)} WHERE "id" = ${mismatch.id} FOR UPDATE`
+    );
+    if (!locked.length) return false;
+
+    const aggregate = await tx.inventoryReservation.aggregate({
+      where: {
+        status: "ACTIVE",
+        ...(mismatch.kind === "product"
+          ? { productId: mismatch.id, variantId: null }
+          : { variantId: mismatch.id })
+      },
+      _sum: { quantity: true }
+    });
+    const expectedReservedQuantity = aggregate._sum.quantity ?? 0;
+    const current = mismatch.kind === "product"
+      ? await tx.product.findUniqueOrThrow({
+          where: { id: mismatch.id },
+          select: { reservedQuantity: true }
+        })
+      : await tx.productVariant.findUniqueOrThrow({
+          where: { id: mismatch.id },
+          select: { reservedQuantity: true }
+        });
+    if (current.reservedQuantity === expectedReservedQuantity) return false;
+
+    if (mismatch.kind === "product") {
+      await tx.product.update({
+        where: { id: mismatch.id },
+        data: { reservedQuantity: expectedReservedQuantity }
+      });
+    } else {
+      await tx.productVariant.update({
+        where: { id: mismatch.id },
+        data: { reservedQuantity: expectedReservedQuantity }
+      });
+    }
+    await writeAuditLog(tx, {
+      action: "inventory.reconcile.repair",
+      subject: mismatch.kind,
+      subjectId: mismatch.id,
+      severity: "HIGH",
+      metadata: {
+        previousReservedQuantity: current.reservedQuantity,
+        expectedReservedQuantity
+      }
+    });
+    return true;
+  });
+}
+
+export async function reconcileReservedInventory(
+  context: ModuleContext,
+  options: { repair?: boolean } = {}
+) {
+  const before = await inventoryMismatches(context);
+  let repaired = 0;
+  if (options.repair) {
+    for (const mismatch of before.mismatches) {
+      if (await repairMismatch(context, mismatch)) repaired += 1;
+    }
+  }
+  const after = options.repair ? await inventoryMismatches(context) : before;
+
+  return {
+    mode: options.repair ? "repair" : "dry-run",
+    healthy: after.mismatches.length === 0,
+    checked: after.checked,
+    detected: before.mismatches.length,
+    repaired,
+    mismatches: after.mismatches
+  };
+}
+
+export async function inventoryReservationDiagnostics(context: ModuleContext, now = new Date()) {
+  const [count, oldest] = await Promise.all([
+    context.prisma.inventoryReservation.count({
+      where: { status: "ACTIVE", expiresAt: { lte: now } }
+    }),
+    context.prisma.inventoryReservation.findFirst({
+      where: { status: "ACTIVE", expiresAt: { lte: now } },
+      select: { expiresAt: true },
+      orderBy: { expiresAt: "asc" }
+    })
+  ]);
+
+  return {
+    status: count ? "attention" : "pass",
+    blocking: false,
+    expiredActiveReservations: count,
+    oldestExpiredAt: oldest?.expiresAt ?? null,
+    oldestExpiredAgeSeconds: oldest
+      ? Math.max(0, Math.floor((now.getTime() - oldest.expiresAt.getTime()) / 1000))
+      : 0
+  };
 }

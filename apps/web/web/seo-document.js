@@ -450,7 +450,7 @@ export function createProductSeoDocument(product = {}, context = {}) {
             url: canonicalUrl,
             price,
             priceCurrency: text(product.currency, "USD").toUpperCase(),
-            availability: Number(product.stockQuantity) > 0
+            availability: Number(product.availableStock ?? product.stockQuantity) > 0
               ? "https://schema.org/InStock"
               : "https://schema.org/OutOfStock"
           }

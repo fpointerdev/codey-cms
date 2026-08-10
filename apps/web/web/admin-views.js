@@ -628,8 +628,22 @@ function productPurchaseMode(product = {}) {
 function productAvailableStock(product = {}) {
   const variants = Array.isArray(product.variants) ? product.variants.filter((variant) => variant.active !== false) : [];
   return variants.length
-    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.stockQuantity || 0)), 0)
-    : Math.max(0, Number(product.stockQuantity || 0));
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.availableStock ?? variant.stockQuantity) || 0), 0)
+    : Math.max(0, Number(product.availableStock ?? product.stockQuantity) || 0);
+}
+
+function productOnHandStock(product = {}) {
+  const variants = Array.isArray(product.variants) ? product.variants.filter((variant) => variant.active !== false) : [];
+  return variants.length
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.stockQuantity) || 0), 0)
+    : Math.max(0, Number(product.stockQuantity) || 0);
+}
+
+function productReservedStock(product = {}) {
+  const variants = Array.isArray(product.variants) ? product.variants.filter((variant) => variant.active !== false) : [];
+  return variants.length
+    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.reservedQuantity) || 0), 0)
+    : Math.max(0, Number(product.reservedQuantity) || 0);
 }
 
 function commerceReadiness(products, commerce) {
@@ -770,7 +784,7 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
             ${lowStockProducts.slice(0, 6).map((product) => `
               <div class="module-status-row">
                 <div><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.sku || product.slug)}</span></div>
-                <span class="status-pill">${escapeHtml(product.stockQuantity)} left</span>
+                <span class="status-pill">${escapeHtml(productAvailableStock(product))} available</span>
               </div>
             `).join("")}
           </div>
@@ -810,7 +824,7 @@ export function renderShopProductsPage(products, errorMessage = "") {
         ${errorMessage ? `<p class="form-message error">Products are not available yet: ${escapeHtml(errorMessage)}</p>` : ""}
         <div class="admin-card table-card">
           <table class="admin-table">
-            <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Price</th><th>Stock</th><th>Updated</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Price</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Updated</th><th>Actions</th></tr></thead>
             <tbody>
               ${
                 products.length
@@ -822,7 +836,9 @@ export function renderShopProductsPage(products, errorMessage = "") {
                             <td>${escapeHtml(product.slug)}</td>
                             <td><span class="status-pill">${escapeHtml(product.status)}</span></td>
                             <td>${escapeHtml(formatMoney(product.priceCents, product.currency || "EUR"))}</td>
-                            <td>${escapeHtml(product.stockQuantity)}</td>
+                            <td>${escapeHtml(productOnHandStock(product))}</td>
+                            <td>${escapeHtml(productReservedStock(product))}</td>
+                            <td>${escapeHtml(productAvailableStock(product))}</td>
                             <td>${escapeHtml(formatDate(product.updatedAt))}</td>
                             <td>
                               <a href="${escapeHtml(publicHrefForProduct(product))}">View it</a>
@@ -836,7 +852,7 @@ export function renderShopProductsPage(products, errorMessage = "") {
                       )
                       .join("")
                   : renderEmptyTableRow(
-                      7,
+                      9,
                       "No products yet",
                       "Create the first product as a draft, then publish it when pricing and stock are ready.",
                       hasPermission("create", "products") ? '<a class="admin-primary-link" href="/dashboard/shop/products/new" data-dashboard-link>Create Product</a>' : ""

@@ -9,10 +9,13 @@ import { sendCreated, sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
 import { requirePermission } from "../auth/auth.middleware.js";
 import { createSharedCommerceLimiter } from "../orders/commerce-rate-limit.middleware.js";
+import { releaseExpiredOrderReservations } from "../orders/checkout.service.js";
 import {
-  orderReservationTtlMs,
-  releaseExpiredOrderReservations
-} from "../orders/checkout.service.js";
+  assertActiveInventoryReservation,
+  releaseInventoryReservation,
+  reservationExpiry,
+  reserveInventoryForOrder
+} from "../orders/inventory-reservation.service.js";
 import {
   processPaymentEvent,
   statusFromWebhook,
@@ -415,6 +418,8 @@ async function claimPendingPayment(input: {
       );
     }
 
+    await reserveInventoryForOrder(tx, order.id, reservationExpiry(input.context));
+
     if (activePayment) {
       return { order, payment: activePayment, created: false };
     }
@@ -445,12 +450,10 @@ async function authorizePayPalCapture(context: ModuleContext, orderId: string) {
       throw new AppError(409, "order_not_payable", "This order cannot be paid.");
     }
     if (order.checkoutStatus === "PAYMENT_AUTHORIZED") return order;
-    if (
-      order.checkoutStatus !== "PAYMENT_PENDING" ||
-      order.createdAt.getTime() <= Date.now() - orderReservationTtlMs
-    ) {
+    if (order.checkoutStatus !== "PAYMENT_PENDING") {
       throw new AppError(409, "order_reservation_expired", "The inventory reservation has expired.");
     }
+    await assertActiveInventoryReservation(tx, order.id);
 
     return tx.order.update({
       where: { id: order.id },
@@ -637,8 +640,8 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
             cancelUrl
           });
         } catch (error) {
-          if (error instanceof AppError && error.statusCode === 422) {
-            await context.prisma.payment.updateMany({
+          await context.prisma.$transaction(async (tx) => {
+            const failed = await tx.payment.updateMany({
               where: {
                 id: payment.id,
                 providerReference: null,
@@ -646,7 +649,12 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
               },
               data: { status: "FAILED" }
             });
-          }
+            if (failed.count === 1) {
+              await releaseInventoryReservation(tx, input.orderId, {
+                reason: "provider_initialization_failed"
+              });
+            }
+          });
           throw error;
         }
       }

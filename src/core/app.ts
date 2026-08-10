@@ -48,6 +48,7 @@ import {
   findProductAttributePage,
   orderProductsByIds
 } from "../modules/products/product-attribute-filter.js";
+import { withAvailableInventory } from "../modules/products/product-inventory.js";
 import { readShopSettings } from "../modules/products/shop-settings.js";
 import { publicSiteStyleTag } from "../modules/config/site-design.js";
 import {
@@ -464,7 +465,11 @@ async function readPublicShopProductPage(
   const skip = (route.page - 1) * limit;
   const include = {
     category: true,
-    images: { orderBy: { sortOrder: "asc" as const } }
+    images: { orderBy: { sortOrder: "asc" as const } },
+    variants: {
+      where: { active: true },
+      orderBy: { createdAt: "asc" as const }
+    }
   };
 
   if (route.attributeName || route.attributeValue) {
@@ -487,7 +492,10 @@ async function readPublicShopProductPage(
       : [];
 
     return {
-      products: await enrichPublicMedia(prisma, orderProductsByIds(matchedProducts, result.ids)),
+      products: await enrichPublicMedia(
+        prisma,
+        orderProductsByIds(matchedProducts, result.ids).map(withAvailableInventory)
+      ),
       total: result.total
     };
   }
@@ -503,7 +511,10 @@ async function readPublicShopProductPage(
     prisma.product.count({ where })
   ]);
 
-  return { products: await enrichPublicMedia(prisma, products), total };
+  return {
+    products: await enrichPublicMedia(prisma, products.map(withAvailableInventory)),
+    total
+  };
 }
 
 async function readPublicModuleStates() {
@@ -725,6 +736,7 @@ async function resolveProductSeo(
       priceCents: true,
       currency: true,
       stockQuantity: true,
+      reservedQuantity: true,
       metaTitle: true,
       metaDescription: true,
       seo: true,
@@ -740,6 +752,10 @@ async function resolveProductSeo(
           alt: true,
           isPrimary: true
         }
+      },
+      variants: {
+        where: { active: true },
+        select: { stockQuantity: true, reservedQuantity: true }
       }
     }
   });
@@ -758,7 +774,7 @@ async function resolveProductSeo(
     orderBy: { locale: "asc" }
   });
 
-  const enrichedProduct = await enrichPublicMedia(prisma, product);
+  const enrichedProduct = await enrichPublicMedia(prisma, withAvailableInventory(product));
 
   return renderer.createProductSeoDocument({ ...enrichedProduct, translations }, {
     ...seoDocumentContext(origin, site, localization),
@@ -1046,7 +1062,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         }
       });
       if (!product) return { found: false, content: null, siteTitle, localization };
-      const enrichedProduct = await enrichPublicMedia(prisma, product);
+      const enrichedProduct = await enrichPublicMedia(prisma, withAvailableInventory(product));
 
       return {
         found: true,

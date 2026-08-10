@@ -46,6 +46,12 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
   let uploadedAssetId: string | undefined;
   let managedUserId: string | undefined;
   let reusableTemplateId: string | undefined;
+  let commerceOrderId: string | undefined;
+  let commerceCartId: string | undefined;
+  const defaultSite = await prisma.site.findUniqueOrThrow({
+    where: { slug: "default" },
+    select: { id: true }
+  });
   const existingSiteSetting = await prisma.moduleSetting.findFirst({
     where: { moduleId: "config", key: "site", site: { slug: "default" } },
     select: { id: true, value: true }
@@ -53,6 +59,14 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
   const existingEmailSetting = await prisma.moduleSetting.findFirst({
     where: { moduleId: "config", key: "email", site: { slug: "default" } },
     select: { id: true, value: true }
+  });
+  const existingManualProvider = await prisma.paymentProviderConfig.findUnique({
+    where: {
+      siteId_provider: {
+        siteId: defaultSite.id,
+        provider: "MANUAL"
+      }
+    }
   });
 
   async function request(pathname: string, options: RequestInit = {}) {
@@ -118,6 +132,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(diagnosticsBody.data?.runtime.status, "ready");
     assert.equal(diagnosticsBody.data?.runtime.checks.database.status, "pass");
     assert.equal(diagnosticsBody.data?.operations.backup.blocking, false);
+    assert.equal(diagnosticsBody.data?.operations.inventory.status, "pass");
     assert.equal(typeof diagnosticsBody.data?.metrics.uptimeSeconds, "number");
 
     const metrics = await request("/api/v1/health/metrics", { headers: authorization });
@@ -456,6 +471,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     });
     const createCartBody = await responseJson(createCart);
     const cartToken = String(createCartBody.data?.cart.sessionToken);
+    commerceCartId = String(createCartBody.data?.cart.id);
     assert.equal(createCart.status, 201, JSON.stringify(createCartBody));
     const addCartItem = await request(`/api/v1/orders/carts/${cartToken}/items`, {
       method: "POST",
@@ -491,6 +507,110 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const completedCheckoutBody = await responseJson(completedCheckout);
     assert.equal(completedCheckoutBody.data?.order.items.length, 1);
     assert.equal(completedCheckoutBody.data?.order.shippingCents, shippingRate.priceCents);
+    const orderId = String(completedCheckoutBody.data?.order.id);
+    commerceOrderId = orderId;
+    const selectedVariant = starterProduct.variants[0];
+    const inventoryBeforePayment = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryBeforePayment.reservedQuantity, 0);
+
+    const enableManualPayments = await request("/api/v1/payments/providers/manual", {
+      method: "PUT",
+      headers: authorization,
+      body: JSON.stringify({
+        enabled: true,
+        instructions: "Use the order number when arranging payment."
+      })
+    });
+    assert.equal(enableManualPayments.status, 200, JSON.stringify(await responseJson(enableManualPayments)));
+
+    const firstIntent = await request("/api/v1/payments/intent", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        provider: "MANUAL",
+        idempotencyKey: `manual-failure-${runId}`
+      })
+    });
+    const firstIntentBody = await responseJson(firstIntent);
+    assert.equal(firstIntent.status, 201, JSON.stringify(firstIntentBody));
+    const firstPaymentId = String(firstIntentBody.data?.payment.id);
+    const inventoryAfterFirstIntent = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterFirstIntent.stockQuantity, inventoryBeforePayment.stockQuantity);
+    assert.equal(inventoryAfterFirstIntent.reservedQuantity, 1);
+    const reservedProductResponse = await request("/api/v1/products/starter-product");
+    const reservedProductBody = await responseJson(reservedProductResponse);
+    assert.equal(reservedProductResponse.status, 200, JSON.stringify(reservedProductBody));
+    const reservedProduct = reservedProductBody.data?.product;
+    if (selectedVariant) {
+      const publicVariant = reservedProduct?.variants.find((variant: { id: string }) =>
+        variant.id === selectedVariant.id
+      );
+      assert.equal(publicVariant.reservedQuantity, 1);
+      assert.equal(publicVariant.availableStock, inventoryBeforePayment.stockQuantity - 1);
+    } else {
+      assert.equal(reservedProduct?.reservedQuantity, 1);
+      assert.equal(reservedProduct?.availableStock, inventoryBeforePayment.stockQuantity - 1);
+    }
+    const reservedProductPage = await request("/product/starter-product");
+    const reservedProductHtml = await reservedProductPage.text();
+    assert.equal(reservedProductPage.status, 200);
+    assert.match(
+      reservedProductHtml,
+      new RegExp(`data-stock="${inventoryBeforePayment.stockQuantity - 1}"`)
+    );
+
+    const duplicateIntent = await request("/api/v1/payments/intent", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        provider: "MANUAL",
+        idempotencyKey: `manual-failure-${runId}`
+      })
+    });
+    assert.equal(duplicateIntent.status, 200, JSON.stringify(await responseJson(duplicateIntent)));
+    const inventoryAfterDuplicate = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterDuplicate.reservedQuantity, 1);
+
+    const failPayment = await request(`/api/v1/payments/manual/${firstPaymentId}/action`, {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({ action: "FAIL" })
+    });
+    assert.equal(failPayment.status, 200, JSON.stringify(await responseJson(failPayment)));
+    const inventoryAfterFailure = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterFailure.stockQuantity, inventoryBeforePayment.stockQuantity);
+    assert.equal(inventoryAfterFailure.reservedQuantity, 0);
+
+    const retryIntent = await request("/api/v1/payments/intent", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        provider: "MANUAL",
+        idempotencyKey: `manual-success-${runId}`
+      })
+    });
+    const retryIntentBody = await responseJson(retryIntent);
+    assert.equal(retryIntent.status, 201, JSON.stringify(retryIntentBody));
+    const retryPaymentId = String(retryIntentBody.data?.payment.id);
+    const succeedPayment = await request(`/api/v1/payments/manual/${retryPaymentId}/action`, {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({ action: "SUCCEED" })
+    });
+    assert.equal(succeedPayment.status, 200, JSON.stringify(await responseJson(succeedPayment)));
+    const inventoryAfterSuccess = selectedVariant
+      ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
+      : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
+    assert.equal(inventoryAfterSuccess.stockQuantity, inventoryBeforePayment.stockQuantity - 1);
+    assert.equal(inventoryAfterSuccess.reservedQuantity, 0);
 
     const createRedirect = await request("/api/v1/cms/redirects", {
       method: "POST",
@@ -580,6 +700,34 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     }
     if (reusableTemplateId) {
       await prisma.cmsTemplate.deleteMany({ where: { id: reusableTemplateId } });
+    }
+    if (commerceOrderId) {
+      await prisma.order.deleteMany({ where: { id: commerceOrderId } });
+    }
+    if (commerceCartId) {
+      await prisma.cart.deleteMany({ where: { id: commerceCartId } });
+    }
+    if (existingManualProvider) {
+      await prisma.paymentProviderConfig.update({
+        where: { id: existingManualProvider.id },
+        data: {
+          mode: existingManualProvider.mode,
+          enabled: existingManualProvider.enabled,
+          publishableKey: existingManualProvider.publishableKey,
+          encryptedCredentials: existingManualProvider.encryptedCredentials,
+          clientId: existingManualProvider.clientId,
+          webhookId: existingManualProvider.webhookId,
+          instructions: existingManualProvider.instructions,
+          lastTestedAt: existingManualProvider.lastTestedAt,
+          lastTestSucceeded: existingManualProvider.lastTestSucceeded,
+          lastTestMessage: existingManualProvider.lastTestMessage,
+          lastWebhookAt: existingManualProvider.lastWebhookAt
+        }
+      });
+    } else {
+      await prisma.paymentProviderConfig.deleteMany({
+        where: { provider: "MANUAL", siteId: defaultSite.id }
+      });
     }
     if (existingSiteSetting) {
       await prisma.moduleSetting.update({

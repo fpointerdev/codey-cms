@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { config } from "../../src/config/index.js";
 import { prisma } from "../../src/infrastructure/database/prisma.js";
+import { logger } from "../../src/infrastructure/logging/logger.js";
 import {
   consumeInventoryReservation,
+  expireInventoryReservations,
+  reconcileReservedInventory,
   releaseInventoryReservation,
   reserveInventoryForOrder
 } from "../../src/modules/orders/inventory-reservation.service.js";
@@ -55,6 +59,8 @@ async function createOrder(
 function runId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
+
+const context = { config, prisma, logger };
 
 after(async () => {
   await prisma.order.deleteMany({ where: { id: { in: createdOrderIds } } });
@@ -183,4 +189,74 @@ test("product metadata can cap purchase quantity", async () => {
     (await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).reservedQuantity,
     0
   );
+});
+
+test("two cleanup workers expire an active reservation once", async () => {
+  const id = runId();
+  const product = await createProduct(id, 2);
+  const order = await createOrder(id, [{ productId: product.id, quantity: 1 }]);
+  await prisma.$transaction((tx) =>
+    reserveInventoryForOrder(tx, order.id, new Date(Date.now() - 1_000))
+  );
+
+  const results = await Promise.all([
+    expireInventoryReservations(context),
+    expireInventoryReservations(context)
+  ]);
+  assert.equal(results.reduce((total, count) => total + count, 0), 1);
+  const reservation = await prisma.inventoryReservation.findFirstOrThrow({
+    where: { orderId: order.id }
+  });
+  assert.equal(reservation.status, "EXPIRED");
+  assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).reservedQuantity, 0);
+  assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).checkoutStatus, "ABANDONED");
+});
+
+test("a failed cleanup transaction remains retryable", async () => {
+  const id = runId();
+  const product = await createProduct(id, 1);
+  const order = await createOrder(id, [{ productId: product.id, quantity: 1 }]);
+  await prisma.$transaction((tx) =>
+    reserveInventoryForOrder(tx, order.id, new Date(Date.now() - 1_000))
+  );
+  await prisma.product.update({
+    where: { id: product.id },
+    data: { reservedQuantity: 0 }
+  });
+
+  await assert.rejects(expireInventoryReservations(context));
+  assert.equal(
+    (await prisma.inventoryReservation.findFirstOrThrow({ where: { orderId: order.id } })).status,
+    "ACTIVE"
+  );
+
+  await prisma.product.update({
+    where: { id: product.id },
+    data: { reservedQuantity: 1 }
+  });
+  assert.equal(await expireInventoryReservations(context), 1);
+});
+
+test("reconciliation detects and repairs reserved inventory drift", async () => {
+  const id = runId();
+  const product = await createProduct(id, 10);
+  await prisma.product.update({
+    where: { id: product.id },
+    data: { reservedQuantity: 4 }
+  });
+
+  const dryRun = await reconcileReservedInventory(context);
+  assert.equal(dryRun.mode, "dry-run");
+  assert.ok(dryRun.mismatches.some((mismatch) =>
+    mismatch.kind === "product" && mismatch.id === product.id && mismatch.expectedReservedQuantity === 0
+  ));
+  assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).reservedQuantity, 4);
+
+  const repaired = await reconcileReservedInventory(context, { repair: true });
+  assert.equal(repaired.mode, "repair");
+  assert.ok(repaired.repaired >= 1);
+  assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).reservedQuantity, 0);
+  assert.ok(await prisma.auditLog.findFirst({
+    where: { action: "inventory.reconcile.repair", subjectId: product.id }
+  }));
 });

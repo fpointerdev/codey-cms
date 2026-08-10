@@ -8,11 +8,14 @@ import {
   releaseOrderInventoryReservation
 } from "../src/modules/orders/checkout.service.js";
 
-test("releasing an order restores grouped stock and coupon usage once", async () => {
-  const variantUpdates: unknown[] = [];
-  const productUpdates: unknown[] = [];
+test("cancelling an order releases its ledger and coupon without restoring physical stock", async () => {
   const couponUpdates: unknown[] = [];
+  let queryCount = 0;
   const tx = {
+    $queryRaw: async () => {
+      queryCount += 1;
+      return queryCount === 1 ? [{ id: "order-1" }] : [];
+    },
     order: {
       findUnique: async () => ({
         id: "order-1",
@@ -27,18 +30,7 @@ test("releasing an order restores grouped stock and coupon usage once", async ()
       }),
       updateMany: async () => ({ count: 1 })
     },
-    productVariant: {
-      updateMany: async (args: unknown) => {
-        variantUpdates.push(args);
-        return { count: 1 };
-      }
-    },
-    product: {
-      updateMany: async (args: unknown) => {
-        productUpdates.push(args);
-        return { count: 1 };
-      }
-    },
+    inventoryReservation: { findMany: async () => [] },
     coupon: {
       updateMany: async (args: unknown) => {
         couponUpdates.push(args);
@@ -48,14 +40,6 @@ test("releasing an order restores grouped stock and coupon usage once", async ()
   } as unknown as Prisma.TransactionClient;
 
   assert.equal(await releaseOrderInventoryReservation(tx, "order-1"), true);
-  assert.deepEqual(variantUpdates, [{
-    where: { id: "variant-1", productId: "product-1" },
-    data: { stockQuantity: { increment: 3 } }
-  }]);
-  assert.deepEqual(productUpdates, [{
-    where: { id: "product-2" },
-    data: { stockQuantity: { increment: 4 } }
-  }]);
   assert.equal(couponUpdates.length, 1);
 });
 
@@ -109,7 +93,12 @@ test("merchant checkout actions cannot bypass payment authorization", () => {
 
 test("confirmed unpaid orders can restore reserved inventory when cancelled", async () => {
   const claims: unknown[] = [];
+  let queryCount = 0;
   const tx = {
+    $queryRaw: async () => {
+      queryCount += 1;
+      return queryCount === 1 ? [{ id: "order-confirmed" }] : [];
+    },
     order: {
       findUnique: async () => ({
         id: "order-confirmed",
@@ -123,7 +112,7 @@ test("confirmed unpaid orders can restore reserved inventory when cancelled", as
         return { count: 1 };
       }
     },
-    product: { updateMany: async () => ({ count: 1 }) },
+    inventoryReservation: { findMany: async () => [] },
     coupon: { updateMany: async () => ({ count: 0 }) }
   } as unknown as Prisma.TransactionClient;
 

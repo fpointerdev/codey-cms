@@ -160,6 +160,8 @@ Email verification and password reset tokens are created server-side, delivered 
 - First bootstrap after provisioning: `pnpm runtime:bootstrap`
 - Backup: `pnpm runtime:backup`
 - Scheduled backup worker: `pnpm runtime:backup:scheduler`
+- Inventory check: `pnpm inventory:reconcile` (dry run)
+- Inventory repair: `pnpm inventory:reconcile --repair` (audited)
 - Restore: `pnpm runtime:restore -- /path/to/runtime.dump`
 
 `runtime:start` deploys migrations before starting the API. `runtime:bootstrap` deploys migrations and runs the idempotent seed flow once after a new copied site is provisioned. By default, the seed creates only runtime roles, module settings, and an editable Home page; it does not publish sample posts, products, coupons, or shipping rules. Set `CODEY_SEED_DEMO_CONTENT=true` only for an intentional local demo or test fixture. The seed only creates an owner when explicit `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` values are present; otherwise run `pnpm setup:admin` after bootstrap. If the configured email already belongs to a non-owner, the seed refuses to elevate it and `pnpm setup:admin` must be used to reset its password and sessions during promotion.

@@ -36,6 +36,7 @@
     "runtime:backup": "node scripts/backup-runtime.mjs",
     "runtime:backup:scheduler": "node scripts/backup-scheduler.mjs",
     "runtime:restore": "node scripts/restore-runtime.mjs",
+    "inventory:reconcile": "tsx scripts/inventory-reconcile.ts",
     "release:preflight": "pnpm run release:containers && node scripts/release-preflight.mjs",
     "release:containers": "node scripts/validate-container-pins.mjs",
     "release:launchers": "node scripts/validate-platform-launcher.mjs",

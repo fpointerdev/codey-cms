@@ -3,7 +3,15 @@ import { Prisma } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
 import { CommerceAbuseService } from "./commerce-abuse.service.js";
+import {
+  expireInventoryReservations,
+  releaseInventoryReservation
+} from "./inventory-reservation.service.js";
 import { queueOrderEmail } from "./order-email.service.js";
+import {
+  availableStock as inventoryAvailableStock,
+  effectivePurchaseLimit
+} from "../products/product-inventory.js";
 
 type OrderItemInput = {
   productId: string;
@@ -54,8 +62,6 @@ type CartWithItems = Prisma.CartGetPayload<{ include: { items: true } }>;
 type OrderStatus = "PENDING" | "CONFIRMED" | "PAID" | "FULFILLED" | "CANCELLED" | "REFUNDED";
 type CheckoutStatus = "STARTED" | "SHIPPING_SELECTED" | "PAYMENT_PENDING" | "PAYMENT_AUTHORIZED" | "COMPLETE" | "ABANDONED";
 
-export const orderReservationTtlMs = 30 * 60 * 1000;
-
 const merchantOrderTransitions: Partial<Record<OrderStatus, OrderStatus[]>> = {
   PENDING: ["CANCELLED"],
   CONFIRMED: ["CANCELLED"],
@@ -89,12 +95,6 @@ export function assertMerchantCheckoutTransition(
     "Checkout authorization and completion are controlled by the payment workflow."
   );
 }
-
-type ReservedOrderItem = {
-  productId: string | null;
-  variantId: string | null;
-  quantity: number;
-};
 
 function createOrderNumber() {
   return `ORD-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
@@ -165,6 +165,7 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
           currency: true,
           metadata: true,
           stockQuantity: true,
+          reservedQuantity: true,
           images: {
             orderBy: { sortOrder: "asc" },
             take: 1,
@@ -177,6 +178,7 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
               sku: true,
               priceCents: true,
               stockQuantity: true,
+              reservedQuantity: true,
               active: true
             }
           }
@@ -189,7 +191,11 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
     const variant = item.variantId
       ? product?.variants.find((candidate) => candidate.id === item.variantId)
       : undefined;
-    const availableStock = variant?.stockQuantity ?? product?.stockQuantity ?? 0;
+    const availableStock = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : product
+        ? inventoryAvailableStock(product.stockQuantity, product.reservedQuantity)
+        : 0;
     const unitPriceCents = variant?.priceCents ?? product?.priceCents ?? 0;
     const available = Boolean(
       product?.status === "ACTIVE" &&
@@ -208,6 +214,8 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
             status: product.status,
             currency: product.currency,
             stockQuantity: product.stockQuantity,
+            reservedQuantity: product.reservedQuantity,
+            availableStock: inventoryAvailableStock(product.stockQuantity, product.reservedQuantity),
             image: product.images[0] ?? null
           }
         : null,
@@ -227,22 +235,6 @@ async function hydrateCart(context: ModuleContext, cart: CartWithItems) {
       0
     )
   };
-}
-
-function aggregateReservedItems(items: ReservedOrderItem[]) {
-  return items.reduce((quantities, item) => {
-    if (!item.productId) return quantities;
-
-    const key = `${item.productId}:${item.variantId ?? ""}`;
-    const current = quantities.get(key) ?? {
-      productId: item.productId,
-      variantId: item.variantId,
-      quantity: 0
-    };
-    current.quantity += item.quantity;
-    quantities.set(key, current);
-    return quantities;
-  }, new Map<string, { productId: string; variantId: string | null; quantity: number }>());
 }
 
 function shippingCountryFilter(country: string | undefined) {
@@ -455,38 +447,23 @@ async function createOrderInTransaction(
 
   for (const [key, quantity] of requestedQuantities) {
     const [productId, variantId] = key.split(":");
-
-    if (variantId) {
-      const updated = await tx.productVariant.updateMany({
-        where: {
-          id: variantId,
-          productId,
-          active: true,
-          stockQuantity: { gte: quantity }
-        },
-        data: {
-          stockQuantity: { decrement: quantity }
-        }
-      });
-
-      if (updated.count !== 1) {
-        throw new AppError(409, "insufficient_stock", "One or more variants are out of stock.");
-      }
-
-      continue;
+    const product = productsById.get(productId!);
+    const variant = variantId ? variantsById.get(variantId) : undefined;
+    const available = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : product
+        ? inventoryAvailableStock(product.stockQuantity, product.reservedQuantity)
+        : 0;
+    const purchaseLimit = effectivePurchaseLimit(product?.metadata, variant?.metadata);
+    if (purchaseLimit !== undefined && quantity > purchaseLimit) {
+      throw new AppError(
+        422,
+        "product_purchase_limit_exceeded",
+        `This item is limited to ${purchaseLimit} per order.`,
+        { limit: purchaseLimit }
+      );
     }
-
-    const updated = await tx.product.updateMany({
-      where: {
-        id: productId,
-        stockQuantity: { gte: quantity }
-      },
-      data: {
-        stockQuantity: { decrement: quantity }
-      }
-    });
-
-    if (updated.count !== 1) {
+    if (available < quantity) {
       throw new AppError(409, "insufficient_stock", "One or more products are out of stock.");
     }
   }
@@ -589,7 +566,6 @@ export async function createOrder(
   input: CreateOrderInput,
   requestMeta: OrderRequestMeta = {}
 ) {
-  await releaseExpiredOrderReservations(context);
   try {
     return await context.prisma.$transaction((tx) =>
       createOrderInTransaction(tx, context, input, requestMeta)
@@ -678,13 +654,25 @@ export async function addCartItem(context: ModuleContext, token: string, input: 
       }
     });
     const nextQuantity = (existingItem?.quantity ?? 0) + input.quantity;
-    const availableStock = variant?.stockQuantity ?? product.stockQuantity;
+    const availableStock = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : inventoryAvailableStock(product.stockQuantity, product.reservedQuantity);
+    const purchaseLimit = effectivePurchaseLimit(product.metadata, variant?.metadata);
 
     if (nextQuantity > context.config.commerce.checkout.maxItemQuantity) {
       throw new AppError(
         422,
         "cart_quantity_too_large",
         `Cart item quantity cannot exceed ${context.config.commerce.checkout.maxItemQuantity}.`
+      );
+    }
+
+    if (purchaseLimit !== undefined && nextQuantity > purchaseLimit) {
+      throw new AppError(
+        422,
+        "product_purchase_limit_exceeded",
+        `This item is limited to ${purchaseLimit} per order.`,
+        { limit: purchaseLimit }
       );
     }
 
@@ -762,9 +750,22 @@ export async function updateCartItem(
       }
     });
     const variant = item.variantId ? product?.variants[0] : undefined;
-    const availableStock = variant?.stockQuantity ?? product?.stockQuantity ?? 0;
+    const availableStock = variant
+      ? inventoryAvailableStock(variant.stockQuantity, variant.reservedQuantity)
+      : product
+        ? inventoryAvailableStock(product.stockQuantity, product.reservedQuantity)
+        : 0;
+    const purchaseLimit = effectivePurchaseLimit(product?.metadata, variant?.metadata);
     if (!product || productRequiresQuote(product) || item.variantId && !variant) {
       throw new AppError(422, "invalid_cart_item", "Product is unavailable.");
+    }
+    if (purchaseLimit !== undefined && quantity > purchaseLimit) {
+      throw new AppError(
+        422,
+        "product_purchase_limit_exceeded",
+        `This item is limited to ${purchaseLimit} per order.`,
+        { limit: purchaseLimit }
+      );
     }
     if (quantity > availableStock) {
       throw new AppError(409, "insufficient_stock", "The requested quantity is not available.");
@@ -808,8 +809,6 @@ export async function checkoutCart(
   input: CheckoutCartInput,
   requestMeta: OrderRequestMeta = {}
 ) {
-  await releaseExpiredOrderReservations(context);
-
   try {
     return await context.prisma.$transaction(async (tx) => {
       await lockCart(tx, token);
@@ -908,27 +907,7 @@ export async function releaseOrderInventoryReservation(
 
   if (claimed.count !== 1) return false;
 
-  for (const item of aggregateReservedItems(order.items).values()) {
-    if (item.variantId) {
-      await tx.productVariant.updateMany({
-        where: {
-          id: item.variantId,
-          productId: item.productId
-        },
-        data: {
-          stockQuantity: { increment: item.quantity }
-        }
-      });
-      continue;
-    }
-
-    await tx.product.updateMany({
-      where: { id: item.productId },
-      data: {
-        stockQuantity: { increment: item.quantity }
-      }
-    });
-  }
+  await releaseInventoryReservation(tx, order.id, { reason: "order_cancelled" });
 
   if (order.couponCode) {
     await tx.coupon.updateMany({
@@ -946,29 +925,7 @@ export async function releaseOrderInventoryReservation(
 }
 
 export async function releaseExpiredOrderReservations(context: ModuleContext, now = new Date()) {
-  const cutoff = new Date(now.getTime() - orderReservationTtlMs);
-  const expiredOrders = await context.prisma.order.findMany({
-    where: {
-      status: "PENDING",
-      checkoutStatus: "PAYMENT_PENDING",
-      createdAt: { lte: cutoff }
-    },
-    select: { id: true },
-    orderBy: { createdAt: "asc" },
-    take: 100
-  });
-  let released = 0;
-
-  for (const order of expiredOrders) {
-    const didRelease = await context.prisma.$transaction((tx) =>
-      releaseOrderInventoryReservation(tx, order.id, {
-        checkoutStatuses: ["PAYMENT_PENDING"]
-      })
-    );
-    if (didRelease) released += 1;
-  }
-
-  return released;
+  return expireInventoryReservations(context, now);
 }
 
 async function auditPendingOrderLimit(
