@@ -11,6 +11,7 @@ import { AuthService } from "../src/modules/auth/auth.service.js";
 import { LoginProtectionService } from "../src/modules/auth/login-protection.service.js";
 import { writeScriptAuditLog } from "../scripts/audit-log.mjs";
 import {
+  createTotpCode,
   hashMfaRecoveryCode,
   normalizeRecoveryCode,
   verifyTotpCode
@@ -129,9 +130,55 @@ test("off-site backup claims require mandatory backups and a mirror", async () =
 test("TOTP verification follows the standard time window", () => {
   const rfcSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
 
-  assert.equal(verifyTotpCode(rfcSecret, "287082", 59_000), true);
-  assert.equal(verifyTotpCode(rfcSecret, "287083", 59_000), false);
-  assert.equal(verifyTotpCode(rfcSecret, "287082", 149_000), false);
+  assert.equal(verifyTotpCode(rfcSecret, "287082", 59_000), 1);
+  assert.equal(verifyTotpCode(rfcSecret, "287083", 59_000), null);
+  assert.equal(verifyTotpCode(rfcSecret, "287082", 149_000), null);
+});
+
+test("a TOTP counter can be accepted only once", async () => {
+  const key = securityConfig.security.credentialEncryptionKey;
+  const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+  let lastAcceptedCounter: number | null = null;
+  const credential = {
+    id: "mfa-counter-1",
+    enabledAt: new Date(),
+    secretEnvelope: encryptSecretEnvelope(key, { secret }),
+    recoveryCodeHashes: [] as string[]
+  };
+  const model = {
+    findUnique: async () => ({ ...credential, lastAcceptedCounter }),
+    updateMany: async ({ where, data }: {
+      where: { OR?: Array<{ lastAcceptedCounter: null | { lt: number } }> };
+      data: { lastAcceptedCounter?: number };
+    }) => {
+      const requestedCounter = data.lastAcceptedCounter;
+      if (requestedCounter === undefined || !where.OR) return { count: 0 };
+      if (lastAcceptedCounter !== null && lastAcceptedCounter >= requestedCounter) {
+        return { count: 0 };
+      }
+      lastAcceptedCounter = requestedCounter;
+      return { count: 1 };
+    }
+  };
+  const service = new AuthService(
+    { userMfaCredential: model } as unknown as PrismaClient,
+    securityConfig
+  );
+  const verifyMfaCode = (service as unknown as {
+    verifyMfaCode: (userId: string, code: string) => Promise<boolean>;
+  }).verifyMfaCode.bind(service);
+  const now = Date.now();
+  const currentCode = createTotpCode(secret, now);
+
+  const concurrent = await Promise.all([
+    verifyMfaCode("user-1", currentCode),
+    verifyMfaCode("user-1", currentCode)
+  ]);
+  assert.deepEqual(concurrent.sort(), [false, true]);
+
+  const nextCode = createTotpCode(secret, now + 30_000);
+  assert.equal(await verifyMfaCode("user-1", nextCode), true);
+  assert.equal(await verifyMfaCode("user-1", currentCode), false);
 });
 
 test("recovery codes normalize safely before keyed hashing", () => {
@@ -153,6 +200,7 @@ test("concurrent recovery-code use cannot restore a consumed code", async () => 
     secretEnvelope: encryptSecretEnvelope(key, { secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" }),
     recoveryCodeHashes: codes.map((code) => hashMfaRecoveryCode(code, key)),
     lastUsedAt: null,
+    lastAcceptedCounter: null,
     createdAt: new Date(),
     updatedAt: new Date()
   };

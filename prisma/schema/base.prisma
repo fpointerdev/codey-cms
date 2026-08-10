@@ -243,6 +243,7 @@ model UserMfaCredential {
   enabledAt          DateTime?
   pendingExpiresAt   DateTime?
   lastUsedAt         DateTime?
+  lastAcceptedCounter Int?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

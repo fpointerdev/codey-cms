@@ -721,6 +721,29 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(loginWithoutMfa.status, 401);
     assert.equal((await responseJson(loginWithoutMfa)).error?.code, "mfa_required");
 
+    const nextMfaCode = createTotpCode(mfaSecret, Date.now() + 30_000);
+    const concurrentMfaLogins = await Promise.all([
+      request("/api/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: adminEmail, password: adminPassword, mfaCode: nextMfaCode })
+      }),
+      request("/api/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: adminEmail, password: adminPassword, mfaCode: nextMfaCode })
+      })
+    ]);
+    assert.deepEqual(
+      concurrentMfaLogins.map((response) => response.status).sort(),
+      [200, 401]
+    );
+
+    const olderMfaLogin = await request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: adminEmail, password: adminPassword, mfaCode })
+    });
+    assert.equal(olderMfaLogin.status, 401);
+    assert.equal((await responseJson(olderMfaLogin)).error?.code, "invalid_mfa_code");
+
     const recoveryLogin = await request("/api/v1/auth/login", {
       method: "POST",
       body: JSON.stringify({
@@ -731,13 +754,26 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     });
     const recoveryLoginBody = await responseJson(recoveryLogin);
     assert.equal(recoveryLogin.status, 200, JSON.stringify(recoveryLoginBody));
+    const reusedRecoveryLogin = await request("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: adminEmail,
+        password: adminPassword,
+        mfaCode: mfaConfirmBody.data?.recoveryCodes[0]
+      })
+    });
+    assert.equal(reusedRecoveryLogin.status, 401);
+    assert.equal((await responseJson(reusedRecoveryLogin)).error?.code, "invalid_mfa_code");
     const mfaAuthorization = {
       authorization: `Bearer ${String(recoveryLoginBody.data?.tokens.accessToken)}`
     };
     const disableMfa = await request("/api/v1/auth/mfa", {
       method: "DELETE",
       headers: mfaAuthorization,
-      body: JSON.stringify({ currentPassword: adminPassword, code: createTotpCode(mfaSecret) })
+      body: JSON.stringify({
+        currentPassword: adminPassword,
+        code: mfaConfirmBody.data?.recoveryCodes[1]
+      })
     });
     assert.equal(disableMfa.status, 200, JSON.stringify(await responseJson(disableMfa)));
 

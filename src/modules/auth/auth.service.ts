@@ -592,7 +592,8 @@ export class AuthService {
         recoveryCodeHashes: [],
         enabledAt: null,
         pendingExpiresAt,
-        lastUsedAt: null
+        lastUsedAt: null,
+        lastAcceptedCounter: null
       }
     });
     await this.audit({
@@ -627,7 +628,8 @@ export class AuthService {
       throw new AppError(409, "mfa_setup_expired", "Start two-step verification setup again.");
     }
     const mfaSecret = this.readMfaSecret(credential.secretEnvelope);
-    if (!verifyTotpCode(mfaSecret.secret, input.code)) {
+    const matchedCounter = verifyTotpCode(mfaSecret.secret, input.code);
+    if (matchedCounter === null) {
       throw new AppError(422, "invalid_mfa_code", "The verification code is invalid.");
     }
 
@@ -642,13 +644,15 @@ export class AuthService {
         where: {
           id: credential.id,
           enabledAt: null,
-          pendingExpiresAt: { gt: new Date() }
+          pendingExpiresAt: { gt: new Date() },
+          lastAcceptedCounter: null
         },
         data: {
           enabledAt: mfaVerifiedAt,
           pendingExpiresAt: null,
           recoveryCodeHashes,
           lastUsedAt: mfaVerifiedAt,
+          lastAcceptedCounter: matchedCounter,
           ...(mfaSecret.key === this.config.security.credentialEncryptionKey
             ? {}
             : {
@@ -1603,11 +1607,20 @@ export class AuthService {
       if (!credential?.enabledAt) return false;
 
       const mfaSecret = this.readMfaSecret(credential.secretEnvelope);
-      if (verifyTotpCode(mfaSecret.secret, code)) {
-        await this.prisma.userMfaCredential.update({
-          where: { id: credential.id },
+      const matchedCounter = verifyTotpCode(mfaSecret.secret, code);
+      if (matchedCounter !== null) {
+        const consumed = await this.prisma.userMfaCredential.updateMany({
+          where: {
+            id: credential.id,
+            enabledAt: { not: null },
+            OR: [
+              { lastAcceptedCounter: null },
+              { lastAcceptedCounter: { lt: matchedCounter } }
+            ]
+          },
           data: {
             lastUsedAt: new Date(),
+            lastAcceptedCounter: matchedCounter,
             ...(mfaSecret.key === this.config.security.credentialEncryptionKey
               ? {}
               : {
@@ -1618,7 +1631,7 @@ export class AuthService {
                 })
           }
         });
-        return true;
+        if (consumed.count === 1) return true;
       }
 
       const recoveryCodeHash = this.mfaCredentialKeys()

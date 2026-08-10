@@ -37,10 +37,14 @@ export function createTotpUri(input: { secret: string; issuer: string; account: 
 
 export function verifyTotpCode(secret: string, code: string, now = Date.now()) {
   const normalized = code.replaceAll(/\s/g, "");
-  if (!/^\d{6}$/.test(normalized)) return false;
+  if (!/^\d{6}$/.test(normalized)) return null;
 
   const counter = Math.floor(now / 30_000);
-  return [-1, 0, 1].some((offset) => safeEqual(normalized, hotp(secret, counter + offset)));
+  for (const offset of [1, 0, -1]) {
+    const candidate = counter + offset;
+    if (safeEqual(normalized, hotp(secret, candidate))) return candidate;
+  }
+  return null;
 }
 
 export function createTotpCode(secret: string, now = Date.now()) {
