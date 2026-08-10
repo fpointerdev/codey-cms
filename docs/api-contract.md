@@ -158,7 +158,9 @@ PATCH /api/v1/config/email
 POST  /api/v1/config/email/test
 ```
 
-The provider API key is write-only and encrypted at rest. Endpoint or credential changes require `manage:secrets` and a recent authenticated session; MFA-enabled accounts must have completed MFA recently. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Production generic endpoints must resolve only to public addresses and cannot redirect. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
+The email provider API key is write-only and encrypted at rest. Endpoint or credential changes require `manage:secrets` and a recent authenticated session; MFA-enabled accounts must have completed MFA recently. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Production generic endpoints connect only to the public addresses approved during validation and cannot redirect. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
+
+Stripe and PayPal configuration and connection tests also require `update:payments`, `manage:secrets`, and recent authentication. Manual-payment instructions require only `update:payments`. Connection-test results are applied only when the tested configuration revision is still current.
 
 Storefront customization is site-owned and public rendering reads the same validated settings:
 

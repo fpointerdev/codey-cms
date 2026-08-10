@@ -511,6 +511,25 @@ test("read-only dashboard views hide mutation controls", async () => {
   assert.match(page.innerHTML, /name="instructions"[^>]*disabled/);
   assert.doesNotMatch(page.innerHTML, /Save Stripe|Save PayPal|Save manual payment/);
 
+  state.user.permissions.push({ action: "update", subject: "payments" });
+  renderShopConfigurationPage({ modules: {} }, {}, {
+    providers: [
+      { provider: "STRIPE", mode: "SANDBOX", publishableKey: "pk_test", secretKeyConfigured: true },
+      { provider: "MANUAL", mode: "SANDBOX", instructions: "Pay by invoice" }
+    ],
+    webhookUrls: {}
+  });
+  assert.match(page.innerHTML, /name="publishableKey"[^>]*disabled/);
+  assert.doesNotMatch(page.innerHTML, /Save Stripe/);
+  assert.match(page.innerHTML, /Save manual payment/);
+
+  state.user.permissions.push({ action: "manage", subject: "secrets" });
+  renderShopConfigurationPage({ modules: {} }, {}, {
+    providers: [{ provider: "STRIPE", mode: "SANDBOX", publishableKey: "pk_test", secretKeyConfigured: true }],
+    webhookUrls: {}
+  });
+  assert.match(page.innerHTML, /Save Stripe/);
+
   state.user.permissions.push({ action: "read", subject: "orders" });
   renderShopConfigurationPage({ modules: {} }, {}, {}, "", {
     shippingZones: [{ id: "zone-1", name: "Europe", countries: ["DE", "FR"], rates: [] }],

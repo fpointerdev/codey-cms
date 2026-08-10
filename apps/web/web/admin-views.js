@@ -1380,6 +1380,7 @@ export function renderShopConfigurationPage(config, shopSettings = {}, paymentCo
   const canUpdateShop = hasPermission("update", "products");
   const canReadPayments = hasPermission("read", "payments");
   const canUpdatePayments = hasPermission("update", "payments");
+  const canManagePaymentSecrets = canUpdatePayments && hasPermission("manage", "secrets");
   const canReadOrders = hasPermission("read", "orders");
   const canUpdateOrders = hasPermission("update", "orders");
 
@@ -1414,8 +1415,8 @@ export function renderShopConfigurationPage(config, shopSettings = {}, paymentCo
             ${errorMessage ? `<p class="form-message error">Payment settings are not available: ${escapeHtml(errorMessage)}</p>` : ""}
             ${canReadPayments && !errorMessage
               ? `<div class="payment-provider-grid">
-                  ${renderStripeProvider(stripe, urls.stripe, canUpdatePayments)}
-                  ${renderPayPalProvider(paypal, urls.paypal, canUpdatePayments)}
+                  ${renderStripeProvider(stripe, urls.stripe, canManagePaymentSecrets)}
+                  ${renderPayPalProvider(paypal, urls.paypal, canManagePaymentSecrets)}
                   ${renderManualProvider(manual, canUpdatePayments)}
                 </div>`
               : !errorMessage ? '<p class="form-message error">You do not have permission to view payment settings.</p>' : ""}

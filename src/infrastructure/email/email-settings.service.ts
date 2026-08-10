@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { decryptSecretEnvelope, encryptSecretEnvelope } from "../../core/security/secret-envelope.js";
@@ -22,12 +23,15 @@ type StoredEmailSettings = {
   lastTestedAt?: string;
   lastTestSucceeded?: boolean;
   lastTestMessage?: string;
+  configurationRevision?: string;
   updatedAt?: string;
 };
 
 type EmailCredentials = {
   bearerToken?: string;
 };
+
+type EmailSettingsDatabase = PrismaClient | Prisma.TransactionClient;
 
 export type UpdateEmailSettingsInput = {
   enabled?: boolean;
@@ -45,6 +49,7 @@ export type ResolvedEmailSettings = EmailDeliveryConfig & {
   lastTestedAt?: string;
   lastTestSucceeded?: boolean;
   lastTestMessage?: string;
+  settingsRevision?: string;
 };
 
 function clean(value?: string | null) {
@@ -69,6 +74,9 @@ function asStoredSettings(value: Prisma.JsonValue | null | undefined): StoredEma
     lastTestedAt: typeof record.lastTestedAt === "string" ? record.lastTestedAt : undefined,
     lastTestSucceeded: typeof record.lastTestSucceeded === "boolean" ? record.lastTestSucceeded : undefined,
     lastTestMessage: typeof record.lastTestMessage === "string" ? record.lastTestMessage : undefined,
+    configurationRevision: typeof record.configurationRevision === "string"
+      ? record.configurationRevision
+      : undefined,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined
   };
 }
@@ -80,7 +88,15 @@ export class EmailSettingsService {
   ) {}
 
   async resolve(): Promise<ResolvedEmailSettings> {
-    const stored = await this.readStoredSettings();
+    return this.resolveFromDatabase(this.prisma);
+  }
+
+  private async resolveFromDatabase(
+    database: EmailSettingsDatabase,
+    siteId?: string
+  ): Promise<ResolvedEmailSettings> {
+    const record = await this.readStoredSettings(database, siteId);
+    const stored = record?.settings;
     if (!stored) {
       return {
         ...this.config.email,
@@ -109,13 +125,16 @@ export class EmailSettingsService {
       source: "dashboard",
       lastTestedAt: stored.lastTestedAt,
       lastTestSucceeded: stored.lastTestSucceeded,
-      lastTestMessage: stored.lastTestMessage
+      lastTestMessage: stored.lastTestMessage,
+      settingsRevision: stored.configurationRevision ?? record.revision.toISOString()
     };
   }
 
   async getAdminStatus() {
-    const settings = await this.resolve();
+    return this.adminStatus(await this.resolve());
+  }
 
+  private adminStatus(settings: ResolvedEmailSettings) {
     return {
       source: settings.source,
       enabled: settings.driver === "http",
@@ -137,7 +156,18 @@ export class EmailSettingsService {
       throw new AppError(422, "invalid_email_settings", "Cannot set and remove the bearer token together.");
     }
 
-    const current = await this.resolve();
+    return this.withSettingsLock(async (database, siteId) => {
+      const settings = await this.updateLocked(database, siteId, input);
+      return this.adminStatus(settings);
+    });
+  }
+
+  private async updateLocked(
+    database: EmailSettingsDatabase,
+    siteId: string,
+    input: UpdateEmailSettingsInput
+  ) {
+    const current = await this.resolveFromDatabase(database, siteId);
     const enabled = input.enabled ?? (current.driver === "http");
     const currentProvider = current.provider ?? "generic";
     const provider = input.provider ?? currentProvider;
@@ -209,6 +239,7 @@ export class EmailSettingsService {
         ? encryptSecretEnvelope(this.config.payments.credentialEncryptionKey, { bearerToken })
         : undefined,
       credentialsRequired,
+      configurationRevision: randomUUID(),
       updatedAt: new Date().toISOString(),
       ...(!changed ? {
         lastTestedAt: current.lastTestedAt,
@@ -217,8 +248,8 @@ export class EmailSettingsService {
       } : {})
     };
 
-    await this.writeStoredSettings(stored);
-    return this.getAdminStatus();
+    await this.writeStoredSettings(stored, database, siteId);
+    return this.resolveFromDatabase(database, siteId);
   }
 
   async requiresSensitiveAuthorization(input: UpdateEmailSettingsInput) {
@@ -239,8 +270,9 @@ export class EmailSettingsService {
       throw new AppError(409, "email_not_configured", "Save and enable transactional email before testing it.");
     }
 
+    let result;
     try {
-      const result = await createEmailClient(settings).send({
+      result = await createEmailClient(settings).send({
         to: recipient,
         from: settings.from!,
         subject: `${this.config.app.name} email test`,
@@ -251,51 +283,62 @@ export class EmailSettingsService {
           app: this.config.app.name
         }
       });
-      await this.recordTestResult(settings, true, "Test email accepted by the provider.");
-
-      return {
-        succeeded: true,
-        message: "Test email accepted by the provider.",
-        providerMessageId: safeProviderMessageId(result.providerMessageId, settings.httpBearerToken)
-      };
     } catch (error) {
       const message = safeProviderError(error, settings.httpBearerToken);
-      await this.recordTestResult(settings, false, message);
+      if (!await this.recordTestResult(settings, false, message)) {
+        throw staleEmailTestError();
+      }
       throw new AppError(502, "email_test_failed", "Email provider test failed.", { message });
     }
+
+    if (!await this.recordTestResult(settings, true, "Test email accepted by the provider.")) {
+      throw staleEmailTestError();
+    }
+    return {
+      succeeded: true,
+      message: "Test email accepted by the provider.",
+      providerMessageId: safeProviderMessageId(result.providerMessageId, settings.httpBearerToken)
+    };
   }
 
-  private async readStoredSettings() {
-    const site = await this.getOrCreateDefaultSite();
-    const setting = await this.prisma.moduleSetting.findUnique({
+  private async readStoredSettings(database: EmailSettingsDatabase, siteId?: string) {
+    const resolvedSiteId = siteId ?? (await this.getOrCreateDefaultSite(database)).id;
+    const setting = await database.moduleSetting.findUnique({
       where: {
         siteId_moduleId_key: {
-          siteId: site.id,
+          siteId: resolvedSiteId,
           moduleId: "config",
           key: "email"
         }
       },
-      select: { value: true }
+      select: { value: true, updatedAt: true }
     });
 
-    return asStoredSettings(setting?.value);
+    const settings = asStoredSettings(setting?.value);
+    return settings && setting
+      ? { settings, revision: setting.updatedAt }
+      : null;
   }
 
-  private async writeStoredSettings(settings: StoredEmailSettings) {
-    const site = await this.getOrCreateDefaultSite();
+  private async writeStoredSettings(
+    settings: StoredEmailSettings,
+    database: EmailSettingsDatabase = this.prisma,
+    siteId?: string
+  ) {
+    const resolvedSiteId = siteId ?? (await this.getOrCreateDefaultSite(database)).id;
     const value = settings as unknown as Prisma.InputJsonValue;
 
-    await this.prisma.moduleSetting.upsert({
+    await database.moduleSetting.upsert({
       where: {
         siteId_moduleId_key: {
-          siteId: site.id,
+          siteId: resolvedSiteId,
           moduleId: "config",
           key: "email"
         }
       },
       update: { value },
       create: {
-        siteId: site.id,
+        siteId: resolvedSiteId,
         moduleId: "config",
         key: "email",
         value
@@ -304,20 +347,27 @@ export class EmailSettingsService {
   }
 
   private async recordTestResult(settings: ResolvedEmailSettings, succeeded: boolean, message: string) {
-    await this.writeStoredSettings({
-      enabled: settings.driver === "http",
-      provider: settings.provider,
-      recoveryEnabled: settings.recoveryEnabled,
-      from: settings.from,
-      httpEndpoint: settings.provider === "generic" ? settings.httpEndpoint : undefined,
-      encryptedCredentials: settings.httpBearerToken
-        ? encryptSecretEnvelope(this.config.payments.credentialEncryptionKey, { bearerToken: settings.httpBearerToken })
-        : undefined,
-      credentialsRequired: settings.credentialsRequired === true,
-      lastTestedAt: new Date().toISOString(),
-      lastTestSucceeded: succeeded,
-      lastTestMessage: message,
-      updatedAt: new Date().toISOString()
+    return this.withSettingsLock(async (database, siteId) => {
+      const current = await this.resolveFromDatabase(database, siteId);
+      if (!sameSettingsRevision(current.settingsRevision, settings.settingsRevision)) return false;
+
+      await this.writeStoredSettings({
+        enabled: current.driver === "http",
+        provider: current.provider,
+        recoveryEnabled: current.recoveryEnabled,
+        from: current.from,
+        httpEndpoint: current.provider === "generic" ? current.httpEndpoint : undefined,
+        encryptedCredentials: current.httpBearerToken
+          ? encryptSecretEnvelope(this.config.payments.credentialEncryptionKey, { bearerToken: current.httpBearerToken })
+          : undefined,
+        credentialsRequired: current.credentialsRequired === true,
+        lastTestedAt: new Date().toISOString(),
+        lastTestSucceeded: succeeded,
+        lastTestMessage: message,
+        configurationRevision: current.settingsRevision,
+        updatedAt: new Date().toISOString()
+      }, database, siteId);
+      return true;
     });
   }
 
@@ -353,8 +403,8 @@ export class EmailSettingsService {
     }
   }
 
-  private getOrCreateDefaultSite() {
-    return this.prisma.site.upsert({
+  private getOrCreateDefaultSite(database: EmailSettingsDatabase = this.prisma) {
+    return database.site.upsert({
       where: { slug: "default" },
       update: {},
       create: {
@@ -365,6 +415,32 @@ export class EmailSettingsService {
       select: { id: true }
     });
   }
+
+  private async withSettingsLock<T>(
+    operation: (database: EmailSettingsDatabase, siteId: string) => Promise<T>
+  ) {
+    const site = await this.getOrCreateDefaultSite();
+    if (!("$transaction" in this.prisma)) return operation(this.prisma, site.id);
+
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`email-settings:${site.id}`}, 0))::text AS "lock"`
+      );
+      return operation(transaction, site.id);
+    });
+  }
+}
+
+function sameSettingsRevision(current?: string, tested?: string) {
+  return current === tested;
+}
+
+function staleEmailTestError() {
+  return new AppError(
+    409,
+    "email_settings_test_stale",
+    "Email settings changed while the connection test was running. Test the current settings again."
+  );
 }
 
 function escapeHtml(value: string) {

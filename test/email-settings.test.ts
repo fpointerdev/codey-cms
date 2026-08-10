@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AppError } from "../src/core/errors/app-error.js";
 import { EmailSettingsService } from "../src/infrastructure/email/email-settings.service.js";
 import {
   assertSafeEmailEndpoint,
+  createPinnedEmailLookup,
   isPublicEmailAddress,
   parseEmailEndpoint
 } from "../src/infrastructure/email/http-email.js";
@@ -11,15 +13,19 @@ import { emailSettingsSchema } from "../src/modules/config/config.schemas.js";
 
 function emailSettingsHarness(environmentEmail: Record<string, unknown> = {}, isProduction = false) {
   let storedValue: unknown = null;
+  let revision = 0;
+  let updatedAt: Date | undefined;
   const prisma = {
     site: {
       upsert: async () => ({ id: "site-1" })
     },
     moduleSetting: {
-      findUnique: async () => storedValue ? { value: storedValue } : null,
+      findUnique: async () => storedValue ? { value: storedValue, updatedAt } : null,
       upsert: async (input: { update: { value: unknown } }) => {
         storedValue = input.update.value;
-        return { value: storedValue };
+        revision += 1;
+        updatedAt = new Date(revision);
+        return { value: storedValue, updatedAt };
       }
     }
   };
@@ -90,6 +96,8 @@ test("production email endpoints resolve only to public addresses", async () => 
   assert.equal(isPublicEmailAddress("::1"), false);
   assert.equal(isPublicEmailAddress("10.20.30.40"), false);
   assert.equal(isPublicEmailAddress("169.254.169.254"), false);
+  assert.equal(isPublicEmailAddress("192.31.196.1"), false);
+  assert.equal(isPublicEmailAddress("2001:10::1"), false);
   assert.equal(isPublicEmailAddress("2606:4700:4700::1111"), true);
 
   await assert.rejects(
@@ -115,6 +123,31 @@ test("production email endpoints resolve only to public addresses", async () => 
     ]
   });
   assert.equal(endpoint.toString(), "https://mailer.example.com/send");
+});
+
+test("production email connections use only the addresses approved during validation", async () => {
+  const lookup = createPinnedEmailLookup([
+    { address: "93.184.216.34", family: 4 },
+    { address: "2606:4700:4700::1111", family: 6 }
+  ]);
+
+  const ipv4 = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+    lookup("changed.example.com", { family: 4 }, (error, address, family) => {
+      if (error) return reject(error);
+      if (typeof address !== "string" || !family) return reject(new Error("Expected one pinned address."));
+      resolve({ address, family });
+    });
+  });
+  assert.deepEqual(ipv4, { address: "93.184.216.34", family: 4 });
+
+  const ipv6 = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+    lookup("changed.example.com", { family: 6 }, (error, address) => {
+      if (error) return reject(error);
+      if (typeof address !== "string") return reject(new Error("Expected one pinned address."));
+      resolve({ address, family: 6 });
+    });
+  });
+  assert.deepEqual(ipv6, { address: "2606:4700:4700::1111", family: 6 });
 });
 
 test("secret changes require recent authentication at the service boundary", async () => {
@@ -242,6 +275,53 @@ test("changing a generic endpoint invalidates its bound credential", async () =>
     assert.equal(requestUrl, "https://mailer-b.example.com/send");
     assert.equal(authorization, "Bearer endpoint-b-token");
     assert.notEqual(authorization, "Bearer endpoint-a-token");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an in-flight email test cannot restore replaced settings or credentials", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "generic",
+    from: "notifications@example.com",
+    httpEndpoint: "https://mailer-a.example.com/send",
+    bearerToken: "endpoint-a-token"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let releaseRequest!: () => void;
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  globalThis.fetch = async () => {
+    markStarted();
+    await release;
+    return new Response(JSON.stringify({ id: "message-a" }), { status: 200 });
+  };
+
+  try {
+    const testRequest = harness.service.test("owner@example.com");
+    await started;
+    await harness.service.update({
+      httpEndpoint: "https://mailer-b.example.com/send",
+      bearerToken: "endpoint-b-token"
+    });
+    releaseRequest();
+
+    await assert.rejects(
+      testRequest,
+      (error) => error instanceof AppError && error.code === "email_settings_test_stale"
+    );
+    const current = await harness.service.resolve();
+    assert.equal(current.httpEndpoint, "https://mailer-b.example.com/send");
+    assert.equal(current.httpBearerToken, "endpoint-b-token");
+    assert.equal(current.lastTestedAt, undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }

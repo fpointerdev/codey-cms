@@ -12,6 +12,10 @@ import { createTotpCode } from "../../src/modules/auth/mfa.js";
 import { CommerceAbuseService } from "../../src/modules/orders/commerce-abuse.service.js";
 import { deliverQueuedOrderEmails } from "../../src/modules/orders/order-email.service.js";
 import { hashOrderLookupToken } from "../../src/modules/orders/order-lookup.js";
+import {
+  paymentProviderConfigRevision,
+  PaymentProviderConfigService
+} from "../../src/modules/payments/payment-provider-config.service.js";
 import { runtimeVersion } from "../../src/runtime/release.js";
 
 type ApiEnvelope = {
@@ -1040,6 +1044,112 @@ test("pending checkout limits normalize email and serialize concurrent clients",
     );
   } finally {
     await prisma.order.deleteMany({ where: { orderNumber: `LIMIT-${runId}` } });
+    await prisma.$disconnect();
+  }
+});
+
+test("an email connection test cannot overwrite settings changed while it runs", async () => {
+  let releaseRequest!: () => void;
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  const emailServer = createHttpServer(async (_request, response) => {
+    markStarted();
+    await release;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ messageId: "stale-email-test" }));
+  });
+  await new Promise<void>((resolve) => emailServer.listen(0, "127.0.0.1", resolve));
+  const emailAddress = emailServer.address() as AddressInfo;
+  const site = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const settingKey = {
+    siteId_moduleId_key: { siteId: site.id, moduleId: "config", key: "email" }
+  };
+  const previousSetting = await prisma.moduleSetting.findUnique({
+    where: settingKey,
+    select: { value: true }
+  });
+  const service = new EmailSettingsService(prisma, config);
+
+  try {
+    await service.update({
+      enabled: true,
+      provider: "generic",
+      from: "orders@example.com",
+      httpEndpoint: `http://127.0.0.1:${emailAddress.port}/first`,
+      bearerToken: "first-endpoint-token"
+    });
+    const testRequest = service.test("owner@example.com");
+    await started;
+    await service.update({
+      httpEndpoint: `http://127.0.0.1:${emailAddress.port}/second`,
+      bearerToken: "second-endpoint-token"
+    });
+    releaseRequest();
+
+    await assert.rejects(
+      testRequest,
+      (error) => error instanceof AppError && error.code === "email_settings_test_stale"
+    );
+    const current = await service.resolve();
+    assert.equal(current.httpEndpoint, `http://127.0.0.1:${emailAddress.port}/second`);
+    assert.equal(current.httpBearerToken, "second-endpoint-token");
+    assert.equal(current.lastTestedAt, undefined);
+  } finally {
+    releaseRequest();
+    if (previousSetting) {
+      await prisma.moduleSetting.update({ where: settingKey, data: { value: previousSetting.value } });
+    } else {
+      await prisma.moduleSetting.delete({ where: settingKey }).catch(() => undefined);
+    }
+    await new Promise<void>((resolve, reject) => {
+      emailServer.close((error) => error ? reject(error) : resolve());
+    });
+    await prisma.$disconnect();
+  }
+});
+
+test("concurrent payment updates preserve each credential change and reject stale tests", async () => {
+  const site = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const providerKey = {
+    siteId_provider: { siteId: site.id, provider: "STRIPE" as const }
+  };
+  const previousProvider = await prisma.paymentProviderConfig.findUnique({ where: providerKey });
+  const service = new PaymentProviderConfigService({ prisma, config, logger });
+
+  try {
+    await service.updateConfig("STRIPE", {
+      mode: "SANDBOX",
+      publishableKey: "pk_test_initial",
+      secretKey: "sk_test_initial",
+      webhookSecret: "whsec_initial"
+    });
+    await Promise.all([
+      service.updateConfig("STRIPE", { publishableKey: "pk_test_concurrent" }),
+      service.updateConfig("STRIPE", { secretKey: "sk_test_concurrent" })
+    ]);
+
+    const tested = await service.resolveConfig("STRIPE");
+    assert.equal(tested.config.publishableKey, "pk_test_concurrent");
+    assert.equal(tested.credentials.secretKey, "sk_test_concurrent");
+    const testedRevision = paymentProviderConfigRevision(tested.config);
+
+    await service.updateConfig("STRIPE", { webhookSecret: "whsec_replaced" });
+    assert.equal(await service.recordTestResult("STRIPE", testedRevision, true, "Connected"), false);
+    const current = await service.resolveConfig("STRIPE");
+    assert.equal(current.credentials.webhookSecret, "whsec_replaced");
+    assert.equal(current.config.lastTestSucceeded, null);
+  } finally {
+    await prisma.paymentProviderConfig.deleteMany({
+      where: { siteId: site.id, provider: "STRIPE" }
+    });
+    if (previousProvider) {
+      await prisma.paymentProviderConfig.create({ data: previousProvider });
+    }
     await prisma.$disconnect();
   }
 });

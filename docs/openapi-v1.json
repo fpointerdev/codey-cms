@@ -7806,7 +7806,7 @@
         ],
         "operationId": "payments_get_payments",
         "summary": "GET /payments",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:563",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:605",
         "x-codey-permission": {
           "action": "read",
           "subject": "payments"
@@ -7855,7 +7855,7 @@
         ],
         "operationId": "payments_post_payments_intent",
         "summary": "POST /payments/intent",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:575",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:617",
         "x-codey-validation": {
           "body": "createPaymentIntentSchema"
         },
@@ -7905,7 +7905,7 @@
         ],
         "operationId": "payments_post_payments_manual_paymentId_action",
         "summary": "POST /payments/manual/{paymentId}/action",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:763",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:805",
         "x-codey-validation": {
           "params": "manualPaymentParamsSchema",
           "body": "manualPaymentActionSchema"
@@ -7981,7 +7981,7 @@
         ],
         "operationId": "payments_post_payments_paypal_capture",
         "summary": "POST /payments/paypal/capture",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:667",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:709",
         "x-codey-validation": {
           "body": "capturePayPalOrderSchema"
         },
@@ -8031,7 +8031,7 @@
         ],
         "operationId": "payments_get_payments_providers",
         "summary": "GET /payments/providers",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:477",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:503",
         "x-codey-permission": {
           "action": "read",
           "subject": "payments"
@@ -8080,7 +8080,7 @@
         ],
         "operationId": "payments_put_payments_providers_provider",
         "summary": "PUT /payments/providers/{provider}",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:485",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:511",
         "x-codey-validation": {
           "params": "paymentProviderParamsSchema",
           "body": "updatePaymentProviderConfigSchema"
@@ -8156,7 +8156,7 @@
         ],
         "operationId": "payments_post_payments_providers_provider_test",
         "summary": "POST /payments/providers/{provider}/test",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:514",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:541",
         "x-codey-validation": {
           "params": "paymentProviderParamsSchema"
         },
@@ -8219,7 +8219,7 @@
         ],
         "operationId": "payments_get_payments_providers_public",
         "summary": "GET /payments/providers/public",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:470",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:496",
         "security": [],
         "responses": {
           "200": {
@@ -8254,7 +8254,7 @@
         ],
         "operationId": "payments_post_payments_webhooks_paypal",
         "summary": "POST /payments/webhooks/paypal",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:807",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:849",
         "security": [],
         "responses": {
           "200": {
@@ -8289,7 +8289,7 @@
         ],
         "operationId": "payments_post_payments_webhooks_stripe",
         "summary": "POST /payments/webhooks/stripe",
-        "x-codey-source": "src/modules/payments/payments.routes.ts:787",
+        "x-codey-source": "src/modules/payments/payments.routes.ts:829",
         "security": [],
         "responses": {
           "200": {

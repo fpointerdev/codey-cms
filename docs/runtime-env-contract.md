@@ -97,7 +97,7 @@ Before launch, verify upload, responsive variant delivery, signed download, and 
 
 Production runtimes need `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned credentials and MFA secrets at rest. It also keys recovery codes and persisted login-throttle identifiers. This is stable deployment-owned infrastructure material, not a provider credential.
 
-Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server.
+Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server. Online payment credentials and connection tests require secret-management permission and recent authentication; manual-payment instructions remain available to users with ordinary payment-update permission.
 
 The email form supports Resend and Postmark presets plus a generic HTTP provider. Provider credentials are write-only, stored in an encrypted envelope, and can be tested from the dashboard. Owners can enable account recovery after a provider is configured without editing runtime environment files. Generic endpoints receive a JSON message containing `to`, `from`, `subject`, `text`, optional `html`, and `metadata`. Email endpoints must use HTTP or HTTPS, and production endpoints must use HTTPS.
 

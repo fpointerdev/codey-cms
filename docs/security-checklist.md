@@ -37,6 +37,7 @@ Use this checklist before a generated site is published.
 - Stock is reserved in the order transaction and unpaid reservations expire after 30 minutes.
 - Cancellation, abandonment, expiry, and failed payment release stock and coupon usage atomically.
 - Provider credentials are configured through the authenticated dashboard and never returned by read APIs.
+- Stripe and PayPal credential changes and connection tests require `manage:secrets` and recent authentication.
 - Stripe and PayPal remain disabled until required credentials are saved and the connection test succeeds.
 - Stripe webhook signatures use the raw request body and enforce replay tolerance.
 - PayPal webhook signatures are verified with PayPal using the configured webhook ID.

@@ -7,7 +7,12 @@ import { AppError } from "../../core/errors/app-error.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
 import { validateRequest } from "../../core/http/validation.middleware.js";
-import { requirePermission } from "../auth/auth.middleware.js";
+import {
+  assertRecentSensitiveAuthentication,
+  hasPermission,
+  requirePermission
+} from "../auth/auth.middleware.js";
+import type { AuthenticatedUser } from "../auth/auth.types.js";
 import { createSharedCommerceLimiter } from "../orders/commerce-rate-limit.middleware.js";
 import { releaseExpiredOrderReservations } from "../orders/checkout.service.js";
 import {
@@ -22,6 +27,7 @@ import {
   type NormalizedPaymentEvent
 } from "./payment-event.service.js";
 import {
+  paymentProviderConfigRevision,
   PaymentProviderConfigService,
   type ResolvedPaymentProviderConfig
 } from "./payment-provider-config.service.js";
@@ -56,6 +62,26 @@ import {
 } from "./payments.schemas.js";
 
 export { statusFromWebhook } from "./payment-event.service.js";
+
+export function assertSensitivePaymentProviderAccess(
+  provider: PaymentProvider,
+  user: AuthenticatedUser | undefined,
+  now = Date.now()
+) {
+  if (provider === "MANUAL") return;
+  if (!hasPermission(user, "manage", "secrets")) {
+    throw new AppError(403, "forbidden", "You do not have permission to change payment credentials.");
+  }
+  assertRecentSensitiveAuthentication(user, now);
+}
+
+function stalePaymentProviderTestError() {
+  return new AppError(
+    409,
+    "payment_provider_test_stale",
+    "Payment settings changed while the connection test was running. Test the current settings again."
+  );
+}
 
 function createPaymentLimiter(context: ModuleContext) {
   return rateLimit({
@@ -491,6 +517,7 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
     }),
     asyncHandler(async (req, res) => {
       const provider = req.params.provider as PaymentProvider;
+      assertSensitivePaymentProviderAccess(provider, req.user);
       const config = await providerService.updateConfig(provider, req.body);
       await providerService.writeAuditLog({
         actorUserId: req.user?.id,
@@ -518,13 +545,15 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
     validateRequest({ params: paymentProviderParamsSchema }),
     asyncHandler(async (req, res) => {
       const provider = req.params.provider as PaymentProvider;
+      assertSensitivePaymentProviderAccess(provider, req.user);
       if (provider === "MANUAL") {
         throw new AppError(422, "manual_provider_test_not_required", "Manual payments do not require a connection test.");
       }
 
       const resolved = await providerService.resolveConfig(provider);
+      let message: string;
       try {
-        const message = provider === "STRIPE"
+        message = provider === "STRIPE"
           ? await testStripeConnection(resolved.credentials.secretKey!)
           : await testPayPalConnection({
               mode: resolved.config.mode,
@@ -532,22 +561,15 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
               clientSecret: resolved.credentials.clientSecret!,
               webhookId: resolved.config.webhookId!
             });
-        await providerService.recordTestResult(provider, true, message);
-        await providerService.writeAuditLog({
-          actorUserId: req.user?.id,
-          action: "payment_provider.test_succeeded",
-          provider,
-          ipAddress: req.ip,
-          userAgent: req.get("user-agent")
-        });
-
-        return sendSuccess(res, {
-          message,
-          ...await adminProviderResponse(providerService, context, req)
-        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Provider connection test failed.";
-        await providerService.recordTestResult(provider, false, message);
+        const recorded = await providerService.recordTestResult(
+          provider,
+          paymentProviderConfigRevision(resolved.config),
+          false,
+          message
+        );
+        if (!recorded) throw stalePaymentProviderTestError();
         await providerService.writeAuditLog({
           actorUserId: req.user?.id,
           action: "payment_provider.test_failed",
@@ -557,6 +579,26 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
         });
         throw error;
       }
+
+      const recorded = await providerService.recordTestResult(
+        provider,
+        paymentProviderConfigRevision(resolved.config),
+        true,
+        message
+      );
+      if (!recorded) throw stalePaymentProviderTestError();
+      await providerService.writeAuditLog({
+        actorUserId: req.user?.id,
+        action: "payment_provider.test_succeeded",
+        provider,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent")
+      });
+
+      return sendSuccess(res, {
+        message,
+        ...await adminProviderResponse(providerService, context, req)
+      });
     })
   );
 

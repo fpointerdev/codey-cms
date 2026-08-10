@@ -1,5 +1,7 @@
 import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP, type LookupFunction } from "node:net";
 import type { AppConfig } from "../../config/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import type {
@@ -17,6 +19,8 @@ const providerEndpoints: Record<Exclude<EmailProvider, "generic">, string> = {
 
 type AddressRecord = { address: string; family: number };
 type AddressLookup = (hostname: string) => Promise<AddressRecord[]>;
+
+const maximumProviderResponseBytes = 64 * 1024;
 
 function endpointHostname(endpoint: URL) {
   return endpoint.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
@@ -62,6 +66,10 @@ function isPublicIpv4(address: string) {
   if (first === 192 && second === 168) return false;
   if (first === 192 && second === 0 && third === 0) return false;
   if (first === 192 && second === 0 && third === 2) return false;
+  if (first === 192 && second === 31 && third === 196) return false;
+  if (first === 192 && second === 52 && third === 193) return false;
+  if (first === 192 && second === 88 && third === 99) return false;
+  if (first === 192 && second === 175 && third === 48) return false;
   if (first === 198 && (second === 18 || second === 19)) return false;
   if (first === 198 && second === 51 && third === 100) return false;
   if (first === 203 && second === 0 && third === 113) return false;
@@ -104,6 +112,8 @@ function isPublicIpv6(address: string) {
     if (bytes[2] === 0x0d && bytes[3] === 0xb8) return false;
     if (bytes[2] === 0x00 && bytes[3] === 0x00) return false;
     if (bytes[2] === 0x00 && bytes[3] === 0x02) return false;
+    if (bytes[2] === 0x00 && (bytes[3] & 0xf0) === 0x10) return false;
+    if (bytes[2] === 0x00 && (bytes[3] & 0xf0) === 0x20) return false;
   }
   if (bytes[0] === 0x20 && bytes[1] === 0x02) return false;
   return true;
@@ -120,7 +130,34 @@ async function defaultAddressLookup(hostname: string) {
   return dnsLookup(hostname, { all: true, verbatim: true });
 }
 
-export async function assertSafeEmailEndpoint(
+export function createPinnedEmailLookup(addresses: AddressRecord[]): LookupFunction {
+  const approved = [...new Map(addresses.map(({ address }) => {
+    const family = isIP(address);
+    return [address, { address, family }];
+  })).values()].filter((record) => record.family === 4 || record.family === 6);
+
+  return (_hostname, options, callback) => {
+    const family = options.family;
+    const candidates = family === 4 || family === 6
+      ? approved.filter((record) => record.family === family)
+      : approved;
+    if (candidates.length === 0) {
+      const error = new Error("No approved address is available for the requested family.") as NodeJS.ErrnoException;
+      error.code = "ENOTFOUND";
+      callback(error, "", 0);
+      return;
+    }
+
+    if (options.all) {
+      callback(null, candidates);
+      return;
+    }
+
+    callback(null, candidates[0].address, candidates[0].family);
+  };
+}
+
+export async function resolveSafeEmailEndpoint(
   value: string,
   options: { requireHttps?: boolean; lookup?: AddressLookup } = {}
 ) {
@@ -140,10 +177,22 @@ export async function assertSafeEmailEndpoint(
     : await (options.lookup ?? defaultAddressLookup)(hostname).catch(() => {
         throw new AppError(422, "email_endpoint_unreachable", "Email endpoint hostname could not be resolved.");
       });
-  if (!addresses.length || addresses.some(({ address }) => !isPublicEmailAddress(address))) {
+  const normalizedAddresses = addresses.map(({ address }) => ({ address, family: isIP(address) }));
+  if (
+    !normalizedAddresses.length ||
+    normalizedAddresses.some(({ address, family }) => !family || !isPublicEmailAddress(address))
+  ) {
     throw new AppError(422, "email_endpoint_private", "Email endpoint must resolve only to public addresses.");
   }
-  return endpoint;
+
+  return { endpoint, addresses: normalizedAddresses };
+}
+
+export async function assertSafeEmailEndpoint(
+  value: string,
+  options: { requireHttps?: boolean; lookup?: AddressLookup } = {}
+) {
+  return (await resolveSafeEmailEndpoint(value, options)).endpoint;
 }
 
 function provider(config: EmailDeliveryConfig) {
@@ -196,7 +245,15 @@ async function sendHttpEmail(
     const selectedProvider = provider(config);
     const endpoint = emailProviderEndpoint(config)!;
     if (config.protectInternalEndpoints) {
-      await assertSafeEmailEndpoint(endpoint, { requireHttps: true });
+      const safeEndpoint = await resolveSafeEmailEndpoint(endpoint, { requireHttps: true });
+      return sendPinnedHttpEmail(
+        safeEndpoint.endpoint,
+        safeEndpoint.addresses,
+        selectedProvider,
+        config.httpBearerToken,
+        message,
+        controller.signal
+      );
     }
     const response = await fetch(endpoint, {
       method: "POST",
@@ -222,6 +279,83 @@ async function sendHttpEmail(
     };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function sendPinnedHttpEmail(
+  endpoint: URL,
+  addresses: AddressRecord[],
+  selectedProvider: EmailProvider,
+  credential: string | undefined,
+  message: EmailMessage,
+  signal: AbortSignal
+): Promise<EmailDeliveryResult> {
+  const body = JSON.stringify(requestBody(selectedProvider, message));
+  const response = await requestPinnedEndpoint(endpoint, addresses, {
+    body,
+    headers: requestHeaders(selectedProvider, credential),
+    signal
+  });
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`Email provider returned ${response.statusCode}.`);
+  }
+
+  const data = parseProviderResponse(response.body);
+  return {
+    providerMessageId: data.providerMessageId ?? data.messageId ?? data.id ?? data.MessageID
+  };
+}
+
+function requestPinnedEndpoint(
+  endpoint: URL,
+  addresses: AddressRecord[],
+  input: { body: string; headers: Record<string, string>; signal: AbortSignal }
+) {
+  return new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+    const request = (endpoint.protocol === "https:" ? httpsRequest : httpRequest)(endpoint, {
+      method: "POST",
+      headers: {
+        ...input.headers,
+        "content-length": Buffer.byteLength(input.body).toString()
+      },
+      lookup: createPinnedEmailLookup(addresses),
+      signal: input.signal
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+
+      response.on("data", (chunk: Buffer) => {
+        size += chunk.byteLength;
+        if (size > maximumProviderResponseBytes) {
+          response.destroy(new Error("Email provider response exceeded the configured limit."));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("error", reject);
+      response.on("end", () => {
+        resolve({
+          statusCode: response.statusCode ?? 502,
+          body: Buffer.concat(chunks).toString("utf8")
+        });
+      });
+    });
+
+    request.on("error", reject);
+    request.end(input.body);
+  });
+}
+
+function parseProviderResponse(body: string) {
+  try {
+    return JSON.parse(body || "{}") as {
+      id?: string;
+      messageId?: string;
+      providerMessageId?: string;
+      MessageID?: string;
+    };
+  } catch {
+    return {};
   }
 }
 
