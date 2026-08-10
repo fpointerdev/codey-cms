@@ -16,6 +16,7 @@ test("encrypted backup restores database records and local media", { timeout: 12
   const restoredMediaDirectory = path.join(directory, "restored-uploads");
   const mediaFile = path.join(mediaDirectory, "recovery-marker.txt");
   const slug = `recovery-marker-${Date.now()}`;
+  const unrelatedSchema = `recovery_unrelated_${Date.now()}`;
   const targetDatabaseName = `codey_recovery_${Date.now()}`;
   const sourceDatabaseUrl = process.env.TEST_DATABASE_URL || "";
   const targetDatabaseUrl = databaseUrlFor(sourceDatabaseUrl, targetDatabaseName);
@@ -24,6 +25,13 @@ test("encrypted backup restores database records and local media", { timeout: 12
 
   try {
     await createDatabase(sourceDatabaseUrl, targetDatabaseName);
+    await runCommand("psql", [
+      databaseCliUrl(sourceDatabaseUrl),
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      `CREATE SCHEMA "${unrelatedSchema}"; CREATE TABLE "${unrelatedSchema}"."PrivateRecord" ("id" text PRIMARY KEY)`
+    ]);
     await mkdir(mediaDirectory, { recursive: true });
     await writeFile(mediaFile, "original media\n", "utf8");
     await prisma.cmsPage.create({
@@ -50,6 +58,10 @@ test("encrypted backup restores database records and local media", { timeout: 12
     assert.equal(latest.encrypted, true);
     assert.equal(latest.mirrored, true);
     assert.equal(mirrored.backupId, latest.backupId);
+    const backupManifest = JSON.parse(
+      await readFile(path.join(backupDirectory, latest.manifestFile), "utf8")
+    );
+    assert.equal(backupManifest.database.schema, "public");
 
     const manifestPath = path.join(mirrorDirectory, latest.manifestFile);
     await runScript("scripts/restore-runtime.mjs", [manifestPath], {
@@ -66,11 +78,89 @@ test("encrypted backup restores database records and local media", { timeout: 12
       where: { locale_slug: { locale: "en", slug } }
     });
     assert.equal(restoredPage?.title, "Recovery marker");
+    const [unrelatedNamespace] = await restoredPrisma.$queryRaw<Array<{ schemaName: string | null }>>`
+      SELECT to_regnamespace(${unrelatedSchema})::text AS "schemaName"
+    `;
+    assert.equal(unrelatedNamespace?.schemaName, null);
     assert.equal(await readFile(path.join(restoredMediaDirectory, "recovery-marker.txt"), "utf8"), "original media\n");
     assert.deepEqual(
       (await readdir(restoredMediaDirectory)).filter((name) => name.startsWith(".codey-")),
       []
     );
+
+    await runCommand("psql", [
+      databaseCliUrl(targetDatabaseUrl),
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      'CREATE TABLE "FutureMigrationRecord" ("id" text PRIMARY KEY, "pageId" text NOT NULL REFERENCES "CmsPage"("id"))'
+    ]);
+    await restoredPrisma.cmsPage.update({
+      where: { locale_slug: { locale: "en", slug } },
+      data: { title: "Changed after backup" }
+    });
+    await restoredPrisma.$disconnect();
+    restoredPrisma = undefined;
+
+    await runScript("scripts/restore-runtime.mjs", [manifestPath], {
+      ...environment,
+      DATABASE_URL: targetDatabaseUrl,
+      STORAGE_LOCAL_DIR: restoredMediaDirectory,
+      ALLOW_PRODUCTION_RESTORE: "true",
+      RESTORE_MEDIA: "false",
+      RESTORE_RECREATE_SCHEMA: "true"
+    });
+
+    restoredPrisma = new PrismaClient({ datasourceUrl: targetDatabaseUrl });
+    const rollbackPage = await restoredPrisma.cmsPage.findUnique({
+      where: { locale_slug: { locale: "en", slug } }
+    });
+    const [futureTable] = await restoredPrisma.$queryRaw<Array<{ tableName: string | null }>>`
+      SELECT to_regclass('public."FutureMigrationRecord"')::text AS "tableName"
+    `;
+    assert.equal(rollbackPage?.title, "Recovery marker");
+    assert.equal(futureTable?.tableName, null);
+
+    await runCommand("psql", [
+      databaseCliUrl(targetDatabaseUrl),
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      `CREATE TABLE "FutureMigrationRecord" ("id" text PRIMARY KEY);
+       CREATE SCHEMA "rollback_guard";
+       CREATE FUNCTION "rollback_guard"."reject_table_restore"() RETURNS event_trigger
+       LANGUAGE plpgsql AS $guard$ BEGIN RAISE EXCEPTION 'forced restore failure'; END $guard$;
+       CREATE EVENT TRIGGER "reject_table_restore" ON ddl_command_start
+       WHEN TAG IN ('CREATE TABLE') EXECUTE FUNCTION "rollback_guard"."reject_table_restore"()`
+    ]);
+    await restoredPrisma.cmsPage.update({
+      where: { locale_slug: { locale: "en", slug } },
+      data: { title: "Preserved after failed restore" }
+    });
+    await restoredPrisma.$disconnect();
+    restoredPrisma = undefined;
+
+    await assert.rejects(
+      runScript("scripts/restore-runtime.mjs", [manifestPath], {
+        ...environment,
+        DATABASE_URL: targetDatabaseUrl,
+        STORAGE_LOCAL_DIR: restoredMediaDirectory,
+        ALLOW_PRODUCTION_RESTORE: "true",
+        RESTORE_MEDIA: "false",
+        RESTORE_RECREATE_SCHEMA: "true"
+      }),
+      /forced restore failure/i
+    );
+
+    restoredPrisma = new PrismaClient({ datasourceUrl: targetDatabaseUrl });
+    const preservedPage = await restoredPrisma.cmsPage.findUnique({
+      where: { locale_slug: { locale: "en", slug } }
+    });
+    const [preservedFutureTable] = await restoredPrisma.$queryRaw<Array<{ tableName: string | null }>>`
+      SELECT to_regclass('public."FutureMigrationRecord"')::text AS "tableName"
+    `;
+    assert.equal(preservedPage?.title, "Preserved after failed restore");
+    assert.equal(preservedFutureTable?.tableName, "\"FutureMigrationRecord\"");
     await restoredPrisma.$disconnect();
     restoredPrisma = undefined;
 
@@ -79,6 +169,13 @@ test("encrypted backup restores database records and local media", { timeout: 12
   } finally {
     await restoredPrisma?.$disconnect().catch(() => undefined);
     await prisma.$disconnect().catch(() => undefined);
+    await runCommand("psql", [
+      databaseCliUrl(sourceDatabaseUrl),
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      `DROP SCHEMA IF EXISTS "${unrelatedSchema}" CASCADE`
+    ]).catch(() => undefined);
     await dropDatabase(sourceDatabaseUrl, targetDatabaseName).catch(() => undefined);
     await rm(directory, { recursive: true, force: true });
   }
@@ -92,6 +189,12 @@ function databaseUrlFor(sourceUrl: string, databaseName: string) {
 
 function maintenanceDatabaseUrl(sourceUrl: string) {
   const url = new URL(databaseUrlFor(sourceUrl, "postgres"));
+  url.searchParams.delete("schema");
+  return url.toString();
+}
+
+function databaseCliUrl(sourceUrl: string) {
+  const url = new URL(sourceUrl);
   url.searchParams.delete("schema");
   return url.toString();
 }

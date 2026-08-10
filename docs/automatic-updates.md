@@ -18,7 +18,7 @@ The self-host package checks the signed `stable` feed on a schedule. Users do no
 12. Require the readiness endpoint to pass.
 13. Mark the exact runtime version active and retain the previous release.
 
-If verification or preparation fails after shutdown, the supervisor restarts the previous runtime. If the new runtime was started but does not become ready, the supervisor restores the pre-update database backup, switches to the previous release, verifies readiness, and records `ROLLED_BACK`. A failed recovery is recorded as `FAILED` and requires operator attention.
+If verification or preparation fails after shutdown, the supervisor restarts the previous runtime. If migrations run but the new runtime cannot become ready, the signed candidate first transactionally restores the exact pre-update backup associated with the applying update. The supervisor then switches to the previous release, verifies readiness, and records `ROLLED_BACK`. This keeps rollback compatible with supervisors from the declared `requirements.automaticUpdatesFrom` version onward. A failed recovery is recorded as `FAILED` and requires operator attention. Other PostgreSQL schemas are not included in the backup or modified by rollback.
 
 ## Configuration
 

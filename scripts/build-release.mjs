@@ -94,7 +94,7 @@ try {
       pnpm: ">=11 <12",
       postgres: ">=16",
       containerRuntime: "Docker Compose v2",
-      automaticUpdatesFrom: version
+      automaticUpdatesFrom: "0.9.7"
     },
     migrations: {
       count: migrations.length,

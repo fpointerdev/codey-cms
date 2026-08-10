@@ -177,6 +177,8 @@ try {
     "--format=custom",
     "--no-owner",
     "--no-privileges",
+    "--schema",
+    databaseConnection.schema,
     "--file",
     plainDatabaseFile,
     databaseConnection.url
@@ -233,6 +235,7 @@ try {
     encrypted: Boolean(encryptionKey),
     database: {
       format: "postgres-custom",
+      schema: databaseConnection.schema,
       verified: true,
       ...(await fileDetails(databaseFile))
     },

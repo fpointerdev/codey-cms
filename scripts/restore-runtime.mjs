@@ -38,6 +38,10 @@ function databaseCommandEnvironment(password) {
   return environment;
 }
 
+function identifier(value) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -176,6 +180,11 @@ try {
     const manifestDirectory = path.dirname(inputFile);
     databaseFile = backupArtifactPath(manifestDirectory, manifest.database.file);
     databaseFormat = manifest.database.format;
+    if (manifest.database.schema && manifest.database.schema !== databaseConnection.schema) {
+      throw new Error(
+        `Backup schema ${manifest.database.schema} does not match target schema ${databaseConnection.schema}.`
+      );
+    }
     await verifyBackupArtifact(databaseFile, manifest.database);
 
     if (manifest.media?.snapshotIncluded && manifest.media.file) {
@@ -196,6 +205,9 @@ try {
   if (databaseFormat === "postgres-custom") {
     await run("pg_restore", ["--list", preparedDatabaseFile], { quiet: true });
   }
+  if (enabled("RESTORE_RECREATE_SCHEMA") && databaseFormat !== "postgres-custom") {
+    throw new Error("RESTORE_RECREATE_SCHEMA requires a PostgreSQL custom-format backup.");
+  }
 
   if (mediaFile && enabled("RESTORE_MEDIA")) {
     const preparedMediaFile = await prepareEncryptedArtifact(mediaFile, temporaryDirectory);
@@ -215,16 +227,46 @@ try {
   }
 
   if (databaseFormat === "postgres-custom") {
-    await run("pg_restore", [
-      "--clean",
-      "--if-exists",
-      "--no-owner",
-      "--no-privileges",
-      "--exit-on-error",
-      "--dbname",
-      databaseConnection.url,
-      preparedDatabaseFile
-    ], { env: databaseEnvironment });
+    if (enabled("RESTORE_RECREATE_SCHEMA")) {
+      const restoreSqlFile = path.join(temporaryDirectory, "database-restore.sql");
+      await run("pg_restore", [
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "--exit-on-error",
+        "--schema",
+        databaseConnection.schema,
+        "--file",
+        restoreSqlFile,
+        preparedDatabaseFile
+      ], { env: databaseEnvironment });
+      await run("psql", [
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--single-transaction",
+        "--dbname",
+        databaseConnection.url,
+        "--command",
+        `DROP SCHEMA IF EXISTS ${identifier(databaseConnection.schema)} CASCADE; CREATE SCHEMA ${identifier(databaseConnection.schema)}`,
+        "--file",
+        restoreSqlFile
+      ], { env: databaseEnvironment });
+    } else {
+      await run("pg_restore", [
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "--exit-on-error",
+        "--single-transaction",
+        "--schema",
+        databaseConnection.schema,
+        "--dbname",
+        databaseConnection.url,
+        preparedDatabaseFile
+      ], { env: databaseEnvironment });
+    }
   } else {
     await run("psql", [
       "--set",
