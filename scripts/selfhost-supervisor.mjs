@@ -385,7 +385,8 @@ async function restoreBackup(previousRelease, manifestPath) {
     ["scripts/restore-runtime.mjs", manifestPath],
     {
       ALLOW_PRODUCTION_RESTORE: "true",
-      RESTORE_MEDIA: "false"
+      RESTORE_MEDIA: "false",
+      RESTORE_RECREATE_SCHEMA: "true"
     }
   );
 }

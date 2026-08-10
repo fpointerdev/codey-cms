@@ -6,7 +6,8 @@ Each copied runtime has its own database, storage prefix, encryption keys, and b
 
 The production Compose stack runs `scripts/backup-scheduler.mjs` immediately on startup and then at `BACKUP_INTERVAL_HOURS` intervals. A backup includes:
 
-- A PostgreSQL custom-format dump verified with `pg_restore --list`.
+- A PostgreSQL custom-format dump of the schema selected by `DATABASE_URL`,
+  verified with `pg_restore --list`.
 - A compressed media snapshot when `STORAGE_DRIVER=local`.
 - An S3 media-protection declaration when `STORAGE_DRIVER=s3`.
 - A manifest containing checksums, byte sizes, timestamps, and encryption state.
@@ -63,6 +64,19 @@ pnpm runtime:restore -- /path/to/runtime-....manifest.json
 8. Smoke test login, public pages, media, forms, and shop workflows before disabling maintenance mode.
 
 The restore command verifies manifest checksums and sizes, encrypted-file authentication, PostgreSQL archive structure, and media archive paths and entry types before modifying the target. Media archives containing links or special files are rejected. The command also supports legacy plain SQL dumps. Production restore is blocked unless `ALLOW_PRODUCTION_RESTORE=true`.
+
+The backup manifest records the PostgreSQL schema and restore rejects a target
+configured for a different schema. Automatic update rollback uses
+`RESTORE_RECREATE_SCHEMA=true` to remove objects introduced by the failed
+candidate and restore the pre-update schema in one transaction. Operators may
+use the same flag for a custom-format manual restore when the target contains
+newer migration objects. It replaces only the schema selected by
+`DATABASE_URL`; other schemas in the database are neither backed up nor
+modified.
+
+The `DATABASE_URL` schema name may contain letters, digits, underscores, and
+hyphens, must begin with a letter or underscore, and must fit PostgreSQL's
+63-byte identifier limit. The packaged self-host runtime uses `public`.
 
 ## Recovery Rules
 

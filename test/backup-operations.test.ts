@@ -40,6 +40,20 @@ test("PostgreSQL CLI URLs remove Prisma-only parameters", () => {
   );
   assert.equal(connection.url, "postgresql://codey@db:5432/codey");
   assert.equal(connection.password, "p@ssword");
+  assert.equal(connection.schema, "public");
+
+  const customSchema = postgresCliConnection(
+    "postgresql://codey:secret@db:5432/codey?schema=customer-site"
+  );
+  assert.equal(customSchema.schema, "customer-site");
+  assert.throws(
+    () => postgresCliConnection("postgresql://codey:secret@db:5432/codey?schema=customer*site"),
+    /valid PostgreSQL identifier/i
+  );
+  assert.throws(
+    () => postgresCliConnection(`postgresql://codey:secret@db:5432/codey?schema=${"a".repeat(64)}`),
+    /valid PostgreSQL identifier/i
+  );
 });
 
 function backupConfig(directory: string, overrides: Record<string, unknown> = {}) {
