@@ -175,6 +175,35 @@ test("expanded structured elements expose focused collection and quote fields", 
   }).attribution, "Sam, owner");
 });
 
+test("collection editors preserve imported items beyond their visible row limit", () => {
+  const milestones = Array.from({ length: 10 }, (_, index) => ({
+    title: `Milestone ${index + 1}`,
+    body: `Details ${index + 1}`
+  }));
+  const editor = structuredContentEditor({
+    key: "timeline",
+    type: "CUSTOM",
+    settings: { elementId: "timeline" },
+    value: { title: "History", milestones }
+  });
+  const values: Record<string, unknown> = {
+    structuredTitle: "Updated history",
+    structuredAlignment: "left",
+    structuredDensity: "comfortable",
+    structuredSurface: "outline",
+    structuredPresentation: "line"
+  };
+
+  for (let index = 0; index < 8; index += 1) {
+    values[`structuredItem${index + 1}Title`] = milestones[index].title;
+    values[`structuredItem${index + 1}Body`] = milestones[index].body;
+  }
+
+  const updated = editor?.valueFrom(values);
+  assert.equal(updated?.milestones.length, 10);
+  assert.equal(updated?.milestones[9].title, "Milestone 10");
+});
+
 test("v1 structured elements expose simple settings and preserve comparison content", () => {
   const editor = structuredContentEditor({
     key: "comparison",

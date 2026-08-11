@@ -562,6 +562,7 @@ function visualCollectionEditor(block, value) {
   const collectionKey = firstKey(value, config.keys) || config.keys[0];
   const items = Array.isArray(value[collectionKey]) ? value[collectionKey] : [];
   const rowCount = Math.min(config.maxRows || 8, Math.max(config.minRows, items.length + 1));
+  const preservedItems = items.slice(rowCount);
   const fields = [];
 
   for (let index = 0; index < rowCount; index += 1) {
@@ -641,7 +642,7 @@ function visualCollectionEditor(block, value) {
         }
       }
 
-      return nextItems;
+      return [...nextItems, ...preservedItems];
     }
   };
 }

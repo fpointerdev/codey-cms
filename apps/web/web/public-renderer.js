@@ -721,10 +721,10 @@ function renderStructuredStats(stats) {
   return items ? `<dl class="structured-stats">${items}</dl>` : "";
 }
 
-function structuredDisplay(value) {
+function structuredDisplay(value, fallbackVariant = "") {
   const display = isRecord(value?.display) ? value.display : {};
   const columns = [2, 3, 4].includes(Number(display.columns)) ? Number(display.columns) : 3;
-  const variant = cssToken(firstText(value, ["variant", "type"]));
+  const variant = cssToken(firstText(value, ["variant", "type"]) || fallbackVariant);
   const defaultPresentation = {
     timeline: "line",
     "resource-list": "rows",
@@ -1246,7 +1246,7 @@ function renderStructuredAccordion(items, variant, renderContext = {}) {
 
 function renderStructuredCollection(items, variant, blockKey, renderContext = {}, value = {}) {
   const token = cssToken(variant, "cards");
-  const display = structuredDisplay(value);
+  const display = structuredDisplay(value, token);
 
   if (token === "hero-points") return renderHeroPoints(items);
   if (token === "tabs") return renderStructuredTabs(items, token, blockKey, renderContext);
@@ -1261,6 +1261,25 @@ function renderStructuredCollection(items, variant, blockKey, renderContext = {}
   return renderStructuredItems(items, token, renderContext, display);
 }
 
+function structuredCollectionItems(value, variant) {
+  const aliases = {
+    "process-steps": ["items", "steps"],
+    "comparison-table": ["items", "rows"],
+    timeline: ["items", "milestones"],
+    checklist: ["items", "points"],
+    "resource-list": ["items", "resources"],
+    "location-cards": ["items", "locations"],
+    "bento-grid": ["items", "cards"],
+    "navigation-cards": ["items", "cards"]
+  }[cssToken(variant)] || ["items", "cards", "people", "logos", "questions"];
+
+  for (const key of aliases) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+
+  return undefined;
+}
+
 function renderStructuredBlock(block, renderContext = {}) {
   const value = block.value;
   if (!isRecord(value)) return "";
@@ -1270,7 +1289,7 @@ function renderStructuredBlock(block, renderContext = {}) {
   const note = firstText(value, ["note", "kicker", "eyebrow", "summary"]);
   const variant = firstText(value, ["variant", "type"]) || block.settings?.elementId || block.label || "content";
   const variantToken = cssToken(variant);
-  const display = structuredDisplay(value);
+  const display = structuredDisplay(value, variantToken);
   if (variantToken === "quote-highlight") return renderStructuredQuote(value, display);
   const imageHtml = variantToken === "video"
     ? renderStructuredVideo(value, display)
@@ -1279,7 +1298,7 @@ function renderStructuredBlock(block, renderContext = {}) {
       : renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
   const statsHtml = renderStructuredStats(value.stats || value.metrics);
   const itemsHtml = renderStructuredCollection(
-    value.items || value.cards || value.people || value.logos || value.questions,
+    structuredCollectionItems(value, variantToken),
     variant,
     block.key,
     renderContext,

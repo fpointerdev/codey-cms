@@ -691,6 +691,55 @@ test("expanded builder elements server-render semantic timelines, lists, locatio
   assert.match(html, /href="\/services"/);
 });
 
+test("registered element ids preserve collection aliases and presentation defaults", () => {
+  const html = renderPageContent({
+    title: "Portable content",
+    content: {},
+    sections: [{
+      id: "portable-elements",
+      key: "portable-elements",
+      settings: {},
+      blocks: [
+        {
+          key: "history",
+          type: "CUSTOM",
+          value: { title: "History", milestones: [{ title: "Launch", body: "The first release." }] },
+          settings: { elementId: "timeline" },
+          editable: true
+        },
+        {
+          key: "benefits",
+          type: "CUSTOM",
+          value: { title: "Benefits", points: [{ title: "Simple", body: "Easy to manage." }] },
+          settings: { elementId: "checklist" },
+          editable: true
+        },
+        {
+          key: "resources",
+          type: "CUSTOM",
+          value: { title: "Resources", resources: [{ title: "Guide", url: "/guide" }] },
+          settings: { elementId: "resource-list" },
+          editable: true
+        },
+        {
+          key: "locations",
+          type: "CUSTOM",
+          value: { title: "Locations", locations: [{ title: "Studio", body: "Main street" }] },
+          settings: { elementId: "location-cards" },
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.match(html, /structured-block-timeline[^\"]*structured-presentation-line/);
+  assert.match(html, /The first release\./);
+  assert.match(html, /Easy to manage\./);
+  assert.match(html, /structured-block-resource-list[^\"]*structured-presentation-rows/);
+  assert.match(html, /href="\/guide"/);
+  assert.match(html, /<address class="structured-location">/);
+});
+
 test("section backgrounds receive the same accessible foreground used by generated previews", () => {
   const html = withPublicRenderContext(
     {
