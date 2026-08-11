@@ -290,6 +290,27 @@ function modalFieldHtml(field) {
     `;
   }
 
+  if (field.type === "multiChoice") {
+    const selected = new Set(Array.isArray(value) ? value.map(String) : []);
+
+    return `
+      <fieldset class="multi-choice-field">
+        <legend>${escapeHtml(field.label)}</legend>
+        ${help}
+        <div class="multi-choice-list">
+          ${(field.options || []).length
+            ? field.options.map((option) => `
+                <label class="checkbox-field multi-choice-item">
+                  <input name="${escapeHtml(field.name)}" type="checkbox" value="${escapeHtml(option.value)}"${selected.has(String(option.value)) ? " checked" : ""} />
+                  <span><strong>${escapeHtml(option.label)}</strong>${option.description ? `<small>${escapeHtml(option.description)}</small>` : ""}</span>
+                </label>
+              `).join("")
+            : '<p class="field-help">No available items yet.</p>'}
+        </div>
+      </fieldset>
+    `;
+  }
+
   if (field.type === "checkbox") {
     return `
       <label class="checkbox-field">
@@ -808,6 +829,10 @@ function openModalForm(config) {
         }
         if (field.type === "checkbox") {
           values[field.name] = value === "on";
+          return;
+        }
+        if (field.multiple) {
+          values[field.name] = value.map((item) => String(item || "").trim()).filter(Boolean);
           return;
         }
         values[field.name] = String(value || "").trim();

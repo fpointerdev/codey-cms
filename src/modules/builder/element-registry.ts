@@ -89,7 +89,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-08-11";
+export const builderRegistryVersion = "2026-08-11.1";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label
@@ -498,6 +498,26 @@ export const builderElementRegistry = [
     ]
   },
   {
+    id: "image-comparison",
+    label: "Image Comparison",
+    icon: "columns-2",
+    description: "Accessible before-and-after or option comparison with two clearly labelled images.",
+    category: "media",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "See the difference",
+      body: "Compare the two views side by side.",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "items", label: "Comparison images", type: "custom", required: true }
+    ]
+  },
+  {
     id: "timeline",
     label: "Timeline",
     icon: "history",
@@ -673,6 +693,29 @@ export const builderElementRegistry = [
     ]
   },
   {
+    id: "product-showcase",
+    label: "Product Showcase",
+    icon: "badge-dollar-sign",
+    description: "Focused product feature with live image, price, availability, and purchase action.",
+    category: "commerce",
+    modules: ["products"],
+    blockTypes: ["PRODUCT_LIST"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Featured product",
+      body: "Give one important product more room to stand out.",
+      productSlugs: [],
+      layout: "spotlight",
+      columns: 2,
+      showDescription: true
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "productSlugs", label: "Product", type: "productPicker", required: true }
+    ]
+  },
+  {
     id: "custom-code",
     label: "Custom Code",
     icon: "code-2",
@@ -739,7 +782,7 @@ export const sectionPresetRegistry = [
     id: "two-column",
     label: "Two columns",
     description: "Side-by-side content for image/text and comparison sections.",
-    allowedElements: ["image-text", "image-hotspots", "text-layout", "cta", "process-steps", "comparison-table", "video", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards", "product-list"],
+    allowedElements: ["image-text", "image-hotspots", "image-comparison", "text-layout", "cta", "process-steps", "comparison-table", "video", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards", "product-list", "product-showcase"],
     defaultSettings: {
       layout: "two-column",
       container: "default",
@@ -752,7 +795,7 @@ export const sectionPresetRegistry = [
     id: "three-column",
     label: "Three columns",
     description: "Feature, service, or product summary grid.",
-    allowedElements: ["text-layout", "image-text", "stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "faq-accordion", "tabs", "accordion", "process-steps", "comparison-table", "checklist", "resource-list", "location-cards", "bento-grid", "navigation-cards", "product-list"],
+    allowedElements: ["text-layout", "image-text", "stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "faq-accordion", "tabs", "accordion", "process-steps", "comparison-table", "checklist", "resource-list", "location-cards", "bento-grid", "navigation-cards", "product-list", "product-showcase"],
     defaultSettings: {
       layout: "three-column",
       container: "default",
@@ -778,7 +821,7 @@ export const sectionPresetRegistry = [
     id: "full-bleed",
     label: "Full width",
     description: "Wide visual section for hero, gallery, and media bands.",
-    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "image-hotspots", "video", "quote-highlight", "cta"],
+    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "image-hotspots", "image-comparison", "video", "quote-highlight", "cta", "product-showcase"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -819,7 +862,7 @@ export const sectionPresetRegistry = [
     id: "media-band",
     label: "Media band",
     description: "Wide visual strip for galleries, carousels, project highlights, and image-led storytelling.",
-    allowedElements: ["slider", "carousel", "gallery", "image-text", "image-hotspots", "video", "text-layout"],
+    allowedElements: ["slider", "carousel", "gallery", "image-text", "image-hotspots", "image-comparison", "video", "text-layout"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -834,7 +877,7 @@ export const sectionPresetRegistry = [
     id: "product-grid",
     label: "Product grid",
     description: "Shop listing section with product cards and filters.",
-    allowedElements: ["product-list"],
+    allowedElements: ["product-list", "product-showcase"],
     defaultSettings: {
       layout: "three-column",
       container: "default",
@@ -1190,6 +1233,40 @@ export const builderSectionPatternRegistry = [
       responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
     }
+  },
+  {
+    id: "transformation-story",
+    label: "Transformation story",
+    description: "A clear image comparison supported by an attributable customer or project result.",
+    category: "trust",
+    elements: ["image-comparison", "quote-highlight"],
+    defaultSettings: {
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
+  },
+  {
+    id: "product-spotlight",
+    label: "Product spotlight",
+    description: "A focused product feature paired with concise buying benefits.",
+    category: "commerce",
+    elements: ["product-showcase", "checklist"],
+    defaultSettings: {
+      layout: "two-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "framed-card")?.settings
+    }
   }
 ] satisfies BuilderSectionPatternDefinition[];
 
@@ -1499,6 +1576,22 @@ function validateCustomElementValue(
 
   if (elementId === "quote-highlight" && !hasAnyText(value, ["body", "text", "copy", "content"])) {
     result.errors.push(issue("missing_quote_body", `${label} quote highlight needs quote text.`));
+  }
+
+  if (elementId === "image-comparison") {
+    const items = firstRecordArray(value, ["items", "images"]);
+    if (items.length !== 2) {
+      result.errors.push(issue("invalid_image_comparison_count", `${label} image comparison needs exactly two images.`));
+    }
+    items.forEach((item, index) => {
+      const image = isRecord(item) && isRecord(item.image) ? item.image : {};
+      if (!hasText(image.url) || (!hasText(image.alt) && !hasText(image.altText))) {
+        result.errors.push(issue(
+          "invalid_image_comparison_item",
+          `${label} comparison image ${index + 1} needs an uploaded image and description.`
+        ));
+      }
+    });
   }
 
   if (elementId === "image-hotspots") {

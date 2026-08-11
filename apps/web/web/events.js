@@ -88,6 +88,7 @@ import {
   addRepeaterRow,
   copyPaymentWebhook,
   createProductFromDashboard,
+  clearShopMediaPicker,
   deleteCommerceRule,
   handleCustomerDataAction,
   openProductEditor,
@@ -97,6 +98,7 @@ import {
   saveProductEditor,
   saveShopSettings,
   testPaymentProvider,
+  updateShopMediaPicker,
   updateShopSettingsPreview,
   updateManualPayment,
   updateOrderStatus,
@@ -1320,6 +1322,9 @@ function filePreviewHtml(files = []) {
 
 function bindFilePreviewEvents() {
   elements.page.addEventListener("change", (event) => {
+    const shopMediaInput = event.target.closest("[data-shop-media-input]");
+    if (shopMediaInput) updateShopMediaPicker(shopMediaInput);
+
     const siteImageInput = event.target.closest("[data-site-image-picker-input]");
     if (siteImageInput) {
       const file = Array.from(siteImageInput.files || []).find((item) => item?.type?.startsWith("image/") && item.size);
@@ -1413,6 +1418,15 @@ function bindShopControlEvents() {
     }
 
     const form = event.target.closest("[data-shop-settings-form]");
+    if (form) updateShopSettingsPreview(form);
+  });
+
+  elements.page.addEventListener("click", (event) => {
+    const clearMedia = event.target.closest("[data-clear-shop-media]");
+    if (!clearMedia) return;
+
+    clearShopMediaPicker(clearMedia);
+    const form = clearMedia.closest("[data-shop-settings-form]");
     if (form) updateShopSettingsPreview(form);
   });
 }

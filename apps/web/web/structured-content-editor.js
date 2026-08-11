@@ -86,7 +86,7 @@ const visualCollectionEditors = {
       { key: "title", label: "Name" },
       { key: "label", label: "Role", required: false },
       { key: "body", label: "Bio", type: "richtext", required: false },
-      { key: "imageUrl", label: "Image URL", required: false },
+      { key: "imageUrl", label: "Photo", required: false },
       { key: "imageAlt", label: "Image description", required: false }
     ]
   },
@@ -96,7 +96,7 @@ const visualCollectionEditors = {
     minRows: 4,
     fields: [
       { key: "title", label: "Name" },
-      { key: "imageUrl", label: "Logo URL", required: false },
+      { key: "imageUrl", label: "Logo", required: false },
       { key: "imageAlt", label: "Logo description", required: false },
       { key: "url", label: "Link", required: false }
     ]
@@ -240,6 +240,18 @@ const visualCollectionEditors = {
       { key: "url", label: "Destination", required: true }
     ]
   },
+  "image-comparison": {
+    keys: ["items", "images"],
+    label: "Images",
+    minRows: 2,
+    maxRows: 2,
+    fields: [
+      { key: "title", label: "Label" },
+      { key: "body", label: "Short description", type: "richtext", required: false },
+      { key: "imageUrl", label: "Image" },
+      { key: "imageAlt", label: "Image description" }
+    ]
+  },
   "image-hotspots": {
     keys: ["hotspots", "items"],
     label: "Placements",
@@ -253,7 +265,7 @@ const visualCollectionEditors = {
       { key: "width", label: "Overlay width (%)", type: "number", min: 1, max: 50, step: 0.5, required: false },
       { key: "productSlug", label: "Product slug", required: false },
       { key: "url", label: "Alternative link", required: false },
-      { key: "imageUrl", label: "Overlay image URL", required: false },
+      { key: "imageUrl", label: "Overlay image", required: false },
       { key: "imageAlt", label: "Overlay image description", required: false }
     ]
   }
@@ -313,6 +325,10 @@ const structuredPresentationOptions = {
     { value: "cards", label: "Cards" },
     { value: "compact", label: "Compact" },
     { value: "editorial", label: "Editorial" }
+  ],
+  "image-comparison": [
+    { value: "split", label: "Side by side" },
+    { value: "stacked", label: "Stacked" }
   ]
 };
 
@@ -564,10 +580,12 @@ function visualCollectionEditor(block, value) {
   const rowCount = Math.min(config.maxRows || 8, Math.max(config.minRows, items.length + 1));
   const preservedItems = items.slice(rowCount);
   const fields = [];
+  const mediaFields = [];
 
   for (let index = 0; index < rowCount; index += 1) {
     const item = isRecord(items[index]) ? items[index] : {};
     const group = "Content";
+    const requiredRow = index < Math.max(1, Math.min(config.minRows, items.length || 1));
 
     addField(fields, {
       name: `structuredItem${index + 1}Section`,
@@ -579,18 +597,50 @@ function visualCollectionEditor(block, value) {
     });
 
     for (const field of config.fields) {
+      const name = fieldNameForItem(index, field.key);
+      const image = existingImageForItem(item);
+      const imageField = field.key === "imageUrl";
       addField(fields, {
-        name: fieldNameForItem(index, field.key),
+        name,
         label: field.label,
-        type: field.type || "text",
-        value: itemFieldValue(item, field.key),
+        type: imageField ? "file" : field.type || "text",
+        value: imageField ? "" : itemFieldValue(item, field.key),
         checked: Boolean(itemFieldValue(item, field.key)),
-        required: field.required !== false && index < Math.max(1, Math.min(config.minRows, items.length || 1)),
+        required: imageField
+          ? field.required !== false && requiredRow && !image.url && !image.src
+          : field.required !== false && requiredRow,
         group,
-        help: field.help || (index >= items.length ? "Leave empty to ignore this row." : undefined),
+        help: imageField
+          ? image.url || image.src ? "The current image stays in place until you choose a replacement." : "Optional. Upload an optimized image."
+          : field.help || (index >= items.length ? "Leave empty to ignore this row." : undefined),
         min: field.min,
         max: field.max,
-        step: field.step
+        step: field.step,
+        ...(imageField
+          ? {
+              accept: "image/*",
+              imagePicker: true,
+              previewUrl: image.url || image.src || "",
+              previewAlt: image.alt || image.title || item.title || field.label
+            }
+          : {})
+      });
+      if (imageField) {
+        mediaFields.push({
+          name,
+          altName: fieldNameForItem(index, "imageAlt"),
+          fallbackAlt: item.title || field.label
+        });
+      }
+    }
+
+    if (items[index] && config.maxRows !== config.minRows) {
+      addField(fields, {
+        name: `structuredItem${index + 1}Remove`,
+        label: `Remove ${config.label.toLowerCase()} item ${index + 1}`,
+        type: "checkbox",
+        group,
+        required: false
       });
     }
   }
@@ -598,10 +648,13 @@ function visualCollectionEditor(block, value) {
   return {
     collectionKey,
     fields,
-    valueFrom(values) {
+    mediaFields,
+    valueFrom(values, uploadedMedia = {}) {
       const nextItems = [];
 
       for (let index = 0; index < rowCount; index += 1) {
+        if (values[`structuredItem${index + 1}Remove`] === true) continue;
+
         const existingItem = isRecord(items[index]) ? items[index] : {};
         const row = { ...existingItem };
 
@@ -626,14 +679,16 @@ function visualCollectionEditor(block, value) {
           row[field.key] = values[name] || "";
         }
 
-        const imageUrl = values[fieldNameForItem(index, "imageUrl")];
+        const imageFieldName = fieldNameForItem(index, "imageUrl");
+        const mediaAsset = uploadedMedia[imageFieldName];
         const imageAlt = values[fieldNameForItem(index, "imageAlt")];
-        if (imageUrl || imageAlt || existingItem.image || existingItem.media) {
+        if (mediaAsset?.url || imageAlt || existingItem.image || existingItem.media) {
           const existingImage = existingImageForItem(existingItem);
           row.image = {
             ...existingImage,
-            url: imageUrl || existingImage.url || existingImage.src || "",
-            alt: imageAlt || existingImage.alt || existingImage.title || row.title || ""
+            url: mediaAsset?.url || existingImage.url || existingImage.src || "",
+            alt: imageAlt || mediaAsset?.altText || existingImage.alt || existingImage.title || row.title || "",
+            ...(mediaAsset?.id ? { mediaAssetId: mediaAsset.id } : {})
           };
         }
 
@@ -895,7 +950,8 @@ export function structuredContentEditor(block) {
 
   return {
     fields,
-    valueFrom(values, mediaAsset = null) {
+    mediaFields: collectionEditor?.mediaFields || [],
+    valueFrom(values, mediaAsset = null, uploadedItemMedia = {}) {
       const next = { ...value };
 
       if (titleKey) next[titleKey] = values.structuredTitle || "";
@@ -906,7 +962,7 @@ export function structuredContentEditor(block) {
       if (actionsKey) next[actionsKey] = textToRows(values.structuredActions, value[actionsKey], ["label", "url", "variant"]);
       if (cardsKey && cardsKey !== handledCollectionKey) next[cardsKey] = textToRows(values.structuredCards, value[cardsKey], ["title", "body", "meta", "url"]);
       if (projectsKey && projectsKey !== handledCollectionKey) next[projectsKey] = textToRows(values.structuredProjects, value[projectsKey], ["title", "meta", "category", "url"]);
-      if (collectionEditor) next[collectionEditor.collectionKey] = collectionEditor.valueFrom(values);
+      if (collectionEditor) next[collectionEditor.collectionKey] = collectionEditor.valueFrom(values, uploadedItemMedia);
       if (displayEditor) next.display = displayEditor.valueFrom(values);
       if (variant === "comparison-table") {
         next.firstColumnTitle = values.structuredFirstColumnTitle || "Option A";

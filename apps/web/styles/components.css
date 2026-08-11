@@ -385,6 +385,12 @@
   min-width: 0;
 }
 
+.settings-image-picker :is(img, video) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .settings-form .settings-image-picker > span {
   text-transform: none;
 }

@@ -169,7 +169,8 @@ GET   /api/v1/products/settings
 PATCH /api/v1/products/settings  # update:products
 ```
 
-The settings contract covers catalog copy, listing and product-detail presentation, page size, and category, attribute, SKU, and stock visibility.
+The settings contract covers catalog copy, default sorting, listing and product-detail presentation, uploaded hero media and CTA, page size, and category, attribute, description, SKU, and stock visibility.
+`GET /api/v1/products` accepts `sort=newest|name|price-low|price-high`; public catalog navigation sends the saved default so client-rendered and server-rendered listings keep the same stable order.
 
 Public order lookup uses a bearer credential returned once at checkout and included in the
 confirmation email:

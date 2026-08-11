@@ -589,6 +589,68 @@ test("interactive image placements render bounded accessible product links", () 
   assert.doesNotMatch(html, /javascript:|aria-label="Unsafe"/);
 });
 
+test("image comparisons and product showcases render complete server-side content", () => {
+  const html = renderPageContent({
+    title: "Results and products",
+    content: { layout: "full-width", hideTitle: true },
+    sections: [{
+      id: "showcase",
+      key: "showcase",
+      settings: {},
+      blocks: [
+        {
+          key: "comparison",
+          type: "CUSTOM",
+          settings: { elementId: "image-comparison" },
+          editable: true,
+          value: {
+            variant: "image-comparison",
+            title: "Before and after",
+            items: [
+              { title: "Before", image: { url: "/uploads/before.webp", alt: "Room before renovation" } },
+              { title: "After", image: { url: "/uploads/after.webp", alt: "Room after renovation" } }
+            ],
+            display: { presentation: "split" }
+          }
+        },
+        {
+          key: "products",
+          type: "PRODUCT_LIST",
+          settings: { elementId: "product-showcase" },
+          editable: true,
+          value: {
+            title: "Featured product",
+            productSlugs: ["studio-chair"],
+            layout: "spotlight",
+            products: [{
+              id: "product-1",
+              slug: "studio-chair",
+              name: "Studio Chair",
+              description: "Built for focused work.",
+              priceCents: 25000,
+              currency: "EUR",
+              stockQuantity: 4,
+              availableStock: 4,
+              metadata: {},
+              images: []
+            }]
+          }
+        }
+      ]
+    }]
+  }, {
+    shopSettings: { showSku: false, showStock: true, showDescriptions: true }
+  });
+
+  assert.match(html, /image-comparison-split/);
+  assert.match(html, /alt="Room before renovation"/);
+  assert.match(html, /alt="Room after renovation"/);
+  assert.match(html, /product-list-layout-spotlight/);
+  assert.match(html, /Studio Chair/);
+  assert.match(html, /Built for focused work\./);
+  assert.match(html, /data-commerce-add data-product-id="product-1"/);
+});
+
 test("expanded builder elements server-render semantic timelines, lists, locations, and quotes", () => {
   const html = renderPageContent({
     title: "Company information",

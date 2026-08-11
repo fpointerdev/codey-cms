@@ -16,6 +16,8 @@ import {
   editContentBlock,
   loadMediaImageAssets,
   optionalFormValue,
+  productListModalFields,
+  productListValueFromValues,
   uploadedGalleryItemFiles,
   uploadedGalleryItems
 } from "./content-actions.js";
@@ -1038,6 +1040,13 @@ export async function addSectionPatternToBuilder(patternId) {
 
   try {
     const section = buildSectionPattern(patternId, state.builderPage, state.builderPage.sections?.length || 0);
+    for (const block of section.blocks || []) {
+      if (block.type !== "PRODUCT_LIST") continue;
+
+      const value = await configureProductListValue(block.value, block.label || "products", "Add section");
+      if (!value) return;
+      block.value = value;
+    }
     setStatus(`Adding ${section.label || "section"}...`);
     await saveBuilderSections(
       [...(state.builderPage.sections || []), section],
@@ -1047,6 +1056,30 @@ export async function addSectionPatternToBuilder(patternId) {
   } catch (error) {
     setStatus(error.message || "Unable to add section pattern.", true);
   }
+}
+
+async function configureProductListValue(value, label, submitLabel) {
+  const fields = await productListModalFields(value, { preserveUnavailable: false });
+  const productField = fields.find((field) => field.name === "productSlugs");
+  if (!productField?.options?.length) {
+    setStatus("Publish an active product before adding this shop element.", true);
+    return null;
+  }
+
+  const values = await getModalFormHandler()({
+    label: "Shop",
+    title: `Configure ${label}`,
+    description: "Choose active products and a simple presentation.",
+    fields,
+    submitLabel
+  });
+  if (!values) return null;
+  if (!Array.isArray(values.productSlugs) || !values.productSlugs.length) {
+    setStatus("Choose at least one active product.", true);
+    return null;
+  }
+
+  return productListValueFromValues(values);
 }
 
 function ensureBuilderHistory() {
@@ -1365,6 +1398,20 @@ async function prepareTemplateBlock(templateBlock, section, index, elementId) {
   };
 
   if (templateBlock.type !== "GALLERY") {
+    if (templateBlock.type === "PRODUCT_LIST") {
+      const value = await configureProductListValue(templateBlock.value, templateBlock.label || "products", "Add products");
+      if (!value) return null;
+
+      return {
+        ...templateBlock,
+        key,
+        value,
+        settings,
+        sortOrder: (section.blocks?.length || 0) + index,
+        editable: true
+      };
+    }
+
     return { ...templateBlock, key, settings, sortOrder: (section.blocks?.length || 0) + index, editable: true };
   }
 

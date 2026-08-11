@@ -205,6 +205,16 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await expect(page.locator("[data-builder-section-pattern='story-timeline']")).toBeVisible();
   await librarySearch.fill("capability bento");
   await expect(page.locator("[data-builder-section-pattern='capability-bento']")).toBeVisible();
+  const sectionCountBeforeProductPattern = await page.locator("[data-builder-section]").count();
+  await librarySearch.fill("product spotlight");
+  await page.locator("[data-builder-section-pattern='product-spotlight']").click();
+  const productPatternDialog = page.getByRole("dialog", { name: "Configure Featured product" });
+  await expect(productPatternDialog).toBeVisible();
+  await expect(productPatternDialog.getByRole("checkbox", { name: /Starter Product/ })).toBeChecked();
+  await productPatternDialog.getByRole("button", { name: "Add section" }).click();
+  await expect(page.locator("[data-builder-section]")).toHaveCount(sectionCountBeforeProductPattern + 1);
+  await page.getByRole("button", { name: "Undo last canvas change" }).click();
+  await expect(page.locator("[data-builder-section]")).toHaveCount(sectionCountBeforeProductPattern);
   await librarySearch.fill("navigation cards");
   await expect(page.locator("[data-builder-template='navigation-cards']")).toBeVisible();
   await librarySearch.fill("");
@@ -550,9 +560,55 @@ test("shop customization and product creation keep advanced controls out of the 
   await expect(page).toHaveURL(/\/dashboard\/shop\/configuration$/);
   await expect(page.locator("[data-shop-settings-form]")).toBeVisible();
   await expect(page.getByText("Live preview", { exact: true })).toBeVisible();
+  await expect(page.locator('input[name="catalogHeroMediaFile"]')).toHaveAttribute("type", "file");
+  await expect(page.locator('input[name="catalogHeroMediaUrl"]')).toHaveAttribute("type", "hidden");
 
   await page.locator('input[name="catalogLayout"][value="compact"]').check();
   await expect(page.locator("[data-shop-preview]")).toHaveAttribute("data-catalog-layout", "compact");
+  await page.locator('select[name="catalogSort"]').selectOption("price-low");
+  await expect(page.locator('select[name="catalogSort"]')).toHaveValue("price-low");
+  await page.locator('input[name="showDescriptions"]').uncheck();
+  await expect(page.locator("[data-shop-preview-card-description]").first()).toBeHidden();
+  await page.locator('input[name="catalogHeroEnabled"]').check();
+  await page.locator('select[name="catalogHeroMediaType"]').selectOption("IMAGE");
+  await page.locator('input[name="catalogHeroAltText"]').fill("Single pixel test storefront hero");
+  await page.locator('input[name="catalogHeroCtaLabel"]').fill("Browse products");
+  await page.locator('input[name="catalogHeroCtaUrl"]').fill("/shop");
+  const heroMediaInput = page.locator('input[name="catalogHeroMediaFile"]');
+  let shopMediaUploads = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/cms/media/upload")) shopMediaUploads += 1;
+  });
+  await heroMediaInput.setInputFiles({
+    name: "storefront-hero.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  });
+  const saveStorefront = page.getByRole("button", { name: "Save storefront" });
+  await Promise.all([
+    page.waitForResponse((response) => response.request().method() === "PATCH" && new URL(response.url()).pathname.endsWith("/products/settings")),
+    saveStorefront.click()
+  ]);
+  await expect(page.getByText("Storefront saved.", { exact: true })).toBeVisible();
+  await expect(heroMediaInput).toHaveValue("");
+  await expect(page.locator('input[name="catalogHeroMediaUrl"]')).toHaveValue(/\/uploads\//);
+  expect(shopMediaUploads).toBe(1);
+
+  await Promise.all([
+    page.waitForResponse((response) => response.request().method() === "PATCH" && new URL(response.url()).pathname.endsWith("/products/settings")),
+    saveStorefront.click()
+  ]);
+  await expect(page.getByText("Storefront saved.", { exact: true })).toBeVisible();
+  expect(shopMediaUploads).toBe(1);
+
+  await page.reload();
+  await expect(page.locator("[data-shop-settings-form]")).toBeVisible();
+  await expect(page.locator('select[name="catalogSort"]')).toHaveValue("price-low");
+  await expect(page.locator('input[name="showDescriptions"]')).not.toBeChecked();
+  await expect(page.locator('input[name="catalogHeroMediaUrl"]')).toHaveValue(/\/uploads\//);
 
   await page.getByRole("link", { name: "Products", exact: true }).click();
   await page.getByRole("link", { name: "Create Product", exact: true }).first().click();

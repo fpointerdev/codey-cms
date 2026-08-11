@@ -92,19 +92,20 @@ gate.
 
 ## Builder Registry Contract
 
-The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-11` contains 31 elements, 30 editor-available elements, 29 generator-safe elements, and 18 qualified section patterns.
+The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-11.1` contains 33 elements, 32 editor-available elements, 31 generator-safe elements, and 20 qualified section patterns.
 
 Generated pages must use registered elements instead of anonymous JSON structures:
 
 - Set `section.settings.elementId` to a valid `builder.elements[].id`.
 - Only use block types allowed by that element's `blockTypes`.
 - Treat `structured-content` as a fallback for unsupported generated content, not as the normal path.
-- Prefer the reusable visual elements for common sections: `hero-creative`, `stats-grid`, `feature-cards`, `team-section`, `logo-grid`, `testimonials`, `pricing-cards`, `faq-accordion`, `tabs`, `accordion`, `process-steps`, `comparison-table`, `video`, `image-hotspots`, `timeline`, `checklist`, `resource-list`, `location-cards`, `quote-highlight`, `bento-grid`, and `navigation-cards`.
+- Prefer the reusable visual elements for common sections: `hero-creative`, `stats-grid`, `feature-cards`, `team-section`, `logo-grid`, `testimonials`, `pricing-cards`, `faq-accordion`, `tabs`, `accordion`, `process-steps`, `comparison-table`, `video`, `image-hotspots`, `image-comparison`, `timeline`, `checklist`, `resource-list`, `location-cards`, `quote-highlight`, `bento-grid`, `navigation-cards`, `product-list`, and `product-showcase`.
 - Populate visual element collections with meaningful item objects. Tabs, accordions, FAQs, testimonials, and feature cards need item titles plus body text; stats need labels plus values; pricing cards need titles plus prices or metrics.
 - Use `process-steps` items with `title`, `body`, and optional `label` and `url` values. The public renderer emits a semantic ordered list.
 - Use `comparison-table` with `firstColumnTitle`, `secondColumnTitle`, and item rows containing `title`, `firstValue`, and `secondValue`. The public renderer emits an accessible table.
 - Use `video` only with a CMS-managed MP4 or WebM `url`, a descriptive `title`, optional `posterUrl`, and optional rich `body`. Set `display.presentation` to `inline` or `hero`, and `display.playback` to `controls` or `hover-focus`; hover/focus playback is muted, keeps native controls for touch, and is disabled for reduced-motion visitors. The CMS never turns arbitrary embed HTML into an iframe.
 - Use `image-hotspots` for a photographed scene with positioned destinations. Supply an accessible base `image`, then up to 20 `hotspots` with `title`, percentage `x` and `y`, optional percentage `width`, optional overlay `image`, and either `productSlug` or `url`. Product slugs resolve to localized `/product/:slug` routes; the public renderer clamps positions and emits keyboard-focusable links.
+- Use `image-comparison` with exactly two labelled items. Each item needs an uploaded `image` with alt text; optional rich body copy and `display.presentation` values `split` or `stacked` are supported.
 - Use `timeline` items with `title`, `body`, and optional `label` and `url`. The public renderer emits a chronological ordered list.
 - Use `checklist` items with a concise `title` and optional rich `body`. Use it for benefits, requirements, or inclusions rather than duplicating feature cards.
 - Use `resource-list` items with `title`, `url`, and optional `body` and `label`. Every resource is rendered as a keyboard-focusable link.
@@ -112,11 +113,12 @@ Generated pages must use registered elements instead of anonymous JSON structure
 - Use `quote-highlight` with rich `body`, optional `title`, and optional `attribution`. Do not invent quotes or sources.
 - Use `bento-grid` for four or more capability items with `title`, rich `body`, and optional `label`, `url`, and `featured`. Feature only the item that carries the section's strongest claim.
 - Use `navigation-cards` for a small set of real destinations. Every item requires a concise `title` and valid `url`; `body` and `label` are optional.
-- Carry generator-safe custom elements as `type: "custom"` with the registered ID in `settings.elementId` and the element data in `settings.value`. The CMS validates and moves that bounded transport value into the persisted `CUSTOM` block atomically.
+- Use `product-list` for a curated grid and `product-showcase` for one focused product. Supply active `productSlugs`; the CMS resolves live product data and server-renders image, price, stock, and purchase actions.
+- Carry generator-safe custom elements as `type: "custom"` with the registered ID in `settings.elementId` and the element data in `settings.value`. The CMS validates and moves that bounded transport value into the element's canonical `CUSTOM` or `PRODUCT_LIST` block atomically.
 - Structured elements may include a bounded `display` object. Supported options are `alignment` (`left` or `center`), `density` (`comfortable` or `compact`), `surface` (`plain`, `outline`, or `soft`), and `columns` (`2`, `3`, or `4`). Registered visual elements may also expose a bounded `presentation` choice through the CMS Layout control. Process steps accept `showNumbers`; comparisons accept `striped`; videos accept `ratio` (`16 / 9`, `4 / 3`, or `1 / 1`), `preload` (`metadata` or `none`), `loop`, and `playback`; interactive images accept `ratio` (`16 / 10`, `16 / 9`, `4 / 3`, or `1 / 1`).
 - Published `faq-accordion` content automatically contributes matching `FAQPage` structured data. Keep every question and answer truthful and visible on the page.
 - Keep static gallery/portfolio pages on the `gallery` element and rotating media on `slider` or `carousel`.
-- Prefer `builder.sectionPatterns` for common full-section layouts before assembling low-level elements manually. The qualified set covers hero proof, split hero, service showcase, media, process tabs, portfolio, pricing trust, FAQ contact, story timeline, benefits checklist, resources, quote story, locations contact, comparison pricing, team values, shop confidence, capability bento, and guided navigation.
+- Prefer `builder.sectionPatterns` for common full-section layouts before assembling low-level elements manually. The qualified set covers hero proof, split hero, service showcase, media, process tabs, portfolio, pricing trust, FAQ contact, story timeline, benefits checklist, resources, quote story, locations contact, comparison pricing, team values, shop confidence, capability bento, guided navigation, transformation stories, and product spotlights.
 - Use `builder.stylePresets` for visual direction before falling back to custom colors.
 - Use the section preset list for layout intent instead of inventing unrelated container settings.
 - Use safe section settings for layout and styling: `layout`, `container`, `spacing`, `align`, `verticalAlign`, `minHeight`, `style`, and `decoration`.
@@ -168,7 +170,8 @@ Products:
 Storefront hero:
 
 - `/shop` is a reserved commerce route, not a CMS page slug. Keep the collection there and use product/category records for its listing.
-- Configure optional campaign media through `PATCH /api/v1/products/settings` at `catalogHero` with `enabled`, `mediaType` (`IMAGE` or `VIDEO`), `mediaUrl`, optional `posterUrl`, `altText`, `playback` (`controls` or `hover-focus`), and `loop`.
+- Configure optional campaign media through `PATCH /api/v1/products/settings` at `catalogHero` with `enabled`, `mediaType` (`IMAGE` or `VIDEO`), `mediaUrl`, optional `posterUrl`, `altText`, optional `ctaLabel` and `ctaUrl`, `playback` (`controls` or `hover-focus`), and `loop`. Dashboard users upload the media; generated specs and API clients provide the resulting safe URL.
+- Use `catalogSort` (`newest`, `name`, `price-low`, or `price-high`) for the default catalog order and `showDescriptions` to control product-card copy.
 - The catalog hero renders only on page 1 of the unfiltered `/shop` route. Category, attribute, and paginated listings remain focused on products.
 - Use CMS pages and localized menu items for all non-commerce destinations. Do not replace routed page links with homepage anchors.
 

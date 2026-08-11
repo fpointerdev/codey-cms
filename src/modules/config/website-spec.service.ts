@@ -787,9 +787,15 @@ function mapSection(
           ...(section.type === "custom" ? {} : { settings: section.settings })
         };
 
+    const customBlockType = requestedCustomElement?.blockTypes.some((blockType) => blockType === "CUSTOM")
+      ? "CUSTOM"
+      : requestedCustomElement?.blockTypes.some((blockType) => blockType === "PRODUCT_LIST")
+        ? "PRODUCT_LIST"
+        : "CUSTOM";
+
     blocks.push({
       key: `${section.key}-content`,
-      type: "CUSTOM",
+      type: customBlockType,
       label: section.heading ?? section.type,
       value: customValue,
       settings: { elementId: builderElement?.id ?? "structured-content" },
@@ -837,7 +843,10 @@ function generatorSafeCustomElement(section: WebsiteSpecSection) {
   if (section.type !== "custom" || typeof section.settings.elementId !== "string") return undefined;
 
   const element = builderElementById(section.settings.elementId);
-  if (!element?.generatorSafe || !element.blockTypes.some((blockType) => blockType === "CUSTOM")) return undefined;
+  if (
+    !element?.generatorSafe ||
+    !element.blockTypes.some((blockType) => blockType === "CUSTOM" || blockType === "PRODUCT_LIST")
+  ) return undefined;
 
   return element;
 }

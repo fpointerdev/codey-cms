@@ -6,7 +6,7 @@ import {
   state
 } from "./core.js";
 import { adminHref, currentLocale } from "./routes.js";
-import { optionalFormValue, selectedFiles, uploadMediaFile } from "./content-actions.js";
+import { optionalFormValue, selectedFile, selectedFiles, uploadMediaFile } from "./content-actions.js";
 import { loadAdminRoute } from "./controller.js";
 import { getModalFormHandler } from "./modal.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
@@ -251,14 +251,13 @@ export async function saveProductEditor(form) {
   }
 }
 
-function shopSettingsPayload(form) {
-  const formData = new FormData(form);
-
+function shopSettingsPayload(formData) {
   return {
     catalogTitle: String(formData.get("catalogTitle") || "Shop").trim(),
     catalogDescription: String(formData.get("catalogDescription") || "").trim(),
     catalogLayout: String(formData.get("catalogLayout") || "grid"),
     cardStyle: String(formData.get("cardStyle") || "minimal"),
+    catalogSort: String(formData.get("catalogSort") || "newest"),
     detailLayout: String(formData.get("detailLayout") || "classic"),
     detailStyle: String(formData.get("detailStyle") || "standard"),
     productsPerPage: Math.min(48, Math.max(8, Number.parseInt(String(formData.get("productsPerPage") || "20"), 10) || 20)),
@@ -266,23 +265,108 @@ function shopSettingsPayload(form) {
     showAttributes: formData.has("showAttributes"),
     showSku: formData.has("showSku"),
     showStock: formData.has("showStock"),
+    showDescriptions: formData.has("showDescriptions"),
     catalogHero: {
       enabled: formData.has("catalogHeroEnabled"),
       mediaType: String(formData.get("catalogHeroMediaType") || "VIDEO"),
       mediaUrl: String(formData.get("catalogHeroMediaUrl") || "").trim(),
       posterUrl: String(formData.get("catalogHeroPosterUrl") || "").trim(),
       altText: String(formData.get("catalogHeroAltText") || "").trim(),
+      ctaLabel: String(formData.get("catalogHeroCtaLabel") || "").trim(),
+      ctaUrl: String(formData.get("catalogHeroCtaUrl") || "").trim(),
       playback: String(formData.get("catalogHeroPlayback") || "hover-focus"),
       loop: formData.has("catalogHeroLoop")
     }
   };
 }
 
+async function uploadedShopMedia(formData, fieldName, currentUrl, expectedKind) {
+  const file = selectedFile(formData.get(`${fieldName}File`));
+  if (!file) return String(formData.get(`${fieldName}Url`) || currentUrl || "").trim();
+
+  if (expectedKind === "IMAGE" && !file.type.startsWith("image/")) {
+    throw new Error("Choose an image file for this field.");
+  }
+  if (expectedKind === "VIDEO" && !file.type.startsWith("video/")) {
+    throw new Error("Choose an MP4 or WebM video for the hero.");
+  }
+
+  return (await uploadMediaFile(file, file.name || "Shop media")).url;
+}
+
+function safeShopLink(value) {
+  if (!value) return true;
+  if (value.startsWith("/") && !value.startsWith("//") && !/[<>"\\]/.test(value)) {
+    try {
+      return !decodeURIComponent(value.split(/[?#]/, 1)[0] || "").split("/").includes("..");
+    } catch {
+      return false;
+    }
+  }
+
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
+async function shopSettingsPayloadWithUploads(form) {
+  const formData = new FormData(form);
+  const settings = shopSettingsPayload(formData);
+  const heroFile = selectedFile(formData.get("catalogHeroMediaFile"));
+  const posterFile = selectedFile(formData.get("catalogHeroPosterFile"));
+  const heroPicker = form.elements.namedItem("catalogHeroMediaFile")?.closest?.("[data-shop-media-picker]");
+
+  if (Boolean(settings.catalogHero.ctaLabel) !== Boolean(settings.catalogHero.ctaUrl)) {
+    throw new Error("Add both a button label and link, or leave both empty.");
+  }
+  if (!safeShopLink(settings.catalogHero.ctaUrl)) {
+    throw new Error("Use a safe site path or HTTP(S) link for the hero button.");
+  }
+  if (settings.catalogHero.enabled && !settings.catalogHero.mediaUrl && !heroFile) {
+    throw new Error("Upload hero media before enabling the shop hero.");
+  }
+  if (
+    settings.catalogHero.enabled &&
+    settings.catalogHero.mediaUrl &&
+    !heroFile &&
+    heroPicker?.dataset.savedMediaType !== settings.catalogHero.mediaType
+  ) {
+    throw new Error(`Choose a new ${settings.catalogHero.mediaType === "IMAGE" ? "image" : "video"} for the selected hero type.`);
+  }
+  if (settings.catalogHero.enabled && settings.catalogHero.mediaType === "IMAGE" && !settings.catalogHero.altText) {
+    throw new Error("Add a media description for the shop hero image.");
+  }
+  if (heroFile && !heroFile.type.startsWith(settings.catalogHero.mediaType === "IMAGE" ? "image/" : "video/")) {
+    throw new Error(settings.catalogHero.mediaType === "IMAGE"
+      ? "Choose an image file for the hero."
+      : "Choose an MP4 or WebM video for the hero.");
+  }
+  if (posterFile && !posterFile.type.startsWith("image/")) {
+    throw new Error("Choose an image file for the video poster.");
+  }
+
+  settings.catalogHero.mediaUrl = await uploadedShopMedia(
+    formData,
+    "catalogHeroMedia",
+    settings.catalogHero.mediaUrl,
+    settings.catalogHero.mediaType
+  );
+  settings.catalogHero.posterUrl = await uploadedShopMedia(
+    formData,
+    "catalogHeroPoster",
+    settings.catalogHero.posterUrl,
+    "IMAGE"
+  );
+  return settings;
+}
+
 export function updateShopSettingsPreview(form) {
   const preview = form?.querySelector?.("[data-shop-preview]");
   if (!preview) return;
 
-  const settings = shopSettingsPayload(form);
+  const settings = shopSettingsPayload(new FormData(form));
   preview.dataset.catalogLayout = settings.catalogLayout;
   preview.dataset.cardStyle = settings.cardStyle;
   preview.querySelector("[data-shop-preview-title]").textContent = settings.catalogTitle;
@@ -293,6 +377,11 @@ export function updateShopSettingsPreview(form) {
     hero.dataset.mediaType = settings.catalogHero.mediaType;
     const label = hero.querySelector("[data-shop-preview-hero-label]");
     if (label) label.textContent = settings.catalogHero.mediaType === "VIDEO" ? "Video hero" : "Image hero";
+    const cta = hero.querySelector("[data-shop-preview-hero-cta]");
+    if (cta) {
+      cta.textContent = settings.catalogHero.ctaLabel;
+      cta.hidden = !settings.catalogHero.ctaLabel;
+    }
   }
   preview.querySelectorAll("[data-shop-preview-sku]").forEach((element) => {
     element.hidden = !settings.showSku;
@@ -300,19 +389,26 @@ export function updateShopSettingsPreview(form) {
   preview.querySelectorAll("[data-shop-preview-stock]").forEach((element) => {
     element.hidden = !settings.showStock;
   });
+  preview.querySelectorAll("[data-shop-preview-card-description]").forEach((element) => {
+    element.hidden = !settings.showDescriptions;
+  });
   const filters = preview.querySelector("[data-shop-preview-filters]");
   if (filters) filters.hidden = !settings.showCategories && !settings.showAttributes;
 }
 
 export async function saveShopSettings(form) {
+  const payloadPromise = shopSettingsPayloadWithUploads(form);
   setFormDisabled(form, true);
   setFormMessage(form, "Saving storefront...");
 
   try {
-    await api("/products/settings", {
+    const { settings } = await api("/products/settings", {
       method: "PATCH",
-      body: JSON.stringify(shopSettingsPayload(form))
+      body: JSON.stringify(await payloadPromise)
     });
+    syncSavedShopMedia(form, "catalogHeroMedia", settings.catalogHero.mediaUrl, settings.catalogHero.mediaType);
+    syncSavedShopMedia(form, "catalogHeroPoster", settings.catalogHero.posterUrl, "IMAGE");
+    updateShopSettingsPreview(form);
     setFormMessage(form, "Storefront saved.");
     setStatus("Storefront customization saved.");
   } catch (error) {
@@ -321,6 +417,91 @@ export async function saveShopSettings(form) {
   } finally {
     setFormDisabled(form, false);
   }
+}
+
+function syncSavedShopMedia(form, fieldName, url, mediaType) {
+  const input = form.elements.namedItem(`${fieldName}File`);
+  const picker = input?.closest?.("[data-shop-media-picker]");
+  if (!picker) return;
+
+  if (picker.dataset.previewObjectUrl && typeof URL !== "undefined") {
+    URL.revokeObjectURL(picker.dataset.previewObjectUrl);
+    delete picker.dataset.previewObjectUrl;
+  }
+
+  input.value = "";
+  const savedUrl = String(url || "");
+  picker.dataset.savedMediaType = mediaType;
+  const hiddenUrl = picker.querySelector("[data-shop-media-url]");
+  const preview = picker.querySelector("[data-shop-media-preview]");
+  const clear = picker.querySelector("[data-clear-shop-media]");
+  const change = picker.querySelector(".gallery-image-change");
+  if (hiddenUrl) hiddenUrl.value = savedUrl;
+
+  if (preview) {
+    if (savedUrl) {
+      const media = document.createElement(mediaType === "VIDEO" ? "video" : "img");
+      media.src = savedUrl;
+      if (media.tagName === "VIDEO") {
+        media.muted = true;
+        media.playsInline = true;
+        media.preload = "metadata";
+      } else {
+        media.alt = "Saved shop media";
+      }
+      preview.replaceChildren(media);
+    } else {
+      const placeholder = document.createElement("span");
+      placeholder.className = "gallery-accordion-placeholder";
+      placeholder.setAttribute("aria-hidden", "true");
+      placeholder.textContent = "Upload media";
+      preview.replaceChildren(placeholder);
+    }
+  }
+  if (clear) clear.hidden = !savedUrl;
+  if (change) change.innerHTML = savedUrl ? "&#9998;" : "Upload";
+}
+
+export function updateShopMediaPicker(input) {
+  const file = selectedFile(input?.files?.[0]);
+  const picker = input?.closest?.("[data-shop-media-picker]");
+  const preview = picker?.querySelector?.("[data-shop-media-preview]");
+  if (!file || !picker || !preview || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return;
+
+  const media = document.createElement(file.type.startsWith("video/") ? "video" : "img");
+  if (picker.dataset.previewObjectUrl) URL.revokeObjectURL(picker.dataset.previewObjectUrl);
+  picker.dataset.previewObjectUrl = URL.createObjectURL(file);
+  media.src = picker.dataset.previewObjectUrl;
+  if (media.tagName === "VIDEO") {
+    media.muted = true;
+    media.playsInline = true;
+  } else {
+    media.alt = "Selected shop media";
+  }
+  preview.replaceChildren(media);
+  const change = picker.querySelector(".gallery-image-change");
+  if (change) change.innerHTML = "&#9998;";
+  const clear = picker.querySelector("[data-clear-shop-media]");
+  if (clear) clear.hidden = false;
+}
+
+export function clearShopMediaPicker(button) {
+  const picker = button?.closest?.("[data-shop-media-picker]");
+  if (!picker) return;
+
+  const input = picker.querySelector("[data-shop-media-input]");
+  const url = picker.querySelector("[data-shop-media-url]");
+  const preview = picker.querySelector("[data-shop-media-preview]");
+  if (picker.dataset.previewObjectUrl && typeof URL !== "undefined") {
+    URL.revokeObjectURL(picker.dataset.previewObjectUrl);
+    delete picker.dataset.previewObjectUrl;
+  }
+  if (input) input.value = "";
+  if (url) url.value = "";
+  if (preview) preview.innerHTML = '<span class="gallery-accordion-placeholder" aria-hidden="true">Upload media</span>';
+  button.hidden = true;
+  const change = picker.querySelector(".gallery-image-change");
+  if (change) change.textContent = "Upload";
 }
 
 export function addRepeaterRow(kind) {

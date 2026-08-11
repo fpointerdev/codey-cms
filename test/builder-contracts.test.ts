@@ -38,9 +38,9 @@ test("frontend builder templates match the registered editor elements", () => {
   const frontendIds = componentTemplates.map((template) => template.id).sort();
 
   assert.deepEqual(frontendIds, editorIds);
-  assert.equal(builderElementRegistry.length, 31);
-  assert.equal(editorIds.length, 30);
-  assert.equal(generatorIds.length, 29);
+  assert.equal(builderElementRegistry.length, 33);
+  assert.equal(editorIds.length, 32);
+  assert.equal(generatorIds.length, 31);
   assert.equal(generatorIds.includes("custom-code"), false);
 });
 
@@ -91,7 +91,7 @@ test("section patterns preserve block ownership and satisfy the builder contract
   const registeredPatternIds = builderSectionPatternRegistry.map((pattern) => pattern.id).sort();
   const frontendPatternIds = sectionPatternTemplates.map((pattern) => pattern.id).sort();
   assert.deepEqual(frontendPatternIds, registeredPatternIds);
-  assert.equal(registeredPatternIds.length, 18);
+  assert.equal(registeredPatternIds.length, 20);
 
   for (const pattern of sectionPatternTemplates) {
     const registeredPattern = builderSectionPatternRegistry.find((item) => item.id === pattern.id);
@@ -176,32 +176,49 @@ test("expanded structured elements expose focused collection and quote fields", 
 });
 
 test("collection editors preserve imported items beyond their visible row limit", () => {
-  const milestones = Array.from({ length: 10 }, (_, index) => ({
-    title: `Milestone ${index + 1}`,
-    body: `Details ${index + 1}`
-  }));
-  const editor = structuredContentEditor({
-    key: "timeline",
-    type: "CUSTOM",
-    settings: { elementId: "timeline" },
-    value: { title: "History", milestones }
-  });
-  const values: Record<string, unknown> = {
-    structuredTitle: "Updated history",
-    structuredAlignment: "left",
-    structuredDensity: "comfortable",
-    structuredSurface: "outline",
-    structuredPresentation: "line"
-  };
+  const cases = [
+    { elementId: "timeline", collectionKey: "milestones" },
+    { elementId: "checklist", collectionKey: "points" },
+    { elementId: "resource-list", collectionKey: "resources" },
+    { elementId: "location-cards", collectionKey: "locations" },
+    { elementId: "bento-grid", collectionKey: "cards" },
+    { elementId: "navigation-cards", collectionKey: "cards" }
+  ];
 
-  for (let index = 0; index < 8; index += 1) {
-    values[`structuredItem${index + 1}Title`] = milestones[index].title;
-    values[`structuredItem${index + 1}Body`] = milestones[index].body;
+  for (const { elementId, collectionKey } of cases) {
+    const items = Array.from({ length: 10 }, (_, index) => ({
+      title: `Item ${index + 1}`,
+      body: `Details ${index + 1}`,
+      label: `Label ${index + 1}`,
+      url: `/item-${index + 1}`,
+      featured: index === 0
+    }));
+    const editor = structuredContentEditor({
+      key: elementId,
+      type: "CUSTOM",
+      settings: { elementId },
+      value: { title: "Imported collection", [collectionKey]: items }
+    });
+    const values: Record<string, unknown> = {
+      structuredTitle: "Updated title",
+      structuredAlignment: "left",
+      structuredDensity: "comfortable",
+      structuredSurface: "outline"
+    };
+
+    for (let index = 0; index < 8; index += 1) {
+      values[`structuredItem${index + 1}Title`] = items[index].title;
+      values[`structuredItem${index + 1}Body`] = items[index].body;
+      values[`structuredItem${index + 1}Label`] = items[index].label;
+      values[`structuredItem${index + 1}Url`] = items[index].url;
+      values[`structuredItem${index + 1}Featured`] = items[index].featured;
+    }
+
+    const updated = editor?.valueFrom(values);
+    const updatedItems = updated?.[collectionKey];
+    assert.equal(updatedItems.length, 10, elementId);
+    assert.equal(updatedItems[9].title, "Item 10", elementId);
   }
-
-  const updated = editor?.valueFrom(values);
-  assert.equal(updated?.milestones.length, 10);
-  assert.equal(updated?.milestones[9].title, "Milestone 10");
 });
 
 test("v1 structured elements expose simple settings and preserve comparison content", () => {
@@ -318,4 +335,80 @@ test("media uploads classify supported video and document formats correctly", ()
   assert.equal(mediaKindForMimeType("video/mp4"), "VIDEO");
   assert.equal(mediaKindForMimeType("application/pdf"), "DOCUMENT");
   assert.equal(mediaKindForMimeType("text/plain"), "OTHER");
+});
+
+test("repeatable image elements use uploads and preserve uploaded media references", () => {
+  const editor = structuredContentEditor({
+    key: "team",
+    type: "CUSTOM",
+    settings: { elementId: "team-section" },
+    value: {
+      variant: "team-section",
+      title: "Team",
+      items: [{ title: "Alex", label: "Founder", image: { url: "/uploads/alex.webp", alt: "Alex" } }]
+    }
+  });
+  const photoField = editor?.fields.find((field) => field.name === "structuredItem1ImageUrl");
+
+  assert.equal(photoField?.type, "file");
+  assert.equal(photoField?.imagePicker, true);
+  assert.equal(photoField?.previewUrl, "/uploads/alex.webp");
+  assert.equal(editor?.mediaFields[0]?.name, "structuredItem1ImageUrl");
+  assert.ok(editor?.fields.some((field) => field.name === "structuredItem1Remove"));
+
+  const value = editor?.valueFrom({
+    structuredTitle: "Team",
+    structuredItem1Title: "Alex",
+    structuredItem1Label: "Founder",
+    structuredItem1Body: "",
+    structuredItem1ImageAlt: "Alex in the studio",
+    structuredAlignment: "left",
+    structuredDensity: "comfortable",
+    structuredSurface: "outline",
+    structuredColumns: "3"
+  }, null, {
+    structuredItem1ImageUrl: {
+      id: "media-2",
+      url: "/uploads/alex-new.webp",
+      altText: "Alex"
+    }
+  });
+
+  assert.deepEqual(value?.items[0].image, {
+    url: "/uploads/alex-new.webp",
+    alt: "Alex in the studio",
+    mediaAssetId: "media-2"
+  });
+
+  const removed = editor?.valueFrom({
+    structuredTitle: "Team",
+    structuredItem1Remove: true,
+    structuredAlignment: "left",
+    structuredDensity: "comfortable",
+    structuredSurface: "outline",
+    structuredColumns: "3"
+  });
+  assert.equal(removed?.items.length, 0);
+});
+
+test("image comparison exposes exactly two upload-first items", () => {
+  const editor = structuredContentEditor({
+    key: "comparison",
+    type: "CUSTOM",
+    settings: { elementId: "image-comparison" },
+    value: {
+      variant: "image-comparison",
+      title: "Before and after",
+      items: [
+        { title: "Before", image: { url: "/uploads/before.webp", alt: "Before" } },
+        { title: "After", image: { url: "/uploads/after.webp", alt: "After" } }
+      ],
+      display: { presentation: "split" }
+    }
+  });
+
+  assert.equal(editor?.fields.filter((field) => field.type === "section").length, 2);
+  assert.equal(editor?.fields.filter((field) => field.imagePicker).length, 2);
+  assert.equal(editor?.fields.some((field) => field.name.endsWith("Remove")), false);
+  assert.ok(editor?.fields.some((field) => field.name === "structuredPresentation" && field.value === "split"));
 });

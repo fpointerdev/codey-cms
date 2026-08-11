@@ -340,6 +340,12 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     });
     assert.equal(createPage.status, 201, JSON.stringify(await responseJson(createPage)));
 
+    const createdPage = await request(`/api/v1/cms/pages/${pageSlug}`, { headers: authorization });
+    const createdPageBody = await responseJson(createdPage);
+    assert.equal(createdPage.status, 200, JSON.stringify(createdPageBody));
+    assert.equal(createdPageBody.data?.page.title, "Integration published page");
+    assert.equal(createdPageBody.data?.page.sections?.[0]?.blocks?.[0]?.key, "body");
+
     const createTemplate = await request("/api/v1/cms/templates", {
       method: "POST",
       headers: authorization,

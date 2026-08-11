@@ -14,6 +14,7 @@ import { renderComponentPalette } from "./public-renderer.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
 import {
   cardStyleOptions,
+  catalogSortOptions,
   detailLayoutOptions,
   detailStyleOptions,
   normalizeShopSettings,
@@ -1236,6 +1237,7 @@ function renderShopSettingsPreview(settings) {
       <div class="shop-settings-preview" data-shop-preview data-catalog-layout="${escapeHtml(settings.catalogLayout)}" data-card-style="${escapeHtml(settings.cardStyle)}">
         <div class="shop-preview-hero" data-shop-preview-hero data-media-type="${escapeHtml(settings.catalogHero.mediaType)}"${settings.catalogHero.enabled ? "" : " hidden"}>
           <span data-shop-preview-hero-label>${escapeHtml(settings.catalogHero.mediaType === "VIDEO" ? "Video hero" : "Image hero")}</span>
+          <strong data-shop-preview-hero-cta${settings.catalogHero.ctaLabel ? "" : " hidden"}>${escapeHtml(settings.catalogHero.ctaLabel)}</strong>
         </div>
         <header>
           <span>Catalog</span>
@@ -1251,6 +1253,7 @@ function renderShopSettingsPreview(settings) {
               <div class="shop-preview-image"><span>${index + 1}</span></div>
               <small>Collection</small>
               <strong>${escapeHtml(name)}</strong>
+              <p data-shop-preview-card-description${settings.showDescriptions ? "" : " hidden"}>A concise product description.</p>
               <p data-shop-preview-sku${settings.showSku ? "" : " hidden"}>SKU-00${index + 1}</p>
               <footer><b>${escapeHtml(formatMoney((index + 1) * 2500, "EUR"))}</b><span data-shop-preview-stock${settings.showStock ? "" : " hidden"}>In stock</span></footer>
             </article>
@@ -1258,6 +1261,30 @@ function renderShopSettingsPreview(settings) {
         </div>
       </div>
     </aside>
+  `;
+}
+
+function renderShopMediaPicker({ name, label, url = "", alt = "", accept = "image/*", video = false, help = "", disabled = false }) {
+  return `
+    <div class="settings-media-picker" data-shop-media-picker data-saved-media-type="${video ? "VIDEO" : "IMAGE"}">
+      <input name="${escapeHtml(name)}Url" type="hidden" value="${escapeHtml(url)}" data-shop-media-url />
+      <label class="gallery-image-picker settings-image-picker">
+        <span class="gallery-image-label">${escapeHtml(label)}</span>
+        <span class="gallery-image-preview" data-shop-media-preview>
+          ${url
+            ? video
+              ? `<video src="${escapeHtml(url)}" muted playsinline preload="metadata"></video>`
+              : `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" />`
+            : '<span class="gallery-accordion-placeholder" aria-hidden="true">Upload media</span>'}
+        </span>
+        <span class="gallery-image-change">${url ? "&#9998;" : "Upload"}</span>
+        <input name="${escapeHtml(name)}File" type="file" accept="${escapeHtml(accept)}" data-shop-media-input${disabled ? " disabled" : ""} />
+      </label>
+      <div class="settings-media-picker-footer">
+        <small class="field-help">${escapeHtml(help)}</small>
+        <button type="button" class="secondary-button" data-clear-shop-media${url ? "" : " hidden"}${disabled ? " disabled" : ""}>Remove</button>
+      </div>
+    </div>
   `;
 }
 
@@ -1276,18 +1303,46 @@ function renderStorefrontSettings(settings, canUpdate) {
             <div><p class="section-label">Hero media</p><h3>Campaign introduction</h3></div>
             <label class="checkbox-field"><input type="checkbox" name="catalogHeroEnabled" ${settings.catalogHero.enabled ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Show media hero on the main shop page</span></label>
             <label><span>Media type</span><select name="catalogHeroMediaType" ${canUpdate ? "" : "disabled"}><option value="VIDEO"${settings.catalogHero.mediaType === "VIDEO" ? " selected" : ""}>Video</option><option value="IMAGE"${settings.catalogHero.mediaType === "IMAGE" ? " selected" : ""}>Image</option></select></label>
-            <label><span>Media URL</span><input name="catalogHeroMediaUrl" value="${escapeHtml(settings.catalogHero.mediaUrl)}" maxlength="1000" placeholder="https://... or /uploads/..." ${canUpdate ? "" : "disabled"} /></label>
-            <label><span>Poster URL</span><input name="catalogHeroPosterUrl" value="${escapeHtml(settings.catalogHero.posterUrl)}" maxlength="1000" placeholder="Optional video poster" ${canUpdate ? "" : "disabled"} /></label>
+            ${renderShopMediaPicker({
+              name: "catalogHeroMedia",
+              label: settings.catalogHero.mediaUrl ? "Replace hero media" : "Hero media",
+              url: settings.catalogHero.mediaUrl,
+              alt: settings.catalogHero.altText || settings.catalogTitle,
+              accept: "image/*,video/mp4,video/webm",
+              video: settings.catalogHero.mediaType === "VIDEO",
+              help: "Upload an optimized image, MP4, or WebM file. The current media stays active until you save.",
+              disabled: !canUpdate
+            })}
             <label><span>Media description</span><input name="catalogHeroAltText" value="${escapeHtml(settings.catalogHero.altText)}" maxlength="240" placeholder="Required for images" ${canUpdate ? "" : "disabled"} /></label>
-            <label><span>Video playback</span><select name="catalogHeroPlayback" ${canUpdate ? "" : "disabled"}><option value="hover-focus"${settings.catalogHero.playback === "hover-focus" ? " selected" : ""}>Play on hover or focus</option><option value="controls"${settings.catalogHero.playback === "controls" ? " selected" : ""}>Visitor controls</option></select></label>
-            <label class="checkbox-field"><input type="checkbox" name="catalogHeroLoop" ${settings.catalogHero.loop ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Loop video</span></label>
+            <div class="builder-form-grid">
+              <label><span>Button label</span><input name="catalogHeroCtaLabel" value="${escapeHtml(settings.catalogHero.ctaLabel)}" maxlength="80" placeholder="Explore collection" ${canUpdate ? "" : "disabled"} /></label>
+              <label><span>Button link</span><input name="catalogHeroCtaUrl" value="${escapeHtml(settings.catalogHero.ctaUrl)}" maxlength="1000" placeholder="/shop/category/featured" ${canUpdate ? "" : "disabled"} /></label>
+            </div>
+            <details class="product-editor-disclosure">
+              <summary><span><strong>Video options</strong><small>Poster, playback, and looping</small></span><span aria-hidden="true">+</span></summary>
+              <div class="product-editor-disclosure-body">
+                ${renderShopMediaPicker({
+                  name: "catalogHeroPoster",
+                  label: settings.catalogHero.posterUrl ? "Replace poster image" : "Poster image",
+                  url: settings.catalogHero.posterUrl,
+                  alt: `${settings.catalogTitle} video poster`,
+                  help: "Optional still image displayed before the hero video plays.",
+                  disabled: !canUpdate
+                })}
+                <label><span>Playback</span><select name="catalogHeroPlayback" ${canUpdate ? "" : "disabled"}><option value="hover-focus"${settings.catalogHero.playback === "hover-focus" ? " selected" : ""}>Play on hover or focus</option><option value="controls"${settings.catalogHero.playback === "controls" ? " selected" : ""}>Visitor controls</option></select></label>
+                <label class="checkbox-field"><input type="checkbox" name="catalogHeroLoop" ${settings.catalogHero.loop ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Loop video</span></label>
+              </div>
+            </details>
           </section>
 
           <section class="shop-customization-section">
             <div><p class="section-label">Catalog</p><h3>Product listing</h3></div>
             ${renderShopSettingsChoices("Layout", "catalogLayout", shopLayoutOptions, settings.catalogLayout, !canUpdate)}
             ${renderShopSettingsChoices("Card style", "cardStyle", cardStyleOptions, settings.cardStyle, !canUpdate)}
-            <label class="shop-products-per-page"><span>Products per page</span><input name="productsPerPage" type="number" min="8" max="48" step="1" value="${escapeHtml(settings.productsPerPage)}" ${canUpdate ? "" : "disabled"} /></label>
+            <div class="builder-form-grid">
+              <label><span>Default order</span><select name="catalogSort" ${canUpdate ? "" : "disabled"}>${catalogSortOptions.map((option) => `<option value="${escapeHtml(option.value)}"${settings.catalogSort === option.value ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select></label>
+              <label class="shop-products-per-page"><span>Products per page</span><input name="productsPerPage" type="number" min="8" max="48" step="1" value="${escapeHtml(settings.productsPerPage)}" ${canUpdate ? "" : "disabled"} /></label>
+            </div>
           </section>
 
           <section class="shop-customization-section">
@@ -1303,6 +1358,7 @@ function renderStorefrontSettings(settings, canUpdate) {
               <label class="checkbox-field"><input type="checkbox" name="showAttributes" ${settings.showAttributes ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Attribute filters</span></label>
               <label class="checkbox-field"><input type="checkbox" name="showSku" ${settings.showSku ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Product SKU</span></label>
               <label class="checkbox-field"><input type="checkbox" name="showStock" ${settings.showStock ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Stock status</span></label>
+              <label class="checkbox-field"><input type="checkbox" name="showDescriptions" ${settings.showDescriptions ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Card descriptions</span></label>
             </div>
           </section>
 

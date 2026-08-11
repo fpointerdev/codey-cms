@@ -53,6 +53,73 @@ function localeQuery() {
   return `locale=${encodeURIComponent(currentLocale())}`;
 }
 
+export async function productListModalFields(value = {}, modalOptions = {}) {
+  const { products = [] } = await api(`/products?status=ACTIVE&limit=100&${localeQuery()}`);
+  const productsBySlug = new Map(products.map((product) => [product.slug, product]));
+  const requestedSlugs = Array.isArray(value.productSlugs) ? value.productSlugs : [];
+  const selectedSlugs = modalOptions.preserveUnavailable === false
+    ? requestedSlugs.filter((slug) => productsBySlug.has(slug))
+    : requestedSlugs;
+  const productOptions = [
+    ...products.map((product) => ({
+      value: product.slug,
+      label: product.name,
+      description: `${product.category?.name || "Product"} · ${product.status || "ACTIVE"}`
+    })),
+    ...selectedSlugs
+      .filter((slug) => !productsBySlug.has(slug))
+      .map((slug) => ({ value: slug, label: slug, description: "Currently unavailable" }))
+  ];
+
+  return [
+    { name: "title", label: "Heading", value: value.title || "Featured products", required: false, group: "Content" },
+    { name: "body", label: "Introduction", type: "richtext", value: value.body || "", required: false, group: "Content" },
+    {
+      name: "productSlugs",
+      label: "Products",
+      type: "multiChoice",
+      value: selectedSlugs,
+      options: productOptions,
+      multiple: true,
+      required: false,
+      help: products.length ? "Select one or more active products." : "Publish a product first, then return here.",
+      group: "Content"
+    },
+    {
+      name: "layout",
+      label: "Layout",
+      type: "choice",
+      value: value.layout || "grid",
+      options: [
+        { value: "grid", label: "Product grid", description: "Balanced cards for several products.", preview: "three-column" },
+        { value: "spotlight", label: "Spotlight", description: "One prominent product with more room.", preview: "asymmetric" },
+        { value: "compact", label: "Compact", description: "Dense cards for larger selections.", preview: "four-column" }
+      ],
+      group: "Settings"
+    },
+    {
+      name: "columns",
+      label: "Products per row",
+      type: "select",
+      value: String(value.columns || 3),
+      options: [2, 3, 4].map((columns) => ({ value: String(columns), label: `${columns} products` })),
+      group: "Settings"
+    },
+    { name: "showDescription", label: "Show product descriptions", type: "checkbox", checked: value.showDescription !== false, group: "Settings" }
+  ];
+}
+
+export function productListValueFromValues(values) {
+  return {
+    productSlugs: Array.isArray(values.productSlugs) ? values.productSlugs : [],
+    title: values.title || "",
+    body: values.body || "",
+    layout: ["grid", "spotlight", "compact"].includes(values.layout) ? values.layout : "grid",
+    columns: [2, 3, 4].includes(Number(values.columns)) ? Number(values.columns) : 3,
+    showDescription: values.showDescription === true
+  };
+}
+
 export function selectedFile(value) {
   if (!value || typeof value !== "object") return null;
   if (typeof value.arrayBuffer !== "function" || !value.size) return null;
@@ -382,7 +449,6 @@ export async function editContentBlock(page, blockKey) {
       submitLabel: "Save custom code"
     });
     if (!values) return null;
-
     return updatePageBlock(page.slug, block, {
       value: {
         html: values.html,
@@ -514,17 +580,17 @@ export async function editContentBlock(page, blockKey) {
     const values = await getModalFormHandler()({
       label: "Shop",
       title: block.label || "Edit product list",
-      description: "Use comma-separated product slugs.",
-      fields: withCustomCssField(block, [
-        { name: "productSlugs", label: "Product slugs", value: (block.value?.productSlugs || []).join(", "), required: false }
-      ])
+      description: "Choose the products customers should see. Cards use live prices, stock, images, and purchase actions.",
+      fields: withCustomCssField(block, await productListModalFields(block.value))
     });
     if (!values) return null;
+    if (!Array.isArray(values.productSlugs) || !values.productSlugs.length) {
+      setStatus("Choose at least one active product.", true);
+      return null;
+    }
 
     return updatePageBlock(page.slug, block, {
-      value: {
-        productSlugs: values.productSlugs.split(",").map((slug) => slug.trim()).filter(Boolean)
-      },
+      value: productListValueFromValues(values),
       settings: cssSettingsPayload(block, values)
     });
   }
@@ -567,9 +633,18 @@ export async function editContentBlock(page, blockKey) {
     const mediaAsset = file
       ? await uploadMediaFile(file, values.structuredImageAlt || values.structuredTitle || block.label || "")
       : null;
+    const itemMediaAssets = {};
+    for (const mediaField of structuredEditor.mediaFields || []) {
+      const itemFile = selectedFile(values[mediaField.name]);
+      if (!itemFile) continue;
+      itemMediaAssets[mediaField.name] = await uploadMediaFile(
+        itemFile,
+        values[mediaField.altName] || mediaField.fallbackAlt || block.label || ""
+      );
+    }
 
     return updatePageBlock(page.slug, block, {
-      value: structuredEditor.valueFrom(values, mediaAsset),
+      value: structuredEditor.valueFrom(values, mediaAsset, itemMediaAssets),
       settings: cssSettingsPayload(block, values),
       mediaAssetId: mediaAsset?.id || block.mediaAssetId || undefined
     });
