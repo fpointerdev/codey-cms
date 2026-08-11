@@ -30,6 +30,8 @@ Use this checklist before a generated site is published.
 - Public form endpoints keep anti-spam checks enabled.
 - Uploaded media is limited to the supported image, video, and PDF allowlist; extension, MIME, kind, and file signatures must agree.
 - Rich text is sanitized on write and again before public server rendering.
+- Custom Code elements accept only bounded content and HTTPS library URLs. They run only in sandboxed opaque-origin frames, never in the admin or visual editor; do not add `allow-same-origin` to their iframe policy.
+- Treat `update:cms` as a trusted publishing permission: custom-code widgets stay in an opaque-origin sandbox, but can still collect data inside their frame and contact HTTPS services.
 
 ## Payments
 

@@ -16,6 +16,35 @@ export const localeQuerySchema = z.object({
   locale: z.string().trim().toLowerCase().min(2).max(16).optional()
 });
 
+const storefrontMediaUrlSchema = z.string().trim().max(1000).refine((value) => {
+  if (!value) return true;
+  if (value.startsWith("//") || /[<>"\\]/.test(value)) return false;
+
+  if (value.startsWith("/")) {
+    try {
+      return !decodeURIComponent(value.split(/[?#]/, 1)[0] || "").split("/").includes("..");
+    } catch {
+      return false;
+    }
+  }
+
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}, "Use a safe root-relative or absolute HTTP(S) media URL.");
+
+const catalogHeroSchema = z.object({
+  enabled: z.boolean().default(false),
+  mediaType: z.enum(["IMAGE", "VIDEO"]).default("VIDEO"),
+  mediaUrl: storefrontMediaUrlSchema.default(""),
+  posterUrl: storefrontMediaUrlSchema.default(""),
+  altText: z.string().trim().max(240).default(""),
+  playback: z.enum(["controls", "hover-focus"]).default("hover-focus"),
+  loop: z.boolean().default(true)
+}).strict().default({});
+
 export const shopSettingsSchema = z.object({
   catalogTitle: z.string().trim().min(1).max(120).default("Shop"),
   catalogDescription: z.string().trim().max(500).default("Browse our products."),
@@ -27,7 +56,28 @@ export const shopSettingsSchema = z.object({
   showCategories: z.boolean().default(true),
   showAttributes: z.boolean().default(true),
   showSku: z.boolean().default(true),
-  showStock: z.boolean().default(true)
+  showStock: z.boolean().default(true),
+  catalogHero: catalogHeroSchema
+}).superRefine((settings, context) => {
+  if (settings.catalogHero.enabled && !settings.catalogHero.mediaUrl) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["catalogHero", "mediaUrl"],
+      message: "Enabled catalog hero needs a media URL."
+    });
+  }
+
+  if (
+    settings.catalogHero.enabled &&
+    settings.catalogHero.mediaType === "IMAGE" &&
+    !settings.catalogHero.altText
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["catalogHero", "altText"],
+      message: "Catalog hero image needs alt text."
+    });
+  }
 });
 
 const productImageUrlSchema = z.string().trim().max(1000).refine((value) => {

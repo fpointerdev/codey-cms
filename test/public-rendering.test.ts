@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { injectPublicShellContent } from "../src/core/public-shell.js";
+import {
+  customCodeContentSecurityPolicy,
+  renderCustomCodeDocument
+} from "../src/modules/cms/custom-code.js";
 
 const {
   renderPageContent,
@@ -58,6 +62,54 @@ test("public page markup renders meaningful sanitized content without editor con
   assert.match(html, /contact-form/);
   assert.doesNotMatch(html, /unsafe\(\)|data-edit-block/);
   assert.match(renderPageContent(page, { canEdit: true }), /data-edit-block/);
+});
+
+test("custom code runs only in an isolated public frame", () => {
+  const page = {
+    title: "Custom widget",
+    content: {},
+    sections: [{
+      id: "custom-section",
+      key: "custom-section",
+      settings: { elementId: "custom-code" },
+      blocks: [{
+        id: "block-custom-widget",
+        key: "custom-widget",
+        type: "EMBED",
+        label: "Availability widget",
+        value: {
+          html: '<p id="status">Loading</p>',
+          css: "#status { color: green; }",
+          javascript: 'document.querySelector("#status").textContent = "Ready";',
+          libraries: ["https://cdn.example.com/widget.js"],
+          height: 420
+        },
+        settings: { elementId: "custom-code" },
+        editable: true
+      }]
+    }]
+  };
+
+  const html = renderPageContent(page, { canEdit: false });
+  assert.match(html, /data-custom-code-frame/);
+  assert.match(html, /sandbox="allow-scripts allow-forms"/);
+  assert.doesNotMatch(html, /allow-same-origin/);
+  assert.match(html, /--custom-code-height:420px/);
+  assert.doesNotMatch(html, /<script/);
+  assert.match(html, /src="\/api\/v1\/cms\/custom-code\/block-custom-widget"/);
+
+  const frameDocument = renderCustomCodeDocument(page.sections[0].blocks[0].value, {
+    title: "Availability widget",
+    locale: "en"
+  });
+  assert.match(customCodeContentSecurityPolicy, /^sandbox allow-scripts allow-forms/);
+  assert.match(customCodeContentSecurityPolicy, /script-src 'unsafe-inline' https:/);
+  assert.match(frameDocument, /https:\/\/cdn\.example\.com\/widget\.js/);
+  assert.match(frameDocument, /document\.querySelector/);
+
+  const editorHtml = renderPageContent(page, { canEdit: true });
+  assert.match(editorHtml, /Custom code preview paused/);
+  assert.doesNotMatch(editorHtml, /data-custom-code-frame/);
 });
 
 test("visual editing keeps structural controls available for locked content", () => {
@@ -471,7 +523,8 @@ test("v1 builder elements server-render semantic process, comparison, and video 
             title: "Product tour",
             body: "A short walkthrough.",
             url: "/uploads/product-tour.mp4",
-            display: { ratio: "16 / 9", preload: "none", loop: false }
+            posterUrl: "/uploads/product-tour.webp",
+            display: { presentation: "hero", ratio: "16 / 9", preload: "none", loop: false, playback: "hover-focus" }
           },
           settings: { elementId: "video" },
           editable: true
@@ -486,7 +539,205 @@ test("v1 builder elements server-render semantic process, comparison, and video 
   assert.match(html, /<th scope="row">Response<\/th><td>2 days<\/td><td>4 hours<\/td>/);
   assert.match(html, /<video src="\/uploads\/product-tour\.mp4" controls playsinline preload="none"/);
   assert.match(html, /aria-label="Product tour"/);
+  assert.match(html, /data-video-playback="hover-focus"/);
+  assert.match(html, /poster="\/uploads\/product-tour\.webp" muted/);
+  assert.match(html, /structured-block-video structured-align-left structured-density-comfortable structured-surface-outline structured-presentation-hero/);
   assert.doesNotMatch(html, /<iframe/);
+});
+
+test("interactive image placements render bounded accessible product links", () => {
+  const html = renderPageContent({
+    title: "Showroom",
+    content: {},
+    sections: [{
+      id: "scene",
+      key: "scene",
+      settings: { elementId: "image-hotspots" },
+      blocks: [{
+        key: "scene-content",
+        type: "CUSTOM",
+        value: {
+          variant: "image-hotspots",
+          title: "Explore the room",
+          image: { url: "/uploads/showroom.webp", alt: "Showroom with display shelves" },
+          hotspots: [
+            {
+              title: "Featured product",
+              body: "View the product details.",
+              x: 42,
+              y: 58,
+              width: 9,
+              productSlug: "featured-product",
+              image: { url: "/uploads/featured-product.webp", alt: "Featured product" }
+            },
+            { title: "Unsafe", x: 50, y: 50, url: "javascript:alert(1)" },
+            { title: "Bounded", x: 120, y: -10, url: "/details" }
+          ],
+          display: { ratio: "16 / 10" }
+        },
+        settings: { elementId: "image-hotspots" },
+        editable: true
+      }]
+    }]
+  });
+
+  assert.match(html, /class="structured-hotspot-scene"/);
+  assert.match(html, /aria-label="Interactive image points"/);
+  assert.match(html, /href="\/product\/featured-product" aria-label="Featured product"/);
+  assert.match(html, /class="hotspot-overlay-image"/);
+  assert.match(html, /--hotspot-x:100%;--hotspot-y:0%/);
+  assert.doesNotMatch(html, /javascript:|aria-label="Unsafe"/);
+});
+
+test("expanded builder elements server-render semantic timelines, lists, locations, and quotes", () => {
+  const html = renderPageContent({
+    title: "Company information",
+    content: {},
+    sections: [{
+      id: "expanded-elements",
+      key: "expanded-elements",
+      settings: {},
+      blocks: [
+        {
+          key: "timeline",
+          type: "CUSTOM",
+          value: {
+            title: "Milestones",
+            items: [{ title: "Opened", body: "The first office opened.", label: "2020" }]
+          },
+          settings: { elementId: "timeline" },
+          editable: true
+        },
+        {
+          key: "checklist",
+          type: "CUSTOM",
+          value: {
+            title: "Included",
+            items: [{ title: "Planning", body: "A documented scope." }],
+            display: { columns: 2 }
+          },
+          settings: { elementId: "checklist" },
+          editable: true
+        },
+        {
+          key: "resources",
+          type: "CUSTOM",
+          value: {
+            title: "Resources",
+            items: [{ title: "Service guide", body: "Read the details.", label: "Guide", url: "/service-guide" }]
+          },
+          settings: { elementId: "resource-list" },
+          editable: true
+        },
+        {
+          key: "locations",
+          type: "CUSTOM",
+          value: {
+            title: "Locations",
+            items: [{ title: "Main office", body: "1 Main Street", label: "Weekdays", url: "/contact" }],
+            display: { columns: 2 }
+          },
+          settings: { elementId: "location-cards" },
+          editable: true
+        },
+        {
+          key: "quote",
+          type: "CUSTOM",
+          value: {
+            title: "Customer perspective",
+            body: "The work stayed clear from start to finish.",
+            attribution: "Alex, customer"
+          },
+          settings: { elementId: "quote-highlight" },
+          editable: true
+        },
+        {
+          key: "bento",
+          type: "CUSTOM",
+          value: {
+            title: "Capabilities",
+            items: [{ title: "Fast delivery", body: "A clear path to launch.", featured: true }],
+            display: { presentation: "spotlight", columns: 4 }
+          },
+          settings: { elementId: "bento-grid" },
+          editable: true
+        },
+        {
+          key: "navigation",
+          type: "CUSTOM",
+          value: {
+            title: "Explore",
+            items: [{ title: "Services", body: "See what we offer.", url: "/services" }],
+            display: { presentation: "compact", columns: 3 }
+          },
+          settings: { elementId: "navigation-cards" },
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.match(html, /<ol class="structured-timeline">/);
+  assert.match(html, /<ul class="structured-checklist"/);
+  assert.match(html, /<a class="structured-resource-link" href="\/service-guide">/);
+  assert.match(html, /<address class="structured-location">/);
+  assert.match(html, /<figure class="structured-block structured-quote-highlight/);
+  assert.match(html, /<blockquote><p>The work stayed clear from start to finish\.<\/p><\/blockquote>/);
+  assert.match(html, /<figcaption>Alex, customer<\/figcaption>/);
+  assert.match(html, /structured-block-bento-grid/);
+  assert.match(html, /structured-presentation-spotlight/);
+  assert.match(html, /structured-card-navigation-cards/);
+  assert.match(html, /structured-presentation-compact/);
+  assert.match(html, /href="\/services"/);
+});
+
+test("registered element ids preserve collection aliases and presentation defaults", () => {
+  const html = renderPageContent({
+    title: "Portable content",
+    content: {},
+    sections: [{
+      id: "portable-elements",
+      key: "portable-elements",
+      settings: {},
+      blocks: [
+        {
+          key: "history",
+          type: "CUSTOM",
+          value: { title: "History", milestones: [{ title: "Launch", body: "The first release." }] },
+          settings: { elementId: "timeline" },
+          editable: true
+        },
+        {
+          key: "benefits",
+          type: "CUSTOM",
+          value: { title: "Benefits", points: [{ title: "Simple", body: "Easy to manage." }] },
+          settings: { elementId: "checklist" },
+          editable: true
+        },
+        {
+          key: "resources",
+          type: "CUSTOM",
+          value: { title: "Resources", resources: [{ title: "Guide", url: "/guide" }] },
+          settings: { elementId: "resource-list" },
+          editable: true
+        },
+        {
+          key: "locations",
+          type: "CUSTOM",
+          value: { title: "Locations", locations: [{ title: "Studio", body: "Main street" }] },
+          settings: { elementId: "location-cards" },
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.match(html, /structured-block-timeline[^\"]*structured-presentation-line/);
+  assert.match(html, /The first release\./);
+  assert.match(html, /Easy to manage\./);
+  assert.match(html, /structured-block-resource-list[^\"]*structured-presentation-rows/);
+  assert.match(html, /href="\/guide"/);
+  assert.match(html, /<address class="structured-location">/);
 });
 
 test("section backgrounds receive the same accessible foreground used by generated previews", () => {
@@ -643,6 +894,36 @@ test("shop and product markup are useful without JavaScript and escape catalog d
   assert.doesNotMatch(customizedListing, /shop-public-filters|STARTER-1|in stock/);
   assert.match(customizedDetail, /shop-detail-layout-immersive shop-detail-style-premium/);
   assert.doesNotMatch(customizedDetail, /STARTER-1|in stock|Product attributes|<dt>Material<\/dt>/);
+});
+
+test("shop catalog hero is server-rendered only on the main listing", () => {
+  const options = {
+    locale: "en",
+    defaultLocale: "en",
+    shopSettings: {
+      catalogTitle: "Summer collection",
+      catalogDescription: "A focused seasonal edit.",
+      catalogHero: {
+        enabled: true,
+        mediaType: "VIDEO",
+        mediaUrl: "/uploads/summer.mp4",
+        posterUrl: "/uploads/summer.webp",
+        altText: "",
+        playback: "hover-focus",
+        loop: true
+      }
+    }
+  };
+  const mainListing = renderShopListingContent({ products: [], route: { page: 1 } }, options);
+  const pagedListing = renderShopListingContent({ products: [], route: { page: 2 } }, options);
+
+  assert.match(mainListing, /class="shop-catalog-hero" data-video-frame/);
+  assert.match(mainListing, /src="\/uploads\/summer\.mp4"/);
+  assert.match(mainListing, /poster="\/uploads\/summer\.webp"/);
+  assert.match(mainListing, /data-video-playback="hover-focus"/);
+  assert.match(mainListing, / muted loop/);
+  assert.match(mainListing, /<h1>Summer collection<\/h1>/);
+  assert.doesNotMatch(pagedListing, /shop-catalog-hero/);
 });
 
 test("shop rendering supports quote products and sellable variants", () => {

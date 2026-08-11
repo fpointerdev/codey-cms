@@ -28,6 +28,10 @@ export const blockParams = slugParams.extend({
   blockKey: z.string().trim().min(1).max(120)
 });
 
+export const customCodeParams = z.object({
+  blockId: z.string().trim().min(1).max(120)
+});
+
 export const categoryParams = z.object({
   categorySlug: z.string().trim().min(1).max(120)
 });

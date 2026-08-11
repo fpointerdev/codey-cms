@@ -188,11 +188,11 @@ test("generator-safe custom WebsiteSpec elements keep their portable values", ()
       blockElementId: section.blocks[0]?.settings?.elementId,
       value: section.blocks[0]?.value
     })),
-    ["process-steps", "comparison-table", "video"].map((elementId) => ({
+    Object.entries(values).map(([elementId, value]) => ({
       elementId,
       transportValueStored: false,
       blockElementId: elementId,
-      value: values[elementId as keyof typeof values]
+      value
     }))
   );
 });
@@ -257,7 +257,49 @@ function customElementValues() {
       title: "Product tour",
       body: "A short walkthrough.",
       url: "/uploads/product-tour.mp4",
-      display: { ratio: "16 / 9", preload: "none", loop: false }
+      display: { presentation: "hero", ratio: "16 / 9", preload: "none", loop: false, playback: "hover-focus" }
+    },
+    "image-hotspots": {
+      title: "Explore the showroom",
+      image: { url: "/uploads/showroom.webp", alt: "Showroom" },
+      hotspots: [
+        { title: "Featured product", x: 42, y: 58, width: 9, productSlug: "starter-product" }
+      ],
+      display: { ratio: "16 / 10" }
+    },
+    timeline: {
+      title: "Company milestones",
+      items: [
+        { title: "Founded", body: "Opened the first studio.", label: "2020" },
+        { title: "Expanded", body: "Added a second service line.", label: "2025" }
+      ]
+    },
+    checklist: {
+      title: "Included",
+      items: [{ title: "Planning" }, { title: "Delivery", body: "Documented handover." }]
+    },
+    "resource-list": {
+      title: "Resources",
+      items: [{ title: "Service guide", body: "Read the details.", label: "Guide", url: "/service-guide" }]
+    },
+    "location-cards": {
+      title: "Locations",
+      items: [{ title: "Main office", body: "1 Main Street", label: "Weekdays", url: "/contact" }]
+    },
+    "quote-highlight": {
+      title: "Customer perspective",
+      body: "The project stayed clear from start to finish.",
+      attribution: "Alex, customer"
+    },
+    "bento-grid": {
+      title: "Capabilities",
+      items: [{ title: "Fast delivery", body: "A clear path to launch.", featured: true }],
+      display: { presentation: "spotlight", columns: 4 }
+    },
+    "navigation-cards": {
+      title: "Explore",
+      items: [{ title: "Services", body: "See what we offer.", url: "/services" }],
+      display: { presentation: "cards", columns: 3 }
     }
   };
 }

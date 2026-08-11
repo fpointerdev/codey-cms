@@ -166,6 +166,37 @@ test("WebsiteSpec atomically imports custom elements that server-render publicly
       body: "A short walkthrough.",
       url: "/uploads/product-tour.mp4",
       display: { ratio: "16 / 9", preload: "none", loop: false }
+    },
+    timeline: {
+      title: "Milestones",
+      items: [{ title: "Opened", body: "The first office opened.", label: "2020" }]
+    },
+    checklist: {
+      title: "Included",
+      items: [{ title: "Planning", body: "A documented scope." }]
+    },
+    "resource-list": {
+      title: "Resources",
+      items: [{ title: "Service guide", body: "Read the details.", label: "Guide", url: "/service-guide" }]
+    },
+    "location-cards": {
+      title: "Locations",
+      items: [{ title: "Main office", body: "1 Main Street", label: "Weekdays", url: "/contact" }]
+    },
+    "quote-highlight": {
+      title: "Customer perspective",
+      body: "The project stayed clear from start to finish.",
+      attribution: "Alex, customer"
+    },
+    "bento-grid": {
+      title: "Capabilities",
+      items: [{ title: "Fast delivery", body: "A clear path to launch.", featured: true }],
+      display: { presentation: "spotlight", columns: 4 }
+    },
+    "navigation-cards": {
+      title: "Explore",
+      items: [{ title: "Services", body: "See what we offer.", url: "/services" }],
+      display: { presentation: "cards", columns: 3 }
     }
   };
 
@@ -227,6 +258,15 @@ test("WebsiteSpec atomically imports custom elements that server-render publicly
   assert.match(html, /<ol class="structured-process/);
   assert.match(html, /<th scope="row">Response<\/th><td>2 days<\/td><td>4 hours<\/td>/);
   assert.match(html, /<video src="\/uploads\/product-tour\.mp4" controls playsinline preload="none"/);
+  assert.match(html, /<ol class="structured-timeline">/);
+  assert.match(html, /<ul class="structured-checklist"/);
+  assert.match(html, /<a class="structured-resource-link" href="\/service-guide">/);
+  assert.match(html, /<address class="structured-location">/);
+  assert.match(html, /<figure class="structured-block structured-quote-highlight/);
+  assert.match(html, /structured-block-bento-grid/);
+  assert.match(html, /structured-presentation-spotlight/);
+  assert.match(html, /structured-card-navigation-cards/);
+  assert.match(html, /href="\/services"/);
   assert.doesNotMatch(html, /<iframe/);
   await prisma.$disconnect();
 });

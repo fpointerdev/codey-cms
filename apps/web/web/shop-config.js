@@ -9,7 +9,16 @@ export const defaultShopSettings = {
   showCategories: true,
   showAttributes: true,
   showSku: true,
-  showStock: true
+  showStock: true,
+  catalogHero: {
+    enabled: false,
+    mediaType: "VIDEO",
+    mediaUrl: "",
+    posterUrl: "",
+    altText: "",
+    playback: "hover-focus",
+    loop: true
+  }
 };
 
 export const shopLayoutOptions = [
@@ -42,6 +51,9 @@ function allowed(value, options, fallback) {
 
 export function normalizeShopSettings(value = {}) {
   const settings = value && typeof value === "object" ? value : {};
+  const catalogHero = settings.catalogHero && typeof settings.catalogHero === "object"
+    ? settings.catalogHero
+    : {};
   const productsPerPage = Number.parseInt(String(settings.productsPerPage || defaultShopSettings.productsPerPage), 10);
 
   return {
@@ -55,6 +67,15 @@ export function normalizeShopSettings(value = {}) {
     showCategories: settings.showCategories !== false,
     showAttributes: settings.showAttributes !== false,
     showSku: settings.showSku !== false,
-    showStock: settings.showStock !== false
+    showStock: settings.showStock !== false,
+    catalogHero: {
+      enabled: catalogHero.enabled === true,
+      mediaType: ["IMAGE", "VIDEO"].includes(catalogHero.mediaType) ? catalogHero.mediaType : "VIDEO",
+      mediaUrl: String(catalogHero.mediaUrl || ""),
+      posterUrl: String(catalogHero.posterUrl || ""),
+      altText: String(catalogHero.altText || ""),
+      playback: ["controls", "hover-focus"].includes(catalogHero.playback) ? catalogHero.playback : "hover-focus",
+      loop: catalogHero.loop !== false
+    }
   };
 }

@@ -279,9 +279,121 @@ function withCustomCssField(block, fields, options = {}) {
   ];
 }
 
+function customCodeValue(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return {
+      html: typeof value.html === "string" ? value.html : "",
+      css: typeof value.css === "string" ? value.css : "",
+      javascript: typeof value.javascript === "string" ? value.javascript : "",
+      libraries: Array.isArray(value.libraries) ? value.libraries : [],
+      height: Number.isInteger(value.height) ? value.height : 320
+    };
+  }
+
+  return {
+    html: typeof value === "string" ? value : "",
+    css: "",
+    javascript: "",
+    libraries: [],
+    height: 320
+  };
+}
+
+function customCodeLibraries(value) {
+  const libraries = [...new Set(String(value || "")
+    .split(/\r?\n/)
+    .map((url) => url.trim())
+    .filter(Boolean))];
+
+  if (libraries.length > 12) {
+    throw new Error("Custom code supports up to 12 external libraries.");
+  }
+
+  for (const library of libraries) {
+    try {
+      const url = new URL(library);
+      if (url.protocol !== "https:" || url.username || url.password) throw new Error();
+    } catch {
+      throw new Error("External libraries must use HTTPS URLs without credentials.");
+    }
+  }
+
+  return libraries;
+}
+
 export async function editContentBlock(page, blockKey) {
   const block = findBlock(page, blockKey);
   if (!block) return null;
+
+  if (block.type === "EMBED") {
+    const current = customCodeValue(block.value);
+    const values = await getModalFormHandler()({
+      label: "Advanced element",
+      title: block.label || "Custom code",
+      description: "Runs on public pages inside an isolated frame and stays paused while editing.",
+      fields: withCustomCssField(block, [
+        {
+          name: "html",
+          label: "HTML",
+          type: "code",
+          rows: 10,
+          value: current.html,
+          group: "Content"
+        },
+        {
+          name: "javascript",
+          label: "JavaScript",
+          type: "code",
+          rows: 9,
+          value: current.javascript,
+          required: false,
+          group: "Settings"
+        },
+        {
+          name: "libraries",
+          label: "External library URLs",
+          type: "textarea",
+          rows: 4,
+          value: current.libraries.join("\n"),
+          required: false,
+          group: "Settings",
+          help: "One HTTPS script URL per line. Libraries load before the inline JavaScript."
+        },
+        {
+          name: "height",
+          label: "Frame height",
+          type: "number",
+          value: current.height,
+          min: 120,
+          max: 1200,
+          step: 10,
+          group: "Settings"
+        },
+        {
+          name: "css",
+          label: "Widget CSS",
+          type: "code",
+          rows: 9,
+          value: current.css,
+          required: false,
+          group: "Style"
+        }
+      ]),
+      submitLabel: "Save custom code"
+    });
+    if (!values) return null;
+
+    return updatePageBlock(page.slug, block, {
+      value: {
+        html: values.html,
+        css: values.css,
+        javascript: values.javascript,
+        libraries: customCodeLibraries(values.libraries),
+        height: Number(values.height)
+      },
+      settings: cssSettingsPayload(block, values)
+    });
+  }
 
   if (block.type === "IMAGE") {
     const values = await getModalFormHandler()({

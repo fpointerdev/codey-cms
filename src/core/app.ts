@@ -792,6 +792,7 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
       path: req.path,
       config: {
         app: config.app,
+        api: config.api,
         storage: {
           publicBaseUrl: config.storage.publicBaseUrl,
           imageVariantWidths: config.storage.imageVariantWidths

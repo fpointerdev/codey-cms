@@ -67,6 +67,9 @@ function bindRichEditor(editor) {
 
   surface.addEventListener("input", () => {
     syncEditor(editor, surface.innerHTML);
+    surface.removeAttribute("aria-invalid");
+    const message = editor.querySelector("[data-rich-required-message]");
+    if (message) message.hidden = true;
   });
   surface.addEventListener("paste", (event) => {
     const text = event.clipboardData?.getData("text/plain");

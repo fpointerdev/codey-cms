@@ -192,9 +192,21 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await expect(page.locator("[data-page-builder]")).toBeVisible();
 
   const librarySearch = page.getByPlaceholder("Search sections and elements");
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  await expect(page.locator("[data-builder-template='custom-code']")).toBeVisible();
+  await expect(page.locator("[data-builder-template='resource-list']")).toBeHidden();
+  await page.getByRole("button", { name: "All", exact: true }).click();
   await librarySearch.fill("slider");
   await expect(page.locator("[data-builder-template='slider']")).toBeVisible();
   await expect(page.locator("[data-builder-template='gallery']")).toBeHidden();
+  await librarySearch.fill("resource list");
+  await expect(page.locator("[data-builder-template='resource-list']")).toBeVisible();
+  await librarySearch.fill("story timeline");
+  await expect(page.locator("[data-builder-section-pattern='story-timeline']")).toBeVisible();
+  await librarySearch.fill("capability bento");
+  await expect(page.locator("[data-builder-section-pattern='capability-bento']")).toBeVisible();
+  await librarySearch.fill("navigation cards");
+  await expect(page.locator("[data-builder-template='navigation-cards']")).toBeVisible();
   await librarySearch.fill("");
 
   const blockCount = await page.locator("[data-builder-block-key]").count();
@@ -210,12 +222,57 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await expect(editorDialog.getByRole("tab", { name: "Settings" })).toBeVisible();
   await expect(editorDialog.getByRole("tab", { name: "Style" })).toBeVisible();
   await expect(editorDialog.getByRole("tab")).toHaveCount(3);
+  const itemGroups = editorDialog.locator("details.modal-item-group");
+  await expect(itemGroups.first()).toHaveAttribute("open", "");
+  await expect(itemGroups.nth(1)).not.toHaveAttribute("open", "");
+  await expect(itemGroups.nth(3).locator('input[name="structuredItem4Body"]')).toHaveValue("");
+  await itemGroups.nth(1).locator("summary").click();
+  const secondStepTitle = itemGroups.nth(1).getByLabel("Step title");
+  const originalStepTitle = await secondStepTitle.inputValue();
+  await secondStepTitle.fill("");
+  await itemGroups.nth(1).locator("summary").click();
+  await editorDialog.getByRole("button", { name: "Save" }).click();
+  await expect(itemGroups.nth(1)).toHaveAttribute("open", "");
+  await expect(secondStepTitle).toBeFocused();
+  await secondStepTitle.fill(originalStepTitle);
+  const secondStepBody = itemGroups.nth(1).locator("[data-rich-surface]");
+  const originalStepBody = await secondStepBody.innerText();
+  await secondStepBody.fill("");
+  await itemGroups.nth(1).locator("summary").click();
+  await editorDialog.getByRole("button", { name: "Save" }).click();
+  await expect(itemGroups.nth(1)).toHaveAttribute("open", "");
+  await expect(secondStepBody).toHaveAttribute("aria-invalid", "true");
+  await expect(secondStepBody).toBeFocused();
+  await secondStepBody.fill(originalStepBody);
   await editorDialog.getByRole("tab", { name: "Settings" }).click();
-  await expect(editorDialog.getByLabel("Desktop columns")).toBeVisible();
+  await expect(editorDialog.getByLabel("Items per row")).toBeVisible();
   await expect(editorDialog.getByLabel("Show step numbers")).toBeVisible();
+  await editorDialog.getByRole("tab", { name: "Style" }).click();
+  await expect(editorDialog.locator('select[name="structuredAlignment"]')).toBeVisible();
+  await expect(editorDialog.getByLabel("Item style")).toBeVisible();
   await editorDialog.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Undo last canvas change" }).click();
   await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
+
+  await librarySearch.fill("custom code");
+  await expect(page.locator("[data-builder-template='custom-code']")).toBeVisible();
+  await page.locator("[data-builder-template='custom-code']").click();
+  await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount + 1);
+  const customCodeBlock = page.locator("[data-builder-block-key]").filter({ hasText: "Custom code" }).last();
+  await expect(customCodeBlock.getByText("Custom code preview paused.", { exact: true })).toBeVisible();
+  await customCodeBlock.locator("[data-builder-edit-block]").click();
+  const customCodeDialog = page.getByRole("dialog", { name: "Custom code" });
+  await expect(customCodeDialog.locator('textarea[name="html"]')).toBeVisible();
+  await customCodeDialog.getByRole("tab", { name: "Settings" }).click();
+  await expect(customCodeDialog.locator('textarea[name="javascript"]')).toBeVisible();
+  await expect(customCodeDialog.locator('textarea[name="libraries"]')).toBeVisible();
+  await expect(customCodeDialog.locator('input[name="height"]')).toBeVisible();
+  await customCodeDialog.getByRole("tab", { name: "Style" }).click();
+  await expect(customCodeDialog.locator('textarea[name="css"]')).toBeVisible();
+  await customCodeDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Undo last canvas change" }).click();
+  await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
+  await librarySearch.fill("");
 
   await page.locator("[data-builder-rail-view='structure']").click();
   const firstStructureSection = page.locator("[data-builder-structure-section]").first();
@@ -552,6 +609,112 @@ test("public structured tabs support keyboard navigation", async ({ page }) => {
   await expect(details).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#panel-one")).toBeHidden();
   await expect(page.locator("#panel-two")).toBeVisible();
+});
+
+test("custom code executes in a sandbox without access to the CMS page", async ({ page }) => {
+  await page.context().route("https://cdn.example.test/codey-widget.js", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: "window.codeyExternalLibraryLoaded = true;"
+    });
+  });
+  const apiLogin = await page.request.post("/api/v1/auth/login", {
+    data: { email: adminEmail, password: adminPassword }
+  });
+  expect(apiLogin.ok()).toBeTruthy();
+  const apiLoginBody = await apiLogin.json();
+  const authorization = { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` };
+  const slug = `custom-code-${Date.now()}`;
+
+  const created = await page.request.post("/api/v1/cms/pages", {
+    headers: authorization,
+    data: {
+      title: "Custom code isolation",
+      slug,
+      content: {},
+      status: "PUBLISHED",
+      sections: [{
+        key: "widget",
+        label: "Widget",
+        sortOrder: 0,
+        settings: { template: "custom", elementId: "custom-code" },
+        blocks: [{
+          key: "sandbox-widget",
+          type: "EMBED",
+          label: "Sandbox widget",
+          value: {
+            html: '<p id="sandbox-status">Starting</p>',
+            css: "#sandbox-status { font: 700 18px system-ui; }",
+            javascript: `
+              const status = document.querySelector("#sandbox-status");
+              let parentBlocked = parent === window;
+              let storageBlocked = false;
+              if (!parentBlocked) {
+                try {
+                  parent.document.body.dataset.customCodeEscaped = "true";
+                } catch {
+                  parentBlocked = true;
+                }
+              }
+              try {
+                localStorage.setItem("custom-code-origin-test", "unsafe");
+              } catch {
+                storageBlocked = true;
+              }
+              const dependencyLoaded = window.codeyExternalLibraryLoaded === true;
+              status.textContent = parentBlocked && storageBlocked && dependencyLoaded
+                ? "Ready and isolated"
+                : "Origin access allowed";
+            `,
+            libraries: ["https://cdn.example.test/codey-widget.js"],
+            height: 240
+          },
+          settings: { elementId: "custom-code" },
+          sortOrder: 0,
+          editable: true
+        }]
+      }]
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+  const createdBody = await created.json();
+  const blockId = createdBody.data.page.sections[0].blocks[0].id;
+
+  try {
+    const frameResponsePromise = page.waitForResponse((response) =>
+      response.url().includes("/api/v1/cms/custom-code/")
+    );
+    const response = await page.goto(`/${slug}`);
+    expect(response?.headers()["content-security-policy"]).toContain("frame-src 'self' blob:");
+    expect(response?.headers()["content-security-policy"]).not.toContain("frame-src 'self' blob: data:");
+    const frameResponse = await frameResponsePromise;
+    expect(frameResponse.headers()["content-security-policy"]).toContain("sandbox allow-scripts allow-forms");
+    expect(frameResponse.headers()["content-security-policy"]).not.toContain("allow-same-origin");
+    const frame = page.locator("[data-custom-code-frame]").contentFrame();
+    await expect(frame.getByText("Ready and isolated", { exact: true })).toBeVisible();
+    await expect(page.locator("body")).not.toHaveAttribute("data-custom-code-escaped", "true");
+
+    const directPage = await page.context().newPage();
+    try {
+      const directResponse = await directPage.goto(`/api/v1/cms/custom-code/${blockId}`);
+      expect(directResponse?.headers()["content-security-policy"]).toContain("sandbox allow-scripts allow-forms");
+      await expect(directPage.getByText("Ready and isolated", { exact: true })).toBeVisible();
+    } finally {
+      await directPage.close();
+    }
+
+    const archived = await page.request.post(`/api/v1/cms/pages/${slug}/archive`, {
+      headers: authorization
+    });
+    expect(archived.ok()).toBeTruthy();
+    const archivedCode = await page.request.get(`/api/v1/cms/custom-code/${blockId}`);
+    expect(archivedCode.status()).toBe(404);
+  } finally {
+    await page.request.delete(`/api/v1/cms/pages/${slug}`, {
+      headers: authorization
+    });
+  }
 });
 
 test("public pages are useful without JavaScript and missing routes return 404", async ({ browser, baseURL }) => {

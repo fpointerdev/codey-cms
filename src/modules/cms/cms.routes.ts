@@ -24,6 +24,7 @@ import {
   createMenuSchema,
   createRedirectSchema,
   createSignedUploadSchema,
+  customCodeParams,
   deleteMediaAssetSchema,
   directMediaUploadSchema,
   localeQuerySchema,
@@ -48,6 +49,10 @@ import {
   updateRedirectSchema
 } from "./cms.schemas.js";
 import { CmsService } from "./cms.service.js";
+import {
+  customCodeContentSecurityPolicy,
+  renderCustomCodeDocument
+} from "./custom-code.js";
 import { MediaService } from "./media.service.js";
 import { readLocalizationSettings, resolveLocale } from "../localization/localization.service.js";
 
@@ -145,6 +150,28 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
     "/robots.txt",
     asyncHandler(async (req, res) => {
       return res.type("text/plain").send(await cmsService.buildRobotsTxt(requestOrigin(req)));
+    })
+  );
+
+  router.get(
+    "/custom-code/:blockId",
+    validateRequest({ params: customCodeParams }),
+    asyncHandler(async (req, res) => {
+      const block = await cmsService.getPublishedCustomCode(req.params.blockId);
+      res.set({
+        "cache-control": "no-store",
+        "content-security-policy": customCodeContentSecurityPolicy,
+        "cross-origin-resource-policy": "same-origin",
+        "permissions-policy": "camera=(), geolocation=(), microphone=()",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        "x-robots-tag": "noindex, nofollow"
+      });
+
+      return res.type("html").send(renderCustomCodeDocument(block.value, {
+        title: block.label || "Custom code",
+        locale: block.page.locale
+      }));
     })
   );
 

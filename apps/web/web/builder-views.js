@@ -41,11 +41,20 @@ function templateIcon(templateId) {
     "process-steps": "PS",
     "comparison-table": "CP",
     video: "VD",
+    "image-hotspots": "IH",
+    timeline: "TL",
+    checklist: "CK",
+    "resource-list": "RS",
+    "location-cards": "LC",
+    "quote-highlight": "QH",
+    "bento-grid": "BG",
+    "navigation-cards": "NV",
     "text-layout": "TX",
     "image-text": "IM",
     cta: "CT",
     "contact-form": "FM",
-    "product-list": "PR"
+    "product-list": "PR",
+    "custom-code": "JS"
   };
 
   return icons[templateId] || "EL";
@@ -60,7 +69,17 @@ function patternIcon(patternId) {
     "process-tabs": "PT",
     "portfolio-gallery": "PG",
     "pricing-trust": "PR",
-    "faq-contact": "FC"
+    "faq-contact": "FC",
+    "story-timeline": "ST",
+    "benefit-checklist": "BC",
+    "resource-center": "RC",
+    "quote-story": "QS",
+    "locations-contact": "LC",
+    "comparison-pricing": "CP",
+    "team-values": "TV",
+    "shop-confidence": "SC",
+    "capability-bento": "CB",
+    "guided-navigation": "GN"
   };
 
   return icons[patternId] || "SC";
@@ -166,10 +185,12 @@ function templateCategory(templateId) {
     carousel: "media",
     gallery: "media",
     "image-text": "media",
+    "image-hotspots": "media",
     video: "media",
     "pricing-cards": "commerce",
     "product-list": "commerce",
-    "contact-form": "forms"
+    "contact-form": "forms",
+    "custom-code": "advanced"
   };
 
   return categories[templateId] || "content";
@@ -183,7 +204,8 @@ function renderBuilderLibraryFilters(includeSections, includeReusable = false) {
     ["content", "Content"],
     ["media", "Media"],
     ["commerce", "Commerce"],
-    ["forms", "Forms"]
+    ["forms", "Forms"],
+    ["advanced", "Advanced"]
   ];
 
   return `
@@ -456,7 +478,7 @@ export function renderRichTextEditor(name, value = "", label = "Rich text") {
         </div>
       </div>
       <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}" data-rich-source />
-      <div class="rich-editor-surface" data-rich-surface>${renderRichText(value || "<p>Start writing content...</p>")}</div>
+      <div class="rich-editor-surface" data-rich-surface data-rich-placeholder="Start writing content..." aria-label="${escapeHtml(label)}">${value ? renderRichText(value) : ""}</div>
     </div>
   `;
 }
@@ -808,7 +830,7 @@ function renderBuilderPreviewDocument(page) {
       <nav class="site-nav" aria-label="Site navigation">${renderMenuItems(state.menu?.items || [], false)}</nav>
     </header>
     <main class="page-shell">
-      <article data-page>${renderPageContent(page, { canEdit: false })}</article>
+      <article data-page>${renderPageContent(page, { canEdit: false, allowCustomCode: false })}</article>
     </main>
     <footer class="site-footer">${renderFooter(page, false)}</footer>
     <script type="module" src="/web/builder-preview.js"></script>

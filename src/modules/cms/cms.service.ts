@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { AppError } from "../../core/errors/app-error.js";
+import { validateCustomCodeValue } from "./custom-code.js";
 import {
   localizedPath,
   normalizeLocale,
@@ -268,9 +269,17 @@ function uniqueStrings(values: string[]) {
 }
 
 function assertValidBlockValue(block: Pick<ContentBlockInput, "type" | "value" | "key">) {
-  if (block.type === "TEXT" || block.type === "RICH_TEXT" || block.type === "EMBED") {
+  if (block.type === "TEXT" || block.type === "RICH_TEXT") {
     if (typeof block.value !== "string") {
       throw new AppError(422, "invalid_content_block", `${block.key} must contain text.`);
+    }
+    return;
+  }
+
+  if (block.type === "EMBED") {
+    const result = validateCustomCodeValue(block.value);
+    if (result.errors.length) {
+      throw new AppError(422, result.errors[0].code, result.errors[0].message);
     }
     return;
   }
@@ -713,6 +722,36 @@ export class CmsService {
       ...sanitizedPage,
       translations
     };
+  }
+
+  async getPublishedCustomCode(blockId: string) {
+    const block = await this.prisma.contentBlock.findFirst({
+      where: {
+        id: blockId,
+        type: "EMBED",
+        page: {
+          status: "PUBLISHED",
+          OR: [
+            { publishedAt: null },
+            { publishedAt: { lte: new Date() } }
+          ]
+        }
+      },
+      select: {
+        id: true,
+        label: true,
+        value: true,
+        page: {
+          select: { locale: true }
+        }
+      }
+    });
+
+    if (!block || validateCustomCodeValue(block.value).errors.length) {
+      throw new AppError(404, "custom_code_not_found", "Custom code not found.");
+    }
+
+    return block;
   }
 
   async createPage(input: CreatePageInput, user?: RequestUser) {
