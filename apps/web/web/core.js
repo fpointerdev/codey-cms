@@ -292,7 +292,8 @@ export const componentTemplates = [
             { title: "Product strategy", body: "Plan and prioritize the work that matters most.", label: "01" },
             { title: "Back-end development", body: "Build reliable systems for content, shop, and operations.", label: "02" },
             { title: "User experience", body: "Shape clear interfaces that customers understand quickly.", label: "03" }
-          ]
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "outline", columns: 3, presentation: "cards" }
         }
       }
     ]
@@ -351,7 +352,8 @@ export const componentTemplates = [
           items: [
             { title: "Reliable and clear", body: "The team delivered exactly what we needed and kept communication practical.", label: "Client review" },
             { title: "Strong execution", body: "The project moved from concept to production without confusion.", label: "Partner review" }
-          ]
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "outline", columns: 2, presentation: "cards" }
         }
       }
     ]
@@ -370,7 +372,8 @@ export const componentTemplates = [
           items: [
             { title: "Starter", value: "0.60 EUR/mo", body: "Basic website presence.", url: "/contact" },
             { title: "Business", value: "10 EUR/mo", body: "CMS, shop, and growth tools.", url: "/contact" }
-          ]
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "outline", columns: 2, presentation: "cards" }
         }
       }
     ]
@@ -494,7 +497,199 @@ export const componentTemplates = [
           title: "Video title",
           body: "Add context so visitors and search engines understand the video.",
           url: "",
-          display: { alignment: "left", ratio: "16 / 9", preload: "metadata", loop: false }
+          display: { alignment: "left", presentation: "inline", ratio: "16 / 9", preload: "metadata", loop: false, playback: "controls" }
+        }
+      }
+    ]
+  },
+  {
+    id: "image-hotspots",
+    label: "Interactive Image",
+    description: "Position linked products, objects, locations, or details over an image scene.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Interactive image",
+        value: {
+          variant: "image-hotspots",
+          title: "Explore the scene",
+          body: "Select a placement to view more information.",
+          image: {
+            url: placeholderImage(1600, 1000, "Interactive scene"),
+            alt: "Interactive scene"
+          },
+          hotspots: [
+            {
+              title: "Featured item",
+              body: "Add a short description for this placement.",
+              x: 34,
+              y: 58,
+              width: 10,
+              productSlug: "starter-product",
+              image: {
+                url: placeholderImage(260, 420, "Placed item"),
+                alt: "Placed item"
+              }
+            },
+            {
+              title: "Second item",
+              x: 68,
+              y: 42,
+              productSlug: "starter-product"
+            }
+          ],
+          display: { ratio: "16 / 10" }
+        }
+      }
+    ]
+  },
+  {
+    id: "timeline",
+    label: "Timeline",
+    description: "Chronological milestones for company history, projects, roadmaps, or launch plans.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Timeline",
+        value: {
+          variant: "timeline",
+          title: "Our journey",
+          body: "Show the milestones that explain how the work developed.",
+          items: [
+            { title: "Foundation", body: "Set the direction and define the first practical goal.", label: "2022" },
+            { title: "Growth", body: "Expand the work based on customer needs and proven results.", label: "2024" },
+            { title: "Today", body: "Keep improving the experience with a clear next milestone.", label: "2026" }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "plain", presentation: "line" }
+        }
+      }
+    ]
+  },
+  {
+    id: "checklist",
+    label: "Checklist",
+    description: "Scannable benefits, requirements, inclusions, or readiness points.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Checklist",
+        value: {
+          variant: "checklist",
+          title: "What is included",
+          body: "Keep the most important points easy to scan.",
+          items: [
+            { title: "Clear scope", body: "Everyone understands the expected outcome." },
+            { title: "Practical delivery", body: "The process stays focused on usable results." },
+            { title: "Easy handover", body: "The final setup remains simple to manage." },
+            { title: "Documented support", body: "Important decisions and next steps stay visible." }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "soft", columns: 2 }
+        }
+      }
+    ]
+  },
+  {
+    id: "resource-list",
+    label: "Resource List",
+    description: "Accessible links to guides, documents, downloads, policies, or related pages.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Resources",
+        value: {
+          variant: "resource-list",
+          title: "Resources",
+          body: "Give visitors a clear path to useful supporting material.",
+          items: [
+            { title: "Getting started", body: "The first steps and information visitors need.", label: "Guide", url: "/getting-started" },
+            { title: "Service details", body: "A concise overview of scope and delivery.", label: "Overview", url: "/services" },
+            { title: "Frequently asked questions", body: "Answers to common practical questions.", label: "Support", url: "/faq" }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "outline", presentation: "rows" }
+        }
+      }
+    ]
+  },
+  {
+    id: "location-cards",
+    label: "Location Cards",
+    description: "Addresses, service areas, opening hours, and contact links for one or more locations.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Locations",
+        value: {
+          variant: "location-cards",
+          title: "Visit us",
+          body: "Help visitors find the right location and contact details.",
+          items: [
+            { title: "Main office", body: "Add the street, city, postal code, and contact details.", label: "Monday to Friday, 09:00-17:00", url: "/contact" },
+            { title: "Service area", body: "Describe the regions or communities this location serves.", label: "Appointments available", url: "/contact" }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "soft", columns: 2 }
+        }
+      }
+    ]
+  },
+  {
+    id: "quote-highlight",
+    label: "Quote Highlight",
+    description: "Focused testimonial, founder statement, editorial pull quote, or customer insight.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Quote",
+        value: {
+          variant: "quote-highlight",
+          title: "Customer perspective",
+          body: "A clear process makes complex work feel simple and gives people confidence in every decision.",
+          attribution: "Name, role or source",
+          display: { alignment: "left", density: "comfortable", surface: "plain", presentation: "editorial" }
+        }
+      }
+    ]
+  },
+  {
+    id: "bento-grid",
+    label: "Bento Grid",
+    description: "A premium capability grid with one featured item and compact supporting cards.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Bento grid",
+        value: {
+          variant: "bento-grid",
+          title: "Designed around what matters",
+          body: "Lead with the strongest benefit, then make the supporting details easy to scan.",
+          items: [
+            { title: "Flagship capability", body: "Explain the strongest reason to choose this offer.", label: "Featured", featured: true },
+            { title: "Fast decisions", body: "Keep choices clear and the next step obvious.", label: "Simple" },
+            { title: "Built to scale", body: "Show how the solution grows with the customer.", label: "Reliable" },
+            { title: "Easy handover", body: "Make ownership and day-to-day management straightforward.", label: "Clear" }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "soft", columns: 4, presentation: "spotlight" }
+        }
+      }
+    ]
+  },
+  {
+    id: "navigation-cards",
+    label: "Navigation Cards",
+    description: "Clear, linked cards that guide visitors to services, categories, resources, or next steps.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Navigation cards",
+        value: {
+          variant: "navigation-cards",
+          title: "Where would you like to go?",
+          body: "Give visitors a small set of clear paths instead of making them search through menus.",
+          items: [
+            { title: "Explore services", body: "Find the right solution for your goal.", label: "Services", url: "/services" },
+            { title: "See our work", body: "Review relevant projects and outcomes.", label: "Case studies", url: "/work" },
+            { title: "Start a conversation", body: "Tell us what you need and get a clear next step.", label: "Contact", url: "/contact" }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "outline", columns: 3, presentation: "cards" }
         }
       }
     ]
@@ -550,6 +745,24 @@ export const componentTemplates = [
     blocks: [
       { type: "PRODUCT_LIST", label: "Products", value: { productSlugs: ["starter-product"] } }
     ]
+  },
+  {
+    id: "custom-code",
+    label: "Custom Code",
+    description: "Sandboxed HTML, CSS, JavaScript, and external libraries for custom widgets.",
+    blocks: [
+      {
+        type: "EMBED",
+        label: "Custom code",
+        value: {
+          html: '<div class="codey-widget">Custom widget</div>',
+          css: ".codey-widget { padding: 24px; font: 600 16px/1.5 system-ui, sans-serif; }",
+          javascript: "",
+          libraries: [],
+          height: 320
+        }
+      }
+    ]
   }
 ];
 
@@ -601,7 +814,7 @@ export const sectionPatternTemplates = [
       verticalAlign: "center",
       responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       style: {
-        preset: "editorial-light",
+        preset: "quiet",
         backgroundColor: "#f8faf7",
         textColor: "#1e2329",
         accentColor: "#0d7c68",
@@ -663,7 +876,7 @@ export const sectionPatternTemplates = [
       verticalAlign: "center",
       responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
       style: {
-        preset: "editorial-light",
+        preset: "quiet",
         backgroundColor: "#f8faf7",
         textColor: "#1e2329",
         accentColor: "#0d7c68",
@@ -671,10 +884,10 @@ export const sectionPatternTemplates = [
         shadow: "none"
       },
       decoration: {
-        type: "grid",
+        type: "none",
         position: "bottom-right",
         color: "#0d7c68",
-        opacity: 0.14
+        opacity: 0.2
       }
     }
   },
@@ -694,7 +907,7 @@ export const sectionPatternTemplates = [
       verticalAlign: "start",
       responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       style: {
-        preset: "framed-card",
+        preset: "carded",
         backgroundColor: "#ffffff",
         textColor: "#1e2329",
         accentColor: "#0d7c68",
@@ -725,7 +938,7 @@ export const sectionPatternTemplates = [
       verticalAlign: "start",
       responsive: { tablet: { layout: "inherit", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       style: {
-        preset: "editorial-light",
+        preset: "quiet",
         backgroundColor: "#f8faf7",
         textColor: "#1e2329",
         accentColor: "#0d7c68",
@@ -733,10 +946,10 @@ export const sectionPatternTemplates = [
         shadow: "none"
       },
       decoration: {
-        type: "grid",
+        type: "none",
         position: "bottom-right",
         color: "#0d7c68",
-        opacity: 0.14
+        opacity: 0.2
       }
     }
   },
@@ -756,7 +969,7 @@ export const sectionPatternTemplates = [
       verticalAlign: "start",
       responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       style: {
-        preset: "framed-card",
+        preset: "carded",
         backgroundColor: "#ffffff",
         textColor: "#1e2329",
         accentColor: "#0d7c68",
@@ -787,7 +1000,7 @@ export const sectionPatternTemplates = [
       verticalAlign: "start",
       responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       style: {
-        preset: "editorial-light",
+        preset: "quiet",
         backgroundColor: "#f8faf7",
         textColor: "#1e2329",
         accentColor: "#0d7c68",
@@ -800,6 +1013,196 @@ export const sectionPatternTemplates = [
         color: "#0d7c68",
         opacity: 0.2
       }
+    }
+  },
+  {
+    id: "story-timeline",
+    label: "Story timeline",
+    description: "Editorial introduction followed by chronological milestones.",
+    category: "Content",
+    elements: ["text-layout", "timeline"],
+    settings: {
+      patternId: "story-timeline",
+      layout: "one-column",
+      container: "default",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "benefit-checklist",
+    label: "Benefits checklist",
+    description: "Image-led introduction with a concise checklist of benefits or inclusions.",
+    category: "Content",
+    elements: ["image-text", "checklist"],
+    settings: {
+      patternId: "benefit-checklist",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "resource-center",
+    label: "Resource center",
+    description: "Supporting introduction with clear links to guides, policies, or downloads.",
+    category: "Content",
+    elements: ["text-layout", "resource-list"],
+    settings: {
+      patternId: "resource-center",
+      layout: "two-column",
+      container: "default",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "carded", backgroundColor: "#ffffff", textColor: "#1e2329", accentColor: "#0d7c68", radius: 18, shadow: "soft" },
+      decoration: { type: "frame", position: "bottom-right", color: "#0d7c68", opacity: 0.22 }
+    }
+  },
+  {
+    id: "quote-story",
+    label: "Quote + story",
+    description: "Prominent attributable quote paired with supporting imagery and context.",
+    category: "Trust",
+    elements: ["quote-highlight", "image-text"],
+    settings: {
+      patternId: "quote-story",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "premium-dark", backgroundColor: "#12172b", textColor: "#ffffff", accentColor: "#5b5cff", radius: 24, shadow: "glow" },
+      decoration: { type: "spotlight", position: "center-right", color: "#5b5cff", opacity: 0.32 }
+    }
+  },
+  {
+    id: "locations-contact",
+    label: "Locations + contact",
+    description: "Location details beside the standard CMS inquiry form.",
+    category: "Contact",
+    elements: ["location-cards", "contact-form"],
+    settings: {
+      patternId: "locations-contact",
+      layout: "two-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "comparison-pricing",
+    label: "Comparison + pricing",
+    description: "Accessible option comparison followed by editable pricing cards.",
+    category: "Commerce",
+    elements: ["comparison-table", "pricing-cards"],
+    settings: {
+      patternId: "comparison-pricing",
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "carded", backgroundColor: "#ffffff", textColor: "#1e2329", accentColor: "#0d7c68", radius: 18, shadow: "soft" },
+      decoration: { type: "frame", position: "bottom-right", color: "#0d7c68", opacity: 0.22 }
+    }
+  },
+  {
+    id: "team-values",
+    label: "Team + values",
+    description: "People cards followed by the principles or capabilities behind the team.",
+    category: "Trust",
+    elements: ["team-section", "feature-cards"],
+    settings: {
+      patternId: "team-values",
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "shop-confidence",
+    label: "Products + confidence",
+    description: "Product selection with practical buying, delivery, or support questions.",
+    category: "Commerce",
+    elements: ["product-list", "faq-accordion"],
+    settings: {
+      patternId: "shop-confidence",
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "capability-bento",
+    label: "Capability bento",
+    description: "Editorial introduction with a premium, scannable capability grid.",
+    category: "Content",
+    elements: ["text-layout", "bento-grid"],
+    settings: {
+      patternId: "capability-bento",
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "guided-navigation",
+    label: "Guided navigation",
+    description: "A concise introduction followed by clear paths to the next useful pages.",
+    category: "Content",
+    elements: ["text-layout", "navigation-cards"],
+    settings: {
+      patternId: "guided-navigation",
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
     }
   }
 ];
@@ -1093,7 +1496,7 @@ export function availableComponentTemplates() {
     const registeredElement = runtimeBuilderElement(template.id);
 
     if (registryElements.length) {
-      if (!registeredElement || registeredElement.generatorSafe === false) return false;
+      if (!registeredElement || registeredElement.editorAvailable === false) return false;
       return modulesEnabled(registeredElement.modules || []);
     }
 

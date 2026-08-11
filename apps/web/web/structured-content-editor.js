@@ -174,6 +174,88 @@ const visualCollectionEditors = {
       { key: "firstValue", label: "First option" },
       { key: "secondValue", label: "Second option" }
     ]
+  },
+  timeline: {
+    keys: ["items", "milestones"],
+    label: "Milestones",
+    minRows: 3,
+    fields: [
+      { key: "label", label: "Date / period", required: false },
+      { key: "title", label: "Milestone" },
+      { key: "body", label: "Details", type: "richtext" },
+      { key: "url", label: "Optional link", required: false }
+    ]
+  },
+  checklist: {
+    keys: ["items", "points"],
+    label: "Checklist",
+    minRows: 4,
+    fields: [
+      { key: "title", label: "Point" },
+      { key: "body", label: "Supporting detail", type: "richtext", required: false }
+    ]
+  },
+  "resource-list": {
+    keys: ["items", "resources"],
+    label: "Resources",
+    minRows: 3,
+    fields: [
+      { key: "title", label: "Resource title" },
+      { key: "body", label: "Description", type: "richtext", required: false },
+      { key: "label", label: "Type / format", required: false },
+      { key: "url", label: "Link", required: true }
+    ]
+  },
+  "location-cards": {
+    keys: ["items", "locations"],
+    label: "Locations",
+    minRows: 2,
+    fields: [
+      { key: "title", label: "Location name" },
+      { key: "body", label: "Address / contact details", type: "richtext" },
+      { key: "label", label: "Hours / service area", required: false },
+      { key: "url", label: "Directions or contact link", required: false }
+    ]
+  },
+  "bento-grid": {
+    keys: ["items", "cards"],
+    label: "Highlights",
+    minRows: 4,
+    fields: [
+      { key: "title", label: "Title" },
+      { key: "body", label: "Description", type: "richtext" },
+      { key: "label", label: "Small label", required: false },
+      { key: "url", label: "Optional link", required: false },
+      { key: "featured", label: "Make this the feature", type: "checkbox", required: false }
+    ]
+  },
+  "navigation-cards": {
+    keys: ["items", "cards"],
+    label: "Destinations",
+    minRows: 3,
+    fields: [
+      { key: "title", label: "Title" },
+      { key: "body", label: "Description", type: "richtext", required: false },
+      { key: "label", label: "Small label", required: false },
+      { key: "url", label: "Destination", required: true }
+    ]
+  },
+  "image-hotspots": {
+    keys: ["hotspots", "items"],
+    label: "Placements",
+    minRows: 2,
+    maxRows: 20,
+    fields: [
+      { key: "title", label: "Label" },
+      { key: "body", label: "Description", type: "richtext", required: false },
+      { key: "x", label: "Horizontal position (%)", type: "number", min: 0, max: 100, step: 0.1 },
+      { key: "y", label: "Vertical position (%)", type: "number", min: 0, max: 100, step: 0.1 },
+      { key: "width", label: "Overlay width (%)", type: "number", min: 1, max: 50, step: 0.5, required: false },
+      { key: "productSlug", label: "Product slug", required: false },
+      { key: "url", label: "Alternative link", required: false },
+      { key: "imageUrl", label: "Overlay image URL", required: false },
+      { key: "imageAlt", label: "Overlay image description", required: false }
+    ]
   }
 };
 
@@ -184,31 +266,90 @@ const structuredGridVariants = new Set([
   "logo-grid",
   "testimonials",
   "pricing-cards",
-  "process-steps"
+  "process-steps",
+  "checklist",
+  "location-cards",
+  "bento-grid",
+  "navigation-cards"
 ]);
+
+const structuredPresentationOptions = {
+  video: [
+    { value: "inline", label: "Inline media" },
+    { value: "hero", label: "Media hero" }
+  ],
+  "feature-cards": [
+    { value: "cards", label: "Cards" },
+    { value: "bento", label: "Bento" },
+    { value: "editorial", label: "Editorial list" }
+  ],
+  testimonials: [
+    { value: "cards", label: "Cards" },
+    { value: "spotlight", label: "Spotlight" }
+  ],
+  "pricing-cards": [
+    { value: "cards", label: "Cards" },
+    { value: "comparison", label: "Comparison" }
+  ],
+  timeline: [
+    { value: "line", label: "Simple line" },
+    { value: "alternating", label: "Alternating" }
+  ],
+  "resource-list": [
+    { value: "rows", label: "Rows" },
+    { value: "cards", label: "Cards" }
+  ],
+  "quote-highlight": [
+    { value: "editorial", label: "Editorial" },
+    { value: "centered", label: "Centered" },
+    { value: "boxed", label: "Boxed" }
+  ],
+  "bento-grid": [
+    { value: "spotlight", label: "Spotlight" },
+    { value: "balanced", label: "Balanced" },
+    { value: "mosaic", label: "Mosaic" }
+  ],
+  "navigation-cards": [
+    { value: "cards", label: "Cards" },
+    { value: "compact", label: "Compact" },
+    { value: "editorial", label: "Editorial" }
+  ]
+};
 
 function selectedValue(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback;
 }
 
 function structuredDisplayEditor(variant, value) {
-  const supported = Boolean(visualCollectionEditors[variant]) || variant === "video";
+  const supported = Boolean(visualCollectionEditors[variant]) || variant === "video" || variant === "quote-highlight";
   if (!supported) return null;
 
   const display = isRecord(value.display) ? value.display : {};
-  const fields = [
-    {
-      name: "structuredAlignment",
-      label: "Content alignment",
+  const fields = [];
+  const presentationOptions = structuredPresentationOptions[variant] || [];
+
+  if (presentationOptions.length) {
+    fields.push({
+      name: "structuredPresentation",
+      label: "Layout",
       type: "select",
-      value: selectedValue(display.alignment, ["left", "center"], "left"),
-      options: [
-        { value: "left", label: "Left" },
-        { value: "center", label: "Centered" }
-      ],
+      value: selectedValue(display.presentation, presentationOptions.map((option) => option.value), presentationOptions[0].value),
+      options: presentationOptions,
       group: "Settings"
-    }
-  ];
+    });
+  }
+
+  fields.push({
+    name: "structuredAlignment",
+    label: "Text alignment",
+    type: "select",
+    value: selectedValue(display.alignment, ["left", "center"], "left"),
+    options: [
+      { value: "left", label: "Left" },
+      { value: "center", label: "Centered" }
+    ],
+    group: "Style"
+  });
 
   if (variant === "video") {
     fields.push(
@@ -241,6 +382,17 @@ function structuredDisplayEditor(variant, value) {
         type: "checkbox",
         checked: display.loop === true,
         group: "Settings"
+      },
+      {
+        name: "structuredVideoPlayback",
+        label: "Playback",
+        type: "select",
+        value: selectedValue(display.playback, ["controls", "hover-focus"], "controls"),
+        options: [
+          { value: "controls", label: "Visitor controls" },
+          { value: "hover-focus", label: "Play on hover or focus" }
+        ],
+        group: "Settings"
       }
     );
   } else {
@@ -254,7 +406,7 @@ function structuredDisplayEditor(variant, value) {
           { value: "comfortable", label: "Comfortable" },
           { value: "compact", label: "Compact" }
         ],
-        group: "Settings"
+        group: "Style"
       },
       {
         name: "structuredSurface",
@@ -266,15 +418,31 @@ function structuredDisplayEditor(variant, value) {
           { value: "outline", label: "Outlined" },
           { value: "soft", label: "Soft background" }
         ],
-        group: "Settings"
+        group: "Style"
       }
     );
+
+    if (variant === "image-hotspots") {
+      fields.push({
+        name: "structuredSceneRatio",
+        label: "Scene ratio",
+        type: "select",
+        value: selectedValue(display.ratio, ["16 / 10", "16 / 9", "4 / 3", "1 / 1"], "16 / 10"),
+        options: [
+          { value: "16 / 10", label: "Wide scene" },
+          { value: "16 / 9", label: "Widescreen" },
+          { value: "4 / 3", label: "Standard" },
+          { value: "1 / 1", label: "Square" }
+        ],
+        group: "Settings"
+      });
+    }
   }
 
   if (structuredGridVariants.has(variant)) {
     fields.push({
       name: "structuredColumns",
-      label: "Desktop columns",
+      label: "Items per row",
       type: "select",
       value: String([2, 3, 4].includes(Number(display.columns)) ? Number(display.columns) : 3),
       options: [
@@ -314,13 +482,25 @@ function structuredDisplayEditor(variant, value) {
         alignment: selectedValue(values.structuredAlignment, ["left", "center"], "left")
       };
 
+      if (presentationOptions.length) {
+        next.presentation = selectedValue(
+          values.structuredPresentation,
+          presentationOptions.map((option) => option.value),
+          presentationOptions[0].value
+        );
+      }
+
       if (variant === "video") {
         next.ratio = selectedValue(values.structuredVideoRatio, ["16 / 9", "4 / 3", "1 / 1"], "16 / 9");
         next.preload = selectedValue(values.structuredVideoPreload, ["metadata", "none"], "metadata");
         next.loop = values.structuredVideoLoop === true;
+        next.playback = selectedValue(values.structuredVideoPlayback, ["controls", "hover-focus"], "controls");
       } else {
         next.density = selectedValue(values.structuredDensity, ["comfortable", "compact"], "comfortable");
         next.surface = selectedValue(values.structuredSurface, ["plain", "outline", "soft"], "outline");
+        if (variant === "image-hotspots") {
+          next.ratio = selectedValue(values.structuredSceneRatio, ["16 / 10", "16 / 9", "4 / 3", "1 / 1"], "16 / 10");
+        }
       }
 
       if (structuredGridVariants.has(variant)) {
@@ -381,7 +561,7 @@ function visualCollectionEditor(block, value) {
 
   const collectionKey = firstKey(value, config.keys) || config.keys[0];
   const items = Array.isArray(value[collectionKey]) ? value[collectionKey] : [];
-  const rowCount = Math.min(8, Math.max(config.minRows, items.length + 1));
+  const rowCount = Math.min(config.maxRows || 8, Math.max(config.minRows, items.length + 1));
   const fields = [];
 
   for (let index = 0; index < rowCount; index += 1) {
@@ -393,6 +573,7 @@ function visualCollectionEditor(block, value) {
       label: `${config.label} item ${index + 1}`,
       type: "section",
       group,
+      open: index === 0,
       help: index >= items.length ? "Optional row. Leave the fields empty to ignore it." : ""
     });
 
@@ -403,9 +584,12 @@ function visualCollectionEditor(block, value) {
         type: field.type || "text",
         value: itemFieldValue(item, field.key),
         checked: Boolean(itemFieldValue(item, field.key)),
-        required: field.required === true && index < Math.max(1, Math.min(config.minRows, items.length || 1)),
+        required: field.required !== false && index < Math.max(1, Math.min(config.minRows, items.length || 1)),
         group,
-        help: index >= items.length ? "Leave empty to ignore this row." : undefined
+        help: field.help || (index >= items.length ? "Leave empty to ignore this row." : undefined),
+        min: field.min,
+        max: field.max,
+        step: field.step
       });
     }
   }
@@ -429,6 +613,12 @@ function visualCollectionEditor(block, value) {
 
           if (field.type === "checkbox") {
             row[field.key] = values[name] === true;
+            continue;
+          }
+
+          if (field.type === "number") {
+            const number = Number(values[name]);
+            row[field.key] = values[name] !== "" && Number.isFinite(number) ? number : "";
             continue;
           }
 
@@ -566,7 +756,7 @@ export function structuredContentEditor(block) {
   if (bodyKey) {
     addField(fields, {
       name: "structuredBody",
-      label: "Content",
+      label: variant === "quote-highlight" ? "Quote" : "Content",
       type: "richtext",
       value: firstText(value, [bodyKey])
     });
@@ -621,6 +811,22 @@ export function structuredContentEditor(block) {
       help: value.url
         ? "The current video stays published until you upload a replacement."
         : "Upload an MP4 or WebM file within the site upload limit."
+    });
+    addField(fields, {
+      name: "structuredVideoPosterUrl",
+      label: "Poster image URL",
+      value: firstText(value, ["posterUrl"]),
+      required: false,
+      help: "Optional still image shown before playback."
+    });
+  }
+
+  if (variant === "quote-highlight") {
+    addField(fields, {
+      name: "structuredAttribution",
+      label: "Attribution",
+      value: firstText(value, ["attribution", "source", "author"]),
+      required: false
     });
   }
 
@@ -708,6 +914,12 @@ export function structuredContentEditor(block) {
       if (variant === "video" && mediaAsset?.url) {
         next.url = mediaAsset.url;
         next.mediaAssetId = mediaAsset.id;
+      }
+      if (variant === "video") {
+        next.posterUrl = values.structuredVideoPosterUrl || "";
+      }
+      if (variant === "quote-highlight") {
+        next[valueKey(value, ["attribution", "source", "author"], "attribution")] = values.structuredAttribution || "";
       }
 
       if (imageKey) {

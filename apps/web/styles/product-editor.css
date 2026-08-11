@@ -712,6 +712,29 @@
   gap: 4px;
 }
 
+.shop-preview-hero {
+  display: grid;
+  min-height: 132px;
+  place-items: end start;
+  padding: 12px;
+  color: #ffffff;
+  background:
+    linear-gradient(180deg, transparent 35%, rgba(15, 22, 26, 0.72)),
+    #7b888f;
+}
+
+.shop-preview-hero[data-media-type="VIDEO"] {
+  background:
+    linear-gradient(180deg, transparent 35%, rgba(15, 22, 26, 0.72)),
+    repeating-linear-gradient(135deg, #54646c 0 12px, #66777f 12px 24px);
+}
+
+.shop-preview-hero span {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .shop-settings-preview > header > span,
 .shop-settings-preview article > small {
   color: #617078;

@@ -265,7 +265,16 @@ function shopSettingsPayload(form) {
     showCategories: formData.has("showCategories"),
     showAttributes: formData.has("showAttributes"),
     showSku: formData.has("showSku"),
-    showStock: formData.has("showStock")
+    showStock: formData.has("showStock"),
+    catalogHero: {
+      enabled: formData.has("catalogHeroEnabled"),
+      mediaType: String(formData.get("catalogHeroMediaType") || "VIDEO"),
+      mediaUrl: String(formData.get("catalogHeroMediaUrl") || "").trim(),
+      posterUrl: String(formData.get("catalogHeroPosterUrl") || "").trim(),
+      altText: String(formData.get("catalogHeroAltText") || "").trim(),
+      playback: String(formData.get("catalogHeroPlayback") || "hover-focus"),
+      loop: formData.has("catalogHeroLoop")
+    }
   };
 }
 
@@ -278,6 +287,13 @@ export function updateShopSettingsPreview(form) {
   preview.dataset.cardStyle = settings.cardStyle;
   preview.querySelector("[data-shop-preview-title]").textContent = settings.catalogTitle;
   preview.querySelector("[data-shop-preview-description]").textContent = settings.catalogDescription;
+  const hero = preview.querySelector("[data-shop-preview-hero]");
+  if (hero) {
+    hero.hidden = !settings.catalogHero.enabled;
+    hero.dataset.mediaType = settings.catalogHero.mediaType;
+    const label = hero.querySelector("[data-shop-preview-hero-label]");
+    if (label) label.textContent = settings.catalogHero.mediaType === "VIDEO" ? "Video hero" : "Image hero";
+  }
   preview.querySelectorAll("[data-shop-preview-sku]").forEach((element) => {
     element.hidden = !settings.showSku;
   });

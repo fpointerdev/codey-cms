@@ -1,4 +1,7 @@
 import type { ModuleId } from "../../core/types/module.js";
+import { validateCustomCodeValue } from "../cms/custom-code.js";
+
+export { validateCustomCodeValue };
 
 export type BuilderBlockType =
   | "TEXT"
@@ -21,6 +24,7 @@ export type BuilderElementDefinition = {
   modules: ModuleId[];
   blockTypes: BuilderBlockType[];
   generatorSafe: boolean;
+  editorAvailable?: boolean;
   defaultValue: Record<string, unknown>;
   fieldSchema: Array<{
     name: string;
@@ -85,7 +89,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-08-09";
+export const builderRegistryVersion = "2026-08-11";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label
@@ -462,12 +466,175 @@ export const builderElementRegistry = [
     defaultValue: {
       title: "Video title",
       body: "Add context so visitors and search engines understand the video.",
-      url: ""
+      url: "",
+      display: { presentation: "inline", playback: "controls", ratio: "16 / 9", preload: "metadata", loop: false }
     },
     fieldSchema: [
       { name: "title", label: "Title", type: "text", required: true },
       { name: "body", label: "Description", type: "richText", required: false },
       { name: "url", label: "Video file", type: "custom", required: false }
+    ]
+  },
+  {
+    id: "image-hotspots",
+    label: "Interactive Image",
+    icon: "map-pin",
+    description: "Image scene with positioned, accessible links for products, objects, locations, or details.",
+    category: "media",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Explore the scene",
+      body: "Select a marker to view more information.",
+      image: { url: registryPlaceholderImage(1600, 1000, "Interactive scene"), alt: "Interactive scene" },
+      hotspots: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Description", type: "richText", required: false },
+      { name: "image", label: "Scene image", type: "image", required: true },
+      { name: "hotspots", label: "Placements", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "timeline",
+    label: "Timeline",
+    icon: "history",
+    description: "Chronological milestones for company history, projects, roadmaps, and launch plans.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Our journey",
+      body: "Show the milestones that explain how the work developed.",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "items", label: "Milestones", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "checklist",
+    label: "Checklist",
+    icon: "list-checks",
+    description: "Scannable benefits, requirements, inclusions, or readiness points.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "What is included",
+      body: "Keep the most important points easy to scan.",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "items", label: "Checklist items", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "resource-list",
+    label: "Resource List",
+    icon: "file-text",
+    description: "Accessible links to guides, documents, downloads, policies, and related pages.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Resources",
+      body: "Give visitors a clear path to useful supporting material.",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "items", label: "Resources", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "location-cards",
+    label: "Location Cards",
+    icon: "map-pin",
+    description: "Addresses, service areas, opening hours, and contact links for one or more locations.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Visit us",
+      body: "Help visitors find the right location and contact details.",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "items", label: "Locations", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "quote-highlight",
+    label: "Quote Highlight",
+    icon: "quote",
+    description: "Focused testimonial, founder statement, editorial pull quote, or customer insight.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Customer perspective",
+      body: "Add a concise, attributable statement that supports the page story.",
+      attribution: "Name, role or source"
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Quote", type: "richText", required: true },
+      { name: "attribution", label: "Attribution", type: "text", required: false }
+    ]
+  },
+  {
+    id: "bento-grid",
+    label: "Bento Grid",
+    icon: "layout-grid",
+    description: "A premium capability grid with one optional featured item and compact supporting cards.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT", "BUTTON"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Designed around what matters",
+      body: "Lead with the strongest benefit, then make the supporting details easy to scan.",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "items", label: "Highlights", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "navigation-cards",
+    label: "Navigation Cards",
+    icon: "signpost",
+    description: "Clear, linked cards that guide visitors to services, categories, resources, or next steps.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT", "BUTTON"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Where would you like to go?",
+      body: "Give visitors a small set of clear paths instead of making them search through menus.",
+      items: []
+    },
+    fieldSchema: [
+      { name: "title", label: "Heading", type: "text", required: false },
+      { name: "body", label: "Introduction", type: "richText", required: false },
+      { name: "items", label: "Destinations", type: "custom", required: true }
     ]
   },
   {
@@ -506,6 +673,31 @@ export const builderElementRegistry = [
     ]
   },
   {
+    id: "custom-code",
+    label: "Custom Code",
+    icon: "code-2",
+    description: "Sandboxed HTML, CSS, JavaScript, and external libraries for trusted editor-authored widgets.",
+    category: "advanced",
+    modules: ["cms"],
+    blockTypes: ["EMBED"],
+    generatorSafe: false,
+    editorAvailable: true,
+    defaultValue: {
+      html: "<div class=\"codey-widget\">Custom widget</div>",
+      css: ".codey-widget { padding: 24px; font: 600 16px/1.5 system-ui, sans-serif; }",
+      javascript: "",
+      libraries: [],
+      height: 320
+    },
+    fieldSchema: [
+      { name: "html", label: "HTML", type: "custom", required: true },
+      { name: "javascript", label: "JavaScript", type: "custom", required: false },
+      { name: "libraries", label: "External libraries", type: "custom", required: false },
+      { name: "css", label: "CSS", type: "custom", required: false },
+      { name: "height", label: "Frame height", type: "number", required: true }
+    ]
+  },
+  {
     id: "structured-content",
     label: "Structured Content",
     icon: "braces",
@@ -514,6 +706,7 @@ export const builderElementRegistry = [
     modules: ["cms"],
     blockTypes: ["TEXT", "RICH_TEXT", "CUSTOM", "BUTTON", "CTA"],
     generatorSafe: false,
+    editorAvailable: false,
     defaultValue: {
       type: "custom",
       items: []
@@ -524,12 +717,16 @@ export const builderElementRegistry = [
   }
 ] satisfies BuilderElementDefinition[];
 
+const generatorSafeElementIds = builderElementRegistry
+  .filter((element) => element.generatorSafe)
+  .map((element) => element.id);
+
 export const sectionPresetRegistry = [
   {
     id: "one-column",
     label: "One column",
     description: "Standard full-width content stack.",
-    allowedElements: builderElementRegistry.map((element) => element.id),
+    allowedElements: generatorSafeElementIds,
     defaultSettings: {
       layout: "one-column",
       container: "default",
@@ -542,7 +739,7 @@ export const sectionPresetRegistry = [
     id: "two-column",
     label: "Two columns",
     description: "Side-by-side content for image/text and comparison sections.",
-    allowedElements: ["image-text", "text-layout", "cta", "process-steps", "comparison-table", "video", "product-list", "structured-content"],
+    allowedElements: ["image-text", "image-hotspots", "text-layout", "cta", "process-steps", "comparison-table", "video", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards", "product-list"],
     defaultSettings: {
       layout: "two-column",
       container: "default",
@@ -555,7 +752,7 @@ export const sectionPresetRegistry = [
     id: "three-column",
     label: "Three columns",
     description: "Feature, service, or product summary grid.",
-    allowedElements: ["text-layout", "image-text", "stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "faq-accordion", "tabs", "accordion", "process-steps", "comparison-table", "product-list", "structured-content"],
+    allowedElements: ["text-layout", "image-text", "stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "faq-accordion", "tabs", "accordion", "process-steps", "comparison-table", "checklist", "resource-list", "location-cards", "bento-grid", "navigation-cards", "product-list"],
     defaultSettings: {
       layout: "three-column",
       container: "default",
@@ -568,7 +765,7 @@ export const sectionPresetRegistry = [
     id: "four-column",
     label: "Four columns",
     description: "Dense card grid for stats, features, logos, and team members.",
-    allowedElements: ["stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "process-steps", "structured-content"],
+    allowedElements: ["stats-grid", "feature-cards", "team-section", "logo-grid", "testimonials", "pricing-cards", "process-steps", "checklist", "resource-list", "location-cards", "bento-grid", "navigation-cards"],
     defaultSettings: {
       layout: "four-column",
       container: "wide",
@@ -581,7 +778,7 @@ export const sectionPresetRegistry = [
     id: "full-bleed",
     label: "Full width",
     description: "Wide visual section for hero, gallery, and media bands.",
-    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "video", "cta"],
+    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "image-hotspots", "video", "quote-highlight", "cta"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -594,7 +791,7 @@ export const sectionPresetRegistry = [
     id: "asymmetric",
     label: "Asymmetric",
     description: "Editorial section with stronger visual weight on one side.",
-    allowedElements: ["hero-creative", "image-text", "feature-cards", "process-steps", "comparison-table", "structured-content"],
+    allowedElements: ["hero-creative", "image-text", "image-hotspots", "feature-cards", "process-steps", "comparison-table", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards"],
     defaultSettings: {
       layout: "asymmetric",
       container: "wide",
@@ -622,7 +819,7 @@ export const sectionPresetRegistry = [
     id: "media-band",
     label: "Media band",
     description: "Wide visual strip for galleries, carousels, project highlights, and image-led storytelling.",
-    allowedElements: ["slider", "carousel", "gallery", "image-text", "video", "text-layout"],
+    allowedElements: ["slider", "carousel", "gallery", "image-text", "image-hotspots", "video", "text-layout"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -823,6 +1020,176 @@ export const builderSectionPatternRegistry = [
       responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
     }
+  },
+  {
+    id: "story-timeline",
+    label: "Story timeline",
+    description: "Editorial introduction followed by chronological milestones.",
+    category: "content",
+    elements: ["text-layout", "timeline"],
+    defaultSettings: {
+      layout: "one-column",
+      container: "default",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
+  },
+  {
+    id: "benefit-checklist",
+    label: "Benefits checklist",
+    description: "Image-led introduction with a concise checklist of benefits or inclusions.",
+    category: "content",
+    elements: ["image-text", "checklist"],
+    defaultSettings: {
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
+  },
+  {
+    id: "resource-center",
+    label: "Resource center",
+    description: "Supporting introduction with clear links to guides, policies, or downloads.",
+    category: "content",
+    elements: ["text-layout", "resource-list"],
+    defaultSettings: {
+      layout: "two-column",
+      container: "default",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "framed-card")?.settings
+    }
+  },
+  {
+    id: "quote-story",
+    label: "Quote + story",
+    description: "Prominent attributable quote paired with supporting imagery and context.",
+    category: "trust",
+    elements: ["quote-highlight", "image-text"],
+    defaultSettings: {
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "premium-dark")?.settings
+    }
+  },
+  {
+    id: "locations-contact",
+    label: "Locations + contact",
+    description: "Location details beside the standard CMS inquiry form.",
+    category: "contact",
+    elements: ["location-cards", "contact-form"],
+    defaultSettings: {
+      layout: "two-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "two-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
+  },
+  {
+    id: "comparison-pricing",
+    label: "Comparison + pricing",
+    description: "Accessible option comparison followed by editable pricing cards.",
+    category: "commerce",
+    elements: ["comparison-table", "pricing-cards"],
+    defaultSettings: {
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "framed-card")?.settings
+    }
+  },
+  {
+    id: "team-values",
+    label: "Team + values",
+    description: "People cards followed by the principles or capabilities behind the team.",
+    category: "trust",
+    elements: ["team-section", "feature-cards"],
+    defaultSettings: {
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
+  },
+  {
+    id: "shop-confidence",
+    label: "Products + confidence",
+    description: "Product selection with practical buying, delivery, or support questions.",
+    category: "commerce",
+    elements: ["product-list", "faq-accordion"],
+    defaultSettings: {
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
+  },
+  {
+    id: "capability-bento",
+    label: "Capability bento",
+    description: "Editorial introduction with a premium, scannable capability grid.",
+    category: "content",
+    elements: ["text-layout", "bento-grid"],
+    defaultSettings: {
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
+  },
+  {
+    id: "guided-navigation",
+    label: "Guided navigation",
+    description: "A concise introduction followed by clear paths to the next useful pages.",
+    category: "content",
+    elements: ["text-layout", "navigation-cards"],
+    defaultSettings: {
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      ...builderStylePresetRegistry.find((preset) => preset.id === "editorial-light")?.settings
+    }
   }
 ] satisfies BuilderSectionPatternDefinition[];
 
@@ -869,11 +1236,13 @@ const structuredCustomKeys = [
   "kicker",
   "eyebrow",
   "summary",
+  "attribution",
   "image",
   "media",
   "stats",
   "metrics",
-  "items"
+  "items",
+  "hotspots"
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -927,6 +1296,7 @@ function validateItemCollection(
     requireTitle?: boolean;
     requireBody?: boolean;
     requireValue?: boolean;
+    requireUrl?: boolean;
     allowImageOnly?: boolean;
   }
 ) {
@@ -964,6 +1334,10 @@ function validateItemCollection(
     if (options.requireValue && !hasValueText) {
       result.errors.push(issue("missing_custom_item_value", `${itemLabel} needs a value or metric.`));
     }
+
+    if (options.requireUrl && !hasText(item.url)) {
+      result.errors.push(issue("missing_custom_item_url", `${itemLabel} needs a link URL.`));
+    }
   }
 }
 
@@ -971,7 +1345,8 @@ function validateCustomElementValue(
   result: BuilderValidationResult,
   label: string,
   elementId: string | undefined,
-  value: unknown
+  value: unknown,
+  productSlugs: Iterable<string> = []
 ) {
   if (!isRecord(value) || !elementId) return;
 
@@ -1074,6 +1449,111 @@ function validateCustomElementValue(
       }
     }
   }
+
+  if (elementId === "timeline") {
+    validateItemCollection(result, label, value, ["items", "milestones"], {
+      collectionLabel: "timeline",
+      requireTitle: true,
+      requireBody: true
+    });
+  }
+
+  if (elementId === "checklist") {
+    validateItemCollection(result, label, value, ["items", "points"], {
+      collectionLabel: "checklist",
+      requireTitle: true
+    });
+  }
+
+  if (elementId === "resource-list") {
+    validateItemCollection(result, label, value, ["items", "resources"], {
+      collectionLabel: "resource list",
+      requireTitle: true,
+      requireUrl: true
+    });
+  }
+
+  if (elementId === "location-cards") {
+    validateItemCollection(result, label, value, ["items", "locations"], {
+      collectionLabel: "locations",
+      requireTitle: true,
+      requireBody: true
+    });
+  }
+
+  if (elementId === "bento-grid") {
+    validateItemCollection(result, label, value, ["items", "cards"], {
+      collectionLabel: "bento grid",
+      requireTitle: true,
+      requireBody: true
+    });
+  }
+
+  if (elementId === "navigation-cards") {
+    validateItemCollection(result, label, value, ["items", "cards"], {
+      collectionLabel: "navigation cards",
+      requireTitle: true,
+      requireUrl: true
+    });
+  }
+
+  if (elementId === "quote-highlight" && !hasAnyText(value, ["body", "text", "copy", "content"])) {
+    result.errors.push(issue("missing_quote_body", `${label} quote highlight needs quote text.`));
+  }
+
+  if (elementId === "image-hotspots") {
+    const image = isRecord(value.image) ? value.image : {};
+    if (!hasText(image.url) || (!hasText(image.alt) && !hasText(image.altText))) {
+      result.errors.push(issue("invalid_hotspot_image", `${label} interactive image needs a URL and alt text.`));
+    }
+
+    const hotspots = Array.isArray(value.hotspots) ? value.hotspots : [];
+    const knownProductSlugs = new Set(productSlugs);
+    if (!hotspots.length) {
+      result.errors.push(issue("empty_hotspots", `${label} interactive image needs at least one placement.`));
+    }
+    if (hotspots.length > 20) {
+      result.errors.push(issue("too_many_hotspots", `${label} interactive image supports at most 20 placements.`));
+    }
+
+    hotspots.forEach((hotspot, index) => {
+      const hotspotLabel = `${label} placement ${index + 1}`;
+      if (!isRecord(hotspot)) {
+        result.errors.push(issue("invalid_hotspot", `${hotspotLabel} must be an object.`));
+        return;
+      }
+
+      if (!hasAnyText(hotspot, ["title", "name", "label"])) {
+        result.errors.push(issue("missing_hotspot_label", `${hotspotLabel} needs a label.`));
+      }
+
+      for (const coordinate of ["x", "y"] as const) {
+        const number = Number(hotspot[coordinate]);
+        if (!Number.isFinite(number) || number < 0 || number > 100) {
+          result.errors.push(issue("invalid_hotspot_position", `${hotspotLabel} ${coordinate} must be between 0 and 100.`));
+        }
+      }
+
+      if (hotspot.width !== undefined && hotspot.width !== "") {
+        const width = Number(hotspot.width);
+        if (!Number.isFinite(width) || width < 1 || width > 50) {
+          result.errors.push(issue("invalid_hotspot_width", `${hotspotLabel} width must be between 1 and 50.`));
+        }
+      }
+
+      const productSlug = hasText(hotspot.productSlug) ? hotspot.productSlug : "";
+      if (!productSlug && !hasText(hotspot.url)) {
+        result.errors.push(issue("missing_hotspot_target", `${hotspotLabel} needs a product slug or link URL.`));
+      } else if (productSlug && knownProductSlugs.size && !knownProductSlugs.has(productSlug)) {
+        result.errors.push(issue("missing_product_reference", `${hotspotLabel} references missing product ${productSlug}.`));
+      }
+
+      const overlay = isRecord(hotspot.image) ? hotspot.image : null;
+      if (overlay && (!hasText(overlay.url) || (!hasText(overlay.alt) && !hasText(overlay.altText)))) {
+        result.errors.push(issue("invalid_hotspot_overlay", `${hotspotLabel} overlay image needs a URL and alt text.`));
+      }
+    });
+  }
 }
 
 function validateGalleryValue(
@@ -1155,8 +1635,16 @@ export function validateBuilderBlockContract(
     return result;
   }
 
-  if ((blockType === "TEXT" || blockType === "RICH_TEXT" || blockType === "EMBED") && typeof block.value !== "string") {
+  if ((blockType === "TEXT" || blockType === "RICH_TEXT") && typeof block.value !== "string") {
     result.errors.push(issue("invalid_text_value", `${label} text block value must be a string.`));
+  }
+
+  if (blockType === "EMBED") {
+    const customCodeResult = validateCustomCodeValue(block.value);
+    result.errors.push(...customCodeResult.errors.map((error) => ({
+      ...error,
+      message: `${label} ${error.message}`
+    })));
   }
 
   if (blockType === "IMAGE") {
@@ -1204,7 +1692,7 @@ export function validateBuilderBlockContract(
       result.errors.push(issue("unstructured_custom_value", `${label} custom block is not structured for the editor.`));
     }
 
-    validateCustomElementValue(result, label, registeredElement?.id, customValue);
+    validateCustomElementValue(result, label, registeredElement?.id, customValue, options.productSlugs);
 
     if (blockElementId === "structured-content" && isRecord(block.value) && Array.isArray(block.value.items) && block.value.items.length) {
       result.warnings.push(issue("fallback_structured_content", `${label} custom items render as structured content but still need richer visual templates.`));
@@ -1237,7 +1725,7 @@ export function validateBuilderSectionContract(
     result.errors.push(issue("missing_element_id", `${pageSlug}/${sectionKey} has no registered builder element id.`));
   } else if (elementId && !registeredElement) {
     result.errors.push(issue("unknown_element_id", `${pageSlug}/${sectionKey} references unknown builder element ${elementId}.`));
-  } else if (registeredElement?.generatorSafe === false) {
+  } else if (registeredElement?.editorAvailable === false) {
     result.warnings.push(issue("fallback_element", `${pageSlug}/${sectionKey} uses fallback builder element ${elementId}; create a richer element before Gate 2 completion.`));
   }
 

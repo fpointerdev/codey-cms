@@ -46,7 +46,8 @@ for (const filePath of files) {
       protected: containsCall(node, new Set(["requireAuth", "requirePermission"])),
       permission: permissionContract(node),
       validation,
-      created: containsCall(node, new Set(["sendCreated"]))
+      created: containsCall(node, new Set(["sendCreated"])),
+      responseMediaType: responseMediaType(node)
     });
   });
 }
@@ -83,9 +84,9 @@ for (const route of routes) {
     responses: {
       [successStatus]: {
         description: route.created ? "Resource created." : "Successful response.",
-        content: {
-          "application/json": { schema: { $ref: "#/components/schemas/SuccessEnvelope" } }
-        }
+        content: route.responseMediaType
+          ? { [route.responseMediaType]: { schema: { type: "string" } } }
+          : { "application/json": { schema: { $ref: "#/components/schemas/SuccessEnvelope" } } }
       },
       "400": { $ref: "#/components/responses/BadRequest" },
       ...(route.protected ? {
@@ -259,6 +260,22 @@ function permissionContract(node) {
     }
   });
   return permission;
+}
+
+function responseMediaType(node) {
+  let mediaType;
+  visit(node, (child) => {
+    if (
+      !ts.isCallExpression(child) ||
+      !ts.isPropertyAccessExpression(child.expression) ||
+      child.expression.name.text !== "type" ||
+      !ts.isStringLiteralLike(child.arguments[0])
+    ) return;
+
+    const declaredType = child.arguments[0].text;
+    mediaType = declaredType === "html" ? "text/html" : declaredType;
+  });
+  return mediaType;
 }
 
 function pathParameters(routePath) {

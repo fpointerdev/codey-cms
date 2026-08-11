@@ -492,7 +492,8 @@ export const themeManifest = {
     modules: element.modules,
     blocks: element.blockTypes,
     purpose: element.description,
-    generatorSafe: element.generatorSafe
+    generatorSafe: element.generatorSafe,
+    editorAvailable: element.editorAvailable !== false
   })),
   generatorRules: [
     "Keep client themes inside the copied project; do not modify the upstream Code Epsylon base for one client.",
@@ -504,6 +505,10 @@ export const themeManifest = {
     "Enable modules through the manifest and installed module records before using module-specific UI.",
     "Use CONTACT_FORM blocks for public inquiry forms instead of static disabled markup.",
     "Use the gallery componentTemplate for static portfolio/gallery pages instead of overloading sliders.",
-    "Use MediaAsset records and the media upload APIs for images; local storage is for development and S3-compatible storage is required in production."
+    "Use the image-hotspots componentTemplate for positioned links or product placements over a real scene image.",
+    "Use video display.playback=hover-focus only for muted hover/focus playback; native controls remain the touch and reduced-motion fallback.",
+    "Treat /shop as the canonical product collection route and configure optional hero media through product storefront settings.",
+    "Use MediaAsset records and the media upload APIs for images; local storage is for development and S3-compatible storage is required in production.",
+    "Never generate custom-code elements. They are an explicit trusted-editor escape hatch and remain sandboxed on public pages."
   ]
 };

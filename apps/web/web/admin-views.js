@@ -1234,6 +1234,9 @@ function renderShopSettingsPreview(settings) {
         <a href="/shop" target="_blank" rel="noopener">Open shop</a>
       </div>
       <div class="shop-settings-preview" data-shop-preview data-catalog-layout="${escapeHtml(settings.catalogLayout)}" data-card-style="${escapeHtml(settings.cardStyle)}">
+        <div class="shop-preview-hero" data-shop-preview-hero data-media-type="${escapeHtml(settings.catalogHero.mediaType)}"${settings.catalogHero.enabled ? "" : " hidden"}>
+          <span data-shop-preview-hero-label>${escapeHtml(settings.catalogHero.mediaType === "VIDEO" ? "Video hero" : "Image hero")}</span>
+        </div>
         <header>
           <span>Catalog</span>
           <strong data-shop-preview-title>${escapeHtml(settings.catalogTitle)}</strong>
@@ -1267,6 +1270,17 @@ function renderStorefrontSettings(settings, canUpdate) {
             <div><p class="section-label">Header</p><h3>Shop introduction</h3></div>
             <label><span>Shop title</span><input name="catalogTitle" value="${escapeHtml(settings.catalogTitle)}" maxlength="120" required ${canUpdate ? "" : "disabled"} /></label>
             <label><span>Description</span><textarea name="catalogDescription" rows="3" maxlength="500" ${canUpdate ? "" : "disabled"}>${escapeHtml(settings.catalogDescription)}</textarea></label>
+          </section>
+
+          <section class="shop-customization-section">
+            <div><p class="section-label">Hero media</p><h3>Campaign introduction</h3></div>
+            <label class="checkbox-field"><input type="checkbox" name="catalogHeroEnabled" ${settings.catalogHero.enabled ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Show media hero on the main shop page</span></label>
+            <label><span>Media type</span><select name="catalogHeroMediaType" ${canUpdate ? "" : "disabled"}><option value="VIDEO"${settings.catalogHero.mediaType === "VIDEO" ? " selected" : ""}>Video</option><option value="IMAGE"${settings.catalogHero.mediaType === "IMAGE" ? " selected" : ""}>Image</option></select></label>
+            <label><span>Media URL</span><input name="catalogHeroMediaUrl" value="${escapeHtml(settings.catalogHero.mediaUrl)}" maxlength="1000" placeholder="https://... or /uploads/..." ${canUpdate ? "" : "disabled"} /></label>
+            <label><span>Poster URL</span><input name="catalogHeroPosterUrl" value="${escapeHtml(settings.catalogHero.posterUrl)}" maxlength="1000" placeholder="Optional video poster" ${canUpdate ? "" : "disabled"} /></label>
+            <label><span>Media description</span><input name="catalogHeroAltText" value="${escapeHtml(settings.catalogHero.altText)}" maxlength="240" placeholder="Required for images" ${canUpdate ? "" : "disabled"} /></label>
+            <label><span>Video playback</span><select name="catalogHeroPlayback" ${canUpdate ? "" : "disabled"}><option value="hover-focus"${settings.catalogHero.playback === "hover-focus" ? " selected" : ""}>Play on hover or focus</option><option value="controls"${settings.catalogHero.playback === "controls" ? " selected" : ""}>Visitor controls</option></select></label>
+            <label class="checkbox-field"><input type="checkbox" name="catalogHeroLoop" ${settings.catalogHero.loop ? "checked" : ""} ${canUpdate ? "" : "disabled"} /><span>Loop video</span></label>
           </section>
 
           <section class="shop-customization-section">

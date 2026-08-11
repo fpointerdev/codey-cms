@@ -4,14 +4,14 @@ import { hydrateRichEditors, syncRichEditors } from "./rich-editor.js";
 
 function richTextFieldHtml(name, label, value = "", options = {}) {
   const help = options.help ? `<small class="field-help">${escapeHtml(options.help)}</small>` : "";
-  const fallbackHtml = options.emptyHtml === undefined ? "<p>Start writing content...</p>" : options.emptyHtml;
-  const surfaceHtml = value ? renderRichText(value) : renderRichText(fallbackHtml);
+  const surfaceHtml = value ? renderRichText(value) : renderRichText(options.emptyHtml || "");
+  const required = options.required === true;
 
   return `
     <label>
       <span>${escapeHtml(label)}</span>
     </label>
-    <div class="rich-editor${options.compact ? " rich-editor-compact" : ""}" data-rich-editor>
+    <div class="rich-editor${options.compact ? " rich-editor-compact" : ""}" data-rich-editor${required ? " data-rich-required" : ""}>
       <div class="rich-editor-header">
         <span>${escapeHtml(label)}</span>
         <div class="rich-toolbar" data-rich-toolbar aria-label="${escapeHtml(label)} toolbar">
@@ -47,7 +47,8 @@ function richTextFieldHtml(name, label, value = "", options = {}) {
         </div>
       </div>
       <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}" data-rich-source />
-      <div class="rich-editor-surface" data-rich-surface>${surfaceHtml}</div>
+      <div class="rich-editor-surface" data-rich-surface data-rich-placeholder="Start writing content..." aria-label="${escapeHtml(label)}">${surfaceHtml}</div>
+      ${required ? `<small class="rich-required-message" data-rich-required-message hidden>${escapeHtml(label)} is required.</small>` : ""}
     </div>
     ${help}
   `;
@@ -231,7 +232,10 @@ function modalFieldHtml(field) {
   }
 
   if (field.type === "richtext") {
-    return richTextFieldHtml(field.name, field.label, value, { help: field.help });
+    return richTextFieldHtml(field.name, field.label, value, {
+      help: field.help,
+      required: field.required !== false
+    });
   }
 
   if (field.type === "select") {
@@ -425,11 +429,39 @@ function groupedModalFields(fields = []) {
   return groups;
 }
 
+function modalFieldGroupHtml(fields = []) {
+  let html = "";
+  let itemGroupOpen = false;
+
+  fields.forEach((field) => {
+    if (field.type !== "section") {
+      html += modalFieldHtml(field);
+      return;
+    }
+
+    if (itemGroupOpen) html += "</div></details>";
+    html += `
+      <details class="modal-item-group"${field.open ? " open" : ""}>
+        <summary>
+          <span>
+            <strong>${escapeHtml(field.label)}</strong>
+            ${field.help ? `<small class="field-help">${escapeHtml(field.help)}</small>` : ""}
+          </span>
+        </summary>
+        <div class="modal-item-group-fields">
+    `;
+    itemGroupOpen = true;
+  });
+
+  if (itemGroupOpen) html += "</div></details>";
+  return html;
+}
+
 function modalFieldsHtml(fields = []) {
   const groups = groupedModalFields(fields);
 
   if (groups.length <= 1) {
-    return fields.map(modalFieldHtml).join("");
+    return modalFieldGroupHtml(fields);
   }
 
   return `
@@ -464,7 +496,7 @@ function modalFieldsHtml(fields = []) {
               data-modal-tab-panel="${escapeHtml(group.id)}"
               ${index === 0 ? "" : "hidden"}
             >
-              ${group.fields.map(modalFieldHtml).join("")}
+              ${modalFieldGroupHtml(group.fields)}
             </div>
           `
         )
@@ -662,7 +694,18 @@ function activateModalTab(tab) {
 }
 
 function revealInvalidControl(form) {
-  const control = form.querySelector(":invalid");
+  form.querySelectorAll("[data-rich-required]").forEach((editor) => {
+    editor.querySelector("[data-rich-surface]")?.removeAttribute("aria-invalid");
+    const message = editor.querySelector("[data-rich-required-message]");
+    if (message) message.hidden = true;
+  });
+
+  const invalidRichEditor = Array.from(form.querySelectorAll("[data-rich-required]")).find((editor) => {
+    const surface = editor.querySelector("[data-rich-surface]");
+    const text = String(surface?.textContent || "").replace(/\u00a0/g, " ").trim();
+    return !text && !surface?.querySelector("img, video, audio, table, ul, ol");
+  });
+  const control = invalidRichEditor?.querySelector("[data-rich-surface]") || form.querySelector(":invalid");
   if (!control) return false;
 
   const panel = control.closest("[data-modal-tab-panel]");
@@ -672,8 +715,17 @@ function revealInvalidControl(form) {
     : null;
   if (tab) activateModalTab(tab);
 
+  const itemGroup = control.closest("details");
+  if (itemGroup) itemGroup.open = true;
+
+  if (invalidRichEditor) {
+    control.setAttribute("aria-invalid", "true");
+    const message = invalidRichEditor.querySelector("[data-rich-required-message]");
+    if (message) message.hidden = false;
+  }
+
   control.focus?.();
-  control.reportValidity?.();
+  if (!invalidRichEditor) control.reportValidity?.();
   return true;
 }
 

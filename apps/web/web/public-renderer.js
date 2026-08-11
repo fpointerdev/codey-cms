@@ -724,17 +724,28 @@ function renderStructuredStats(stats) {
 function structuredDisplay(value) {
   const display = isRecord(value?.display) ? value.display : {};
   const columns = [2, 3, 4].includes(Number(display.columns)) ? Number(display.columns) : 3;
+  const variant = cssToken(firstText(value, ["variant", "type"]));
+  const defaultPresentation = {
+    timeline: "line",
+    "resource-list": "rows",
+    "quote-highlight": "editorial",
+    "bento-grid": "spotlight",
+    "navigation-cards": "cards",
+    video: "inline"
+  }[variant] || "cards";
 
   return {
     alignment: oneOf(display.alignment, ["left", "center"], "left"),
     density: oneOf(display.density, ["comfortable", "compact"], "comfortable"),
     surface: oneOf(display.surface, ["plain", "outline", "soft"], "outline"),
+    presentation: oneOf(display.presentation, ["cards", "bento", "editorial", "spotlight", "comparison", "line", "alternating", "rows", "centered", "boxed", "balanced", "mosaic", "compact", "inline", "hero"], defaultPresentation),
     columns,
     showNumbers: display.showNumbers !== false,
     striped: display.striped !== false,
-    ratio: oneOf(display.ratio, ["16 / 9", "4 / 3", "1 / 1"], "16 / 9"),
+    ratio: oneOf(display.ratio, ["16 / 10", "16 / 9", "4 / 3", "1 / 1"], variant === "image-hotspots" ? "16 / 10" : "16 / 9"),
     preload: oneOf(display.preload, ["metadata", "none"], "metadata"),
-    loop: display.loop === true
+    loop: display.loop === true,
+    playback: oneOf(display.playback, ["controls", "hover-focus"], "controls")
   };
 }
 
@@ -742,7 +753,8 @@ function structuredDisplayClasses(display) {
   return [
     `structured-align-${display.alignment}`,
     `structured-density-${display.density}`,
-    `structured-surface-${display.surface}`
+    `structured-surface-${display.surface}`,
+    `structured-presentation-${display.presentation}`
   ].join(" ");
 }
 
@@ -810,6 +822,7 @@ function renderStructuredItems(items, variant = "cards", renderContext = {}, dis
               ${!wrapCardWithLink && token !== "logo-grid" ? action : ""}
             </div>`
           : ""}
+        ${token === "navigation-cards" ? '<span class="structured-navigation-arrow" aria-hidden="true">&#8594;</span>' : ""}
       `;
 
       return wrapCardWithLink
@@ -854,6 +867,121 @@ function renderStructuredProcess(items, display) {
   return `<ol class="structured-process${display.showNumbers ? "" : " structured-process-hide-numbers"}" style="--structured-columns:${escapeHtml(display.columns)}">${steps}</ol>`;
 }
 
+function renderStructuredTimeline(items) {
+  if (!Array.isArray(items)) return "";
+
+  const milestones = items
+    .map((item) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name"]);
+      const body = firstText(item, ["body", "text", "copy", "description", "content"]);
+      const label = firstText(item, ["label", "date", "period", "meta"]);
+      const url = item.url ? safePublicHref(item.url) : "";
+      if (!title && !body) return "";
+
+      return `
+        <li class="structured-timeline-item">
+          <span class="structured-timeline-marker" aria-hidden="true"></span>
+          <div class="structured-timeline-copy">
+            ${label ? `<p class="structured-note">${escapeHtml(label)}</p>` : ""}
+            ${title ? `<h4>${escapeHtml(title)}</h4>` : ""}
+            ${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}
+            ${url ? `<a class="action-link" href="${escapeHtml(url)}">Learn more</a>` : ""}
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  return milestones ? `<ol class="structured-timeline">${milestones}</ol>` : "";
+}
+
+function renderStructuredChecklist(items, display) {
+  if (!Array.isArray(items)) return "";
+
+  const points = items
+    .map((item) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name", "label"]);
+      const body = firstText(item, ["body", "text", "copy", "description", "content"]);
+      if (!title && !body) return "";
+
+      return `
+        <li class="structured-checklist-item">
+          <span class="structured-checklist-mark" aria-hidden="true">&#10003;</span>
+          <div class="structured-card-copy">
+            ${title ? `<h4>${escapeHtml(title)}</h4>` : ""}
+            ${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  return points
+    ? `<ul class="structured-checklist" style="--structured-columns:${escapeHtml(display.columns)}">${points}</ul>`
+    : "";
+}
+
+function renderStructuredResources(items) {
+  if (!Array.isArray(items)) return "";
+
+  const resources = items
+    .map((item) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name"]);
+      const body = firstText(item, ["body", "text", "copy", "description", "content"]);
+      const label = firstText(item, ["label", "type", "format", "meta"]);
+      const url = item.url ? safePublicHref(item.url) : "";
+      if (!title || !url) return "";
+
+      return `
+        <li>
+          <a class="structured-resource-link" href="${escapeHtml(url)}">
+            <div class="structured-resource-copy">
+              ${label ? `<span class="structured-note">${escapeHtml(label)}</span>` : ""}
+              <strong>${escapeHtml(title)}</strong>
+              ${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}
+            </div>
+            <span class="structured-resource-arrow" aria-hidden="true">&#8599;</span>
+          </a>
+        </li>
+      `;
+    })
+    .join("");
+
+  return resources ? `<ul class="structured-resource-list">${resources}</ul>` : "";
+}
+
+function renderStructuredLocations(items, display) {
+  if (!Array.isArray(items)) return "";
+
+  const locations = items
+    .map((item) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "name"]);
+      const body = firstText(item, ["body", "text", "copy", "description", "content"]);
+      const label = firstText(item, ["label", "hours", "area", "meta"]);
+      const url = item.url ? safePublicHref(item.url) : "";
+      if (!title && !body) return "";
+
+      return `
+        <address class="structured-location">
+          <span class="structured-location-marker" aria-hidden="true"></span>
+          ${title ? `<h4>${escapeHtml(title)}</h4>` : ""}
+          ${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}
+          ${label ? `<p class="structured-note">${escapeHtml(label)}</p>` : ""}
+          ${url ? `<a class="action-link" href="${escapeHtml(url)}">View details</a>` : ""}
+        </address>
+      `;
+    })
+    .join("");
+
+  return locations
+    ? `<div class="structured-locations" style="--structured-columns:${escapeHtml(display.columns)}">${locations}</div>`
+    : "";
+}
+
 function renderStructuredComparison(items, value, display) {
   if (!Array.isArray(items)) return "";
 
@@ -885,16 +1013,106 @@ function renderStructuredComparison(items, value, display) {
   `;
 }
 
-function renderStructuredVideo(value, display) {
-  const src = safeMediaSrc(value.url);
+function renderVideoElement(value, display, className = "") {
+  const src = safeMediaSrc(value.url || value.src);
   if (!src) return '<div class="fallback-content">Video is not available.</div>';
 
   const title = firstText(value, ["title", "heading", "headline", "name"]) || "Video";
+  const posterValue = isRecord(value.poster) ? value.poster.url || value.poster.src : value.posterUrl;
+  const poster = safeMediaSrc(posterValue);
+  const hoverPlayback = display.playback === "hover-focus";
+
+  return `<video${className ? ` class="${escapeHtml(className)}"` : ""} src="${escapeHtml(src)}" controls playsinline preload="${escapeHtml(display.preload)}" aria-label="${escapeHtml(title)}" data-video-playback="${escapeHtml(display.playback)}"${poster ? ` poster="${escapeHtml(poster)}"` : ""}${hoverPlayback ? " muted" : ""}${display.loop ? " loop" : ""}>
+    <a href="${escapeHtml(src)}">Download ${escapeHtml(title)}</a>
+  </video>`;
+}
+
+function renderStructuredVideo(value, display) {
   return `
-    <figure class="structured-video" style="--structured-video-ratio:${escapeHtml(display.ratio)}">
-      <video src="${escapeHtml(src)}" controls playsinline preload="${escapeHtml(display.preload)}" aria-label="${escapeHtml(title)}"${display.loop ? " loop" : ""}>
-        <a href="${escapeHtml(src)}">Download ${escapeHtml(title)}</a>
-      </video>
+    <figure class="structured-video" data-video-frame style="--structured-video-ratio:${escapeHtml(display.ratio)}">
+      ${renderVideoElement(value, display)}
+    </figure>
+  `;
+}
+
+function boundedPercent(value, fallback, min = 0, max = 100) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+}
+
+function hotspotHref(hotspot) {
+  const productSlug = firstText(hotspot, ["productSlug"]);
+  if (productSlug) {
+    const defaultLocale = state.config?.localization?.defaultLocale || "en";
+    return localizedShopPath(`/product/${encodePathSegment(productSlug)}`, {
+      locale: state.publicRenderLocale || defaultLocale,
+      defaultLocale
+    });
+  }
+
+  const requested = firstText(hotspot, ["url"]);
+  if (!requested) return "";
+  const href = safePublicHref(requested);
+  return href === "#" && requested !== "#" ? "" : href;
+}
+
+function renderStructuredHotspotScene(value, display, renderContext) {
+  const sceneImage = value.image || value.media;
+  if (!normalizedImage(sceneImage)) {
+    return '<div class="fallback-content">Interactive image is not available.</div>';
+  }
+
+  const hotspots = Array.isArray(value.hotspots) ? value.hotspots.slice(0, 20) : [];
+  const placements = hotspots
+    .map((hotspot, index) => {
+      if (!isRecord(hotspot)) return "";
+      const title = firstText(hotspot, ["title", "name", "label"]);
+      const body = firstText(hotspot, ["body", "text", "description"]);
+      const href = hotspotHref(hotspot);
+      if (!title || !href) return "";
+
+      const x = boundedPercent(hotspot.x, 50);
+      const y = boundedPercent(hotspot.y, 50);
+      const width = boundedPercent(hotspot.width, 8, 1, 50);
+      const overlay = hotspot.image || hotspot.media;
+      const overlayHtml = normalizedImage(overlay)
+        ? renderImageTag(overlay, title, "hotspot-overlay", "hotspot-overlay-image", renderContext)
+        : "";
+      const description = body ? `<span class="hotspot-description">${escapeHtml(body)}</span>` : "";
+      const edgeClass = x < 18 ? " hotspot-left-edge" : x > 82 ? " hotspot-right-edge" : "";
+
+      return `
+        <li class="hotspot-placement${overlayHtml ? " has-overlay-image" : ""}${edgeClass}" style="--hotspot-x:${escapeHtml(x)}%;--hotspot-y:${escapeHtml(y)}%;--hotspot-width:${escapeHtml(width)}%">
+          <a href="${escapeHtml(href)}" aria-label="${escapeHtml(title)}">
+            ${overlayHtml}
+            <span class="hotspot-marker" aria-hidden="true"><span>${escapeHtml(String(index + 1).padStart(2, "0"))}</span></span>
+            <span class="hotspot-label"><strong>${escapeHtml(title)}</strong>${description}</span>
+          </a>
+        </li>
+      `;
+    })
+    .join("");
+
+  return `
+    <figure class="structured-hotspot-scene" style="--hotspot-scene-ratio:${escapeHtml(display.ratio)}">
+      ${renderImageTag(sceneImage, firstText(sceneImage, ["alt", "altText"]) || firstText(value, ["title"]) || "Interactive scene", "hotspot-scene", "hotspot-scene-image", renderContext)}
+      ${placements ? `<ol class="hotspot-placements" aria-label="Interactive image points">${placements}</ol>` : ""}
+    </figure>
+  `;
+}
+
+function renderStructuredQuote(value, display) {
+  const title = firstText(value, ["title", "heading", "headline", "name"]);
+  const body = firstText(value, ["body", "text", "copy", "content"]);
+  const attribution = firstText(value, ["attribution", "source", "author"]);
+  if (!body) return "";
+
+  return `
+    <figure class="structured-block structured-quote-highlight ${escapeHtml(structuredDisplayClasses(display))}">
+      <span class="structured-quote-mark" aria-hidden="true">"</span>
+      ${title ? `<h3>${escapeHtml(title)}</h3>` : ""}
+      <blockquote>${renderRichText(body)}</blockquote>
+      ${attribution ? `<figcaption>${escapeHtml(attribution)}</figcaption>` : ""}
     </figure>
   `;
 }
@@ -1035,6 +1253,10 @@ function renderStructuredCollection(items, variant, blockKey, renderContext = {}
   if (token === "accordion" || token === "faq-accordion") return renderStructuredAccordion(items, token, renderContext);
   if (token === "process-steps") return renderStructuredProcess(items, display);
   if (token === "comparison-table") return renderStructuredComparison(items, value, display);
+  if (token === "timeline") return renderStructuredTimeline(items);
+  if (token === "checklist") return renderStructuredChecklist(items, display);
+  if (token === "resource-list") return renderStructuredResources(items);
+  if (token === "location-cards") return renderStructuredLocations(items, display);
 
   return renderStructuredItems(items, token, renderContext, display);
 }
@@ -1049,9 +1271,12 @@ function renderStructuredBlock(block, renderContext = {}) {
   const variant = firstText(value, ["variant", "type"]) || block.settings?.elementId || block.label || "content";
   const variantToken = cssToken(variant);
   const display = structuredDisplay(value);
+  if (variantToken === "quote-highlight") return renderStructuredQuote(value, display);
   const imageHtml = variantToken === "video"
     ? renderStructuredVideo(value, display)
-    : renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
+    : variantToken === "image-hotspots"
+      ? renderStructuredHotspotScene(value, display, renderContext)
+      : renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
   const statsHtml = renderStructuredStats(value.stats || value.metrics);
   const itemsHtml = renderStructuredCollection(
     value.items || value.cards || value.people || value.logos || value.questions,
@@ -1069,7 +1294,7 @@ function renderStructuredBlock(block, renderContext = {}) {
   if (!title && !body && !note && !imageHtml && !statsHtml && !itemsHtml && !ctaHtml) return "";
 
   return `
-    <article class="structured-block structured-block-${escapeHtml(variantToken)} ${escapeHtml(structuredDisplayClasses(display))}">
+    <article class="structured-block structured-block-${escapeHtml(variantToken)} ${escapeHtml(structuredDisplayClasses(display))}"${variantToken === "video" ? " data-video-frame" : ""}>
       <div class="structured-block-copy">
         ${note ? `<p class="structured-note">${escapeHtml(note)}</p>` : ""}
         ${title ? `<${headingTag}>${escapeHtml(title)}</${headingTag}>` : ""}
@@ -1351,6 +1576,56 @@ export function renderRichText(value) {
     .join("");
 }
 
+function normalizeCustomCode(value) {
+  if (typeof value === "string") {
+    return { html: value, css: "", javascript: "", libraries: [], height: 320 };
+  }
+
+  if (!isRecord(value)) return null;
+
+  return {
+    html: typeof value.html === "string" ? value.html : "",
+    css: typeof value.css === "string" ? value.css : "",
+    javascript: typeof value.javascript === "string" ? value.javascript : "",
+    libraries: Array.isArray(value.libraries) ? value.libraries : [],
+    height: Number.isInteger(value.height) ? Math.min(1200, Math.max(120, value.height)) : 320
+  };
+}
+
+function renderCustomCodeBlock(block, renderContext) {
+  const value = normalizeCustomCode(block.value);
+  const hasCode = value && (
+    value.html.trim() ||
+    value.css.trim() ||
+    value.javascript.trim() ||
+    value.libraries.length
+  );
+  if (!hasCode) return '<div class="custom-code-placeholder">Custom code is empty.</div>';
+
+  if (renderContext.allowCustomCode !== true) {
+    return '<div class="custom-code-placeholder">Custom code preview paused.</div>';
+  }
+
+  if (!block.id) {
+    return '<div class="custom-code-placeholder">Custom code is not published yet.</div>';
+  }
+
+  const apiPrefix = state.config?.api?.prefix || "/api/v1";
+  const source = `${apiPrefix}/cms/custom-code/${encodeURIComponent(block.id)}`;
+  return `
+    <iframe
+      class="custom-code-frame"
+      data-custom-code-frame
+      title="${escapeHtml(block.label || "Custom code")}"
+      src="${escapeHtml(source)}"
+      sandbox="allow-scripts allow-forms"
+      referrerpolicy="no-referrer"
+      loading="lazy"
+      style="--custom-code-height:${escapeHtml(value.height)}px"
+    ></iframe>
+  `;
+}
+
 export function renderBlock(block, renderContext = {}) {
   const value = block.value;
   const knownObjectTypes = new Set(["IMAGE", "GALLERY", "BUTTON", "CTA", "CONTACT_FORM", "PRODUCT_LIST"]);
@@ -1470,6 +1745,10 @@ export function renderBlock(block, renderContext = {}) {
         </div>` : ""}
       </div>
     `;
+  }
+
+  if (block.type === "EMBED") {
+    return renderCustomCodeBlock(block, renderContext);
   }
 
   if (block.type === "BUTTON" || block.type === "CTA") {
@@ -1715,7 +1994,10 @@ function renderStandardSectionBlocks(section, canEdit, renderContext) {
 export function renderSections(page, options = {}) {
   const layout = normalizePageLayout(page.content?.layout);
   const canEdit = options.canEdit === true;
-  const renderContext = options.imageContext || { highPriorityImageUsed: false };
+  const renderContext = {
+    ...(options.imageContext || { highPriorityImageUsed: false }),
+    allowCustomCode: options.allowCustomCode !== false && !canEdit
+  };
 
   if (!page.sections?.length) {
     return '<div class="fallback-content">This page does not have visible sections yet.</div>';
@@ -1915,6 +2197,38 @@ function renderShopPagination(pagination = {}, route = {}, options = {}) {
   `;
 }
 
+function renderShopCatalogHero(settings, route = {}) {
+  const hero = settings.catalogHero;
+  const isMainListing = !route.category && !route.attributeName && Number(route.page || 1) === 1;
+  const src = safeMediaSrc(hero.mediaUrl);
+  if (!hero.enabled || !isMainListing || !src) return "";
+
+  const media = hero.mediaType === "VIDEO"
+    ? renderVideoElement({
+        title: settings.catalogTitle,
+        url: src,
+        posterUrl: hero.posterUrl
+      }, {
+        ratio: "16 / 9",
+        preload: "metadata",
+        loop: hero.loop,
+        playback: hero.playback
+      }, "shop-catalog-hero-media")
+    : renderImageTag({ url: src, alt: hero.altText || settings.catalogTitle }, hero.altText || settings.catalogTitle, "shop-hero", "shop-catalog-hero-media");
+
+  return `
+    <section class="shop-catalog-hero"${hero.mediaType === "VIDEO" ? " data-video-frame" : ""}>
+      ${media}
+      <span class="shop-catalog-hero-overlay" aria-hidden="true"></span>
+      <div class="shop-catalog-hero-copy">
+        <p class="section-label">${escapeHtml(translateString("shop.catalog", "Catalog"))}</p>
+        <h1>${escapeHtml(settings.catalogTitle)}</h1>
+        ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
+      </div>
+    </section>
+  `;
+}
+
 export function renderShopListingContent(
   { products = [], categories = [], attributes = [], route = {}, pagination = {} },
   options = {}
@@ -1931,15 +2245,19 @@ export function renderShopListingContent(
   const attributesHtml = settings.showAttributes
     ? renderShopAttributeLinks(attributes, route, options)
     : "";
+  const hero = renderShopCatalogHero(settings, route);
 
   return `
     <section class="shop-public-page shop-layout-${escapeHtml(settings.catalogLayout)} shop-card-${escapeHtml(settings.cardStyle)}" data-commerce-root>
-      <header class="shop-public-header">
-        <div>
-          <p class="section-label">${escapeHtml(translateString("shop.catalog", "Catalog"))}</p>
-          <h1>${escapeHtml(title)}</h1>
-          ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
-        </div>
+      ${hero}
+      <header class="shop-public-header${hero ? " shop-public-header-compact" : ""}">
+        ${hero
+          ? `<div><p class="section-label">${escapeHtml(translateString("shop.allProducts", "All products"))}</p></div>`
+          : `<div>
+              <p class="section-label">${escapeHtml(translateString("shop.catalog", "Catalog"))}</p>
+              <h1>${escapeHtml(title)}</h1>
+              ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
+            </div>`}
         <button type="button" class="secondary-button commerce-cart-trigger" data-commerce-cart-toggle>
           ${escapeHtml(translateString("shop.cart", "Cart"))} <span data-commerce-cart-count>0</span>
         </button>

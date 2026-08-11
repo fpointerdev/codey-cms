@@ -117,6 +117,7 @@ import {
   handleStructuredTabKeydown
 } from "./structured-tabs.js";
 import { handleSliderClick } from "./slider-runtime.js";
+import { bindHoverVideoPlayback } from "./video-playback.js";
 import { applyDesignPreset, syncDesignColorTextInput, updateDesignSystemPreview } from "./design-system.js";
 import {
   cancelVisualInlineEdit,
@@ -1678,6 +1679,7 @@ export function bindEvents() {
   bindBuilderKeyboardEvents();
   bindDragEvents();
   bindMenuAndFooterEvents();
+  bindHoverVideoPlayback(elements.page);
 
   document.addEventListener?.("click", (event) => {
     closeVisualCommandMenus(event.target);
