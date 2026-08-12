@@ -2246,7 +2246,7 @@ function renderShopPagination(pagination = {}, route = {}, options = {}) {
   `;
 }
 
-function renderShopCatalogHero(settings, route = {}) {
+function renderShopCatalogHero(settings, route = {}, catalogHeroMedia = null) {
   const hero = settings.catalogHero;
   const isMainListing = !route.category && !route.attributeName && Number(route.page || 1) === 1;
   const src = safeMediaSrc(hero.mediaUrl);
@@ -2263,7 +2263,11 @@ function renderShopCatalogHero(settings, route = {}) {
         loop: hero.loop,
         playback: hero.playback
       }, "shop-catalog-hero-media")
-    : renderImageTag({ url: src, alt: hero.altText || settings.catalogTitle }, hero.altText || settings.catalogTitle, "shop-hero", "shop-catalog-hero-media");
+    : renderImageTag({
+        ...(isRecord(catalogHeroMedia) ? catalogHeroMedia : {}),
+        url: src,
+        alt: hero.altText || settings.catalogTitle
+      }, hero.altText || settings.catalogTitle, "shop-hero", "shop-catalog-hero-media");
 
   return `
     <section class="shop-catalog-hero"${hero.mediaType === "VIDEO" ? " data-video-frame" : ""}>
@@ -2295,7 +2299,7 @@ export function renderShopListingContent(
   const attributesHtml = settings.showAttributes
     ? renderShopAttributeLinks(attributes, route, options)
     : "";
-  const hero = renderShopCatalogHero(settings, route);
+  const hero = renderShopCatalogHero(settings, route, options.catalogHeroMedia);
 
   return `
     <section class="shop-public-page shop-layout-${escapeHtml(settings.catalogLayout)} shop-card-${escapeHtml(settings.cardStyle)}" data-commerce-root>

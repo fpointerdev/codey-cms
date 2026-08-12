@@ -988,6 +988,32 @@ test("shop catalog hero is server-rendered only on the main listing", () => {
   assert.doesNotMatch(pagedListing, /shop-catalog-hero/);
 });
 
+test("shop catalog hero images include media-library dimensions", () => {
+  const listing = renderShopListingContent({ products: [], route: { page: 1 } }, {
+    locale: "en",
+    defaultLocale: "en",
+    shopSettings: {
+      catalogTitle: "Summer collection",
+      catalogHero: {
+        enabled: true,
+        mediaType: "IMAGE",
+        mediaUrl: "/uploads/summer.webp",
+        altText: "Summer collection display"
+      }
+    },
+    catalogHeroMedia: {
+      url: "/uploads/summer.webp",
+      width: 1600,
+      height: 900,
+      variants: []
+    }
+  });
+
+  assert.match(listing, /src="\/uploads\/summer\.webp"/);
+  assert.match(listing, /alt="Summer collection display"/);
+  assert.match(listing, /width="1600" height="900"/);
+});
+
 test("shop rendering supports quote products and sellable variants", () => {
   const quoteProduct = {
     id: "quote-product",

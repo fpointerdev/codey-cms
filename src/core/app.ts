@@ -899,7 +899,8 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
 
     if (route.type === "shop") {
       const limit = shopSettings?.productsPerPage || 20;
-      const [productPage, categories, attributes] = await Promise.all([
+      const hero = shopSettings?.catalogHero;
+      const [productPage, categories, attributes, catalogHeroMedia] = await Promise.all([
         readPublicShopProductPage(route, limit, shopSettings?.catalogSort),
         prisma.productCategory.findMany({
           where: { locale: route.locale },
@@ -908,7 +909,13 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         prisma.productAttribute.findMany({
           where: { locale: route.locale },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-        })
+        }),
+        hero?.enabled && hero.mediaType === "IMAGE" && hero.mediaUrl
+          ? enrichPublicMedia(prisma, {
+              url: hero.mediaUrl,
+              alt: hero.altText || shopSettings?.catalogTitle || "Shop"
+            })
+          : Promise.resolve(null)
       ]);
 
       return {
@@ -932,7 +939,8 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
           }, {
             locale: route.locale,
             defaultLocale: localization.defaultLocale,
-            shopSettings
+            shopSettings,
+            catalogHeroMedia
           })),
           footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
         }

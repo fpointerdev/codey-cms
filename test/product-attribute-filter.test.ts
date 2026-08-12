@@ -26,6 +26,20 @@ test("product attribute matching accepts public slugs", () => {
   }), false);
 });
 
+test("attribute normalization handles long repeated separators in linear time", () => {
+  const separators = "-".repeat(100_000);
+  const product = {
+    metadata: {
+      attributes: [{ name: `Surface${separators}Finish`, value: `Brushed${separators}Steel` }]
+    }
+  };
+
+  assert.equal(productMatchesAttributeFilter(product, {
+    attributeName: `surface${separators}finish`,
+    attributeValue: "brushed-steel"
+  }), true);
+});
+
 test("attribute pagination scans in batches and returns one ordered page", async () => {
   const candidates = Array.from({ length: 9 }, (_, index) => ({
     id: `product-${index + 1}`,
