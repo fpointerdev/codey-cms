@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { productCatalogSortValues } from "./product-sort.js";
 
 export const productSlugParams = z.object({
   slug: z.string().trim().min(1)
@@ -35,12 +36,31 @@ const storefrontMediaUrlSchema = z.string().trim().max(1000).refine((value) => {
   }
 }, "Use a safe root-relative or absolute HTTP(S) media URL.");
 
+const storefrontLinkSchema = z.string().trim().max(1000).refine((value) => {
+  if (!value) return true;
+  if (value.startsWith("/") && !value.startsWith("//") && !/[<>"\\]/.test(value)) {
+    try {
+      return !decodeURIComponent(value.split(/[?#]/, 1)[0] || "").split("/").includes("..");
+    } catch {
+      return false;
+    }
+  }
+
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}, "Use a safe site path or absolute HTTP(S) URL.");
+
 const catalogHeroSchema = z.object({
   enabled: z.boolean().default(false),
   mediaType: z.enum(["IMAGE", "VIDEO"]).default("VIDEO"),
   mediaUrl: storefrontMediaUrlSchema.default(""),
   posterUrl: storefrontMediaUrlSchema.default(""),
   altText: z.string().trim().max(240).default(""),
+  ctaLabel: z.string().trim().max(80).default(""),
+  ctaUrl: storefrontLinkSchema.default(""),
   playback: z.enum(["controls", "hover-focus"]).default("hover-focus"),
   loop: z.boolean().default(true)
 }).strict().default({});
@@ -50,6 +70,7 @@ export const shopSettingsSchema = z.object({
   catalogDescription: z.string().trim().max(500).default("Browse our products."),
   catalogLayout: z.enum(["grid", "editorial", "compact"]).default("grid"),
   cardStyle: z.enum(["minimal", "image-led", "technical"]).default("minimal"),
+  catalogSort: z.enum(productCatalogSortValues).default("newest"),
   detailLayout: z.enum(["classic", "immersive", "spec-sheet"]).default("classic"),
   detailStyle: z.enum(["standard", "premium", "industrial"]).default("standard"),
   productsPerPage: z.number().int().min(8).max(48).default(20),
@@ -57,8 +78,17 @@ export const shopSettingsSchema = z.object({
   showAttributes: z.boolean().default(true),
   showSku: z.boolean().default(true),
   showStock: z.boolean().default(true),
+  showDescriptions: z.boolean().default(true),
   catalogHero: catalogHeroSchema
 }).superRefine((settings, context) => {
+  if (Boolean(settings.catalogHero.ctaLabel) !== Boolean(settings.catalogHero.ctaUrl)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["catalogHero", settings.catalogHero.ctaLabel ? "ctaUrl" : "ctaLabel"],
+      message: "Catalog hero button needs both a label and a link."
+    });
+  }
+
   if (settings.catalogHero.enabled && !settings.catalogHero.mediaUrl) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -102,6 +132,7 @@ const productImageUrlSchema = z.string().trim().max(1000).refine((value) => {
 export const listProductsQuery = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
+  sort: z.enum(productCatalogSortValues).default("newest"),
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
   locale: z.string().trim().toLowerCase().min(2).max(16).optional(),
   category: z.string().trim().min(1).max(120).optional(),

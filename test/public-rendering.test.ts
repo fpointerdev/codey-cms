@@ -589,6 +589,68 @@ test("interactive image placements render bounded accessible product links", () 
   assert.doesNotMatch(html, /javascript:|aria-label="Unsafe"/);
 });
 
+test("image comparisons and product showcases render complete server-side content", () => {
+  const html = renderPageContent({
+    title: "Results and products",
+    content: { layout: "full-width", hideTitle: true },
+    sections: [{
+      id: "showcase",
+      key: "showcase",
+      settings: {},
+      blocks: [
+        {
+          key: "comparison",
+          type: "CUSTOM",
+          settings: { elementId: "image-comparison" },
+          editable: true,
+          value: {
+            variant: "image-comparison",
+            title: "Before and after",
+            items: [
+              { title: "Before", image: { url: "/uploads/before.webp", alt: "Room before renovation" } },
+              { title: "After", image: { url: "/uploads/after.webp", alt: "Room after renovation" } }
+            ],
+            display: { presentation: "split" }
+          }
+        },
+        {
+          key: "products",
+          type: "PRODUCT_LIST",
+          settings: { elementId: "product-showcase" },
+          editable: true,
+          value: {
+            title: "Featured product",
+            productSlugs: ["studio-chair"],
+            layout: "spotlight",
+            products: [{
+              id: "product-1",
+              slug: "studio-chair",
+              name: "Studio Chair",
+              description: "Built for focused work.",
+              priceCents: 25000,
+              currency: "EUR",
+              stockQuantity: 4,
+              availableStock: 4,
+              metadata: {},
+              images: []
+            }]
+          }
+        }
+      ]
+    }]
+  }, {
+    shopSettings: { showSku: false, showStock: true, showDescriptions: true }
+  });
+
+  assert.match(html, /image-comparison-split/);
+  assert.match(html, /alt="Room before renovation"/);
+  assert.match(html, /alt="Room after renovation"/);
+  assert.match(html, /product-list-layout-spotlight/);
+  assert.match(html, /Studio Chair/);
+  assert.match(html, /Built for focused work\./);
+  assert.match(html, /data-commerce-add data-product-id="product-1"/);
+});
+
 test("expanded builder elements server-render semantic timelines, lists, locations, and quotes", () => {
   const html = renderPageContent({
     title: "Company information",
@@ -924,6 +986,32 @@ test("shop catalog hero is server-rendered only on the main listing", () => {
   assert.match(mainListing, / muted loop/);
   assert.match(mainListing, /<h1>Summer collection<\/h1>/);
   assert.doesNotMatch(pagedListing, /shop-catalog-hero/);
+});
+
+test("shop catalog hero images include media-library dimensions", () => {
+  const listing = renderShopListingContent({ products: [], route: { page: 1 } }, {
+    locale: "en",
+    defaultLocale: "en",
+    shopSettings: {
+      catalogTitle: "Summer collection",
+      catalogHero: {
+        enabled: true,
+        mediaType: "IMAGE",
+        mediaUrl: "/uploads/summer.webp",
+        altText: "Summer collection display"
+      }
+    },
+    catalogHeroMedia: {
+      url: "/uploads/summer.webp",
+      width: 1600,
+      height: 900,
+      variants: []
+    }
+  });
+
+  assert.match(listing, /src="\/uploads\/summer\.webp"/);
+  assert.match(listing, /alt="Summer collection display"/);
+  assert.match(listing, /width="1600" height="900"/);
 });
 
 test("shop rendering supports quote products and sellable variants", () => {

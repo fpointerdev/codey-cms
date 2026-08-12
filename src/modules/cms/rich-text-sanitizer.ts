@@ -56,7 +56,14 @@ export function sanitizeContentBlockValue<T>(type: string, value: T): T {
   }
 
   if (!isRecord(value) && !Array.isArray(value)) return value;
-  return sanitizeNestedValue(value) as T;
+  const sanitized = sanitizeNestedValue(value);
+
+  if (type === "PRODUCT_LIST" && isRecord(sanitized)) {
+    const { products: _runtimeProducts, ...persistedValue } = sanitized;
+    return persistedValue as T;
+  }
+
+  return sanitized as T;
 }
 
 function sanitizeNestedValue(value: unknown, key?: string): unknown {

@@ -738,7 +738,7 @@ function structuredDisplay(value, fallbackVariant = "") {
     alignment: oneOf(display.alignment, ["left", "center"], "left"),
     density: oneOf(display.density, ["comfortable", "compact"], "comfortable"),
     surface: oneOf(display.surface, ["plain", "outline", "soft"], "outline"),
-    presentation: oneOf(display.presentation, ["cards", "bento", "editorial", "spotlight", "comparison", "line", "alternating", "rows", "centered", "boxed", "balanced", "mosaic", "compact", "inline", "hero"], defaultPresentation),
+    presentation: oneOf(display.presentation, ["cards", "bento", "editorial", "spotlight", "comparison", "line", "alternating", "rows", "centered", "boxed", "balanced", "mosaic", "compact", "inline", "hero", "split", "stacked"], defaultPresentation),
     columns,
     showNumbers: display.showNumbers !== false,
     striped: display.striped !== false,
@@ -1257,6 +1257,20 @@ function renderStructuredCollection(items, variant, blockKey, renderContext = {}
   if (token === "checklist") return renderStructuredChecklist(items, display);
   if (token === "resource-list") return renderStructuredResources(items);
   if (token === "location-cards") return renderStructuredLocations(items, display);
+  if (token === "image-comparison") {
+    const comparisonItems = Array.isArray(items) ? items.slice(0, 2) : [];
+    const html = comparisonItems.map((item, index) => {
+      if (!isRecord(item)) return "";
+      const title = firstText(item, ["title", "label", "name"]) || `View ${index + 1}`;
+      const body = firstText(item, ["body", "description", "copy"]);
+      const media = renderStructuredImage(item.image || item.media, title, renderContext, "image-comparison-media");
+      if (!media) return "";
+
+      return `<article class="image-comparison-item">${media}<div class="image-comparison-caption"><strong>${escapeHtml(title)}</strong>${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}</div></article>`;
+    }).join("");
+
+    return html ? `<div class="image-comparison image-comparison-${escapeHtml(display.presentation)}">${html}</div>` : "";
+  }
 
   return renderStructuredItems(items, token, renderContext, display);
 }
@@ -1270,7 +1284,8 @@ function structuredCollectionItems(value, variant) {
     "resource-list": ["items", "resources"],
     "location-cards": ["items", "locations"],
     "bento-grid": ["items", "cards"],
-    "navigation-cards": ["items", "cards"]
+    "navigation-cards": ["items", "cards"],
+    "image-comparison": ["items", "images"]
   }[cssToken(variant)] || ["items", "cards", "people", "logos", "questions"];
 
   for (const key of aliases) {
@@ -1800,21 +1815,33 @@ export function renderBlock(block, renderContext = {}) {
   }
 
   if (block.type === "PRODUCT_LIST") {
+    if (renderContext.commerceEnabled === false) {
+      return '<div class="fallback-content">The shop is not enabled for this site.</div>';
+    }
+
     const slugs = Array.isArray(value?.productSlugs) ? value.productSlugs : [];
+    const products = Array.isArray(value?.products) ? value.products : [];
+    const layout = oneOf(value?.layout, ["grid", "spotlight", "compact"], "grid");
+    const columns = [2, 3, 4].includes(Number(value?.columns)) ? Number(value.columns) : 3;
+    const title = firstText(value, ["title", "heading"]);
+    const body = firstText(value, ["body", "description", "copy"]);
+    const shopOptions = {
+      locale: renderContext.locale || state.publicRenderLocale || state.config?.localization?.defaultLocale || "en",
+      defaultLocale: state.config?.localization?.defaultLocale || "en",
+      shopSettings: renderContext.shopSettings,
+      showDescription: value?.showDescription !== false
+    };
+
     return `
-      <div class="product-list-slot">
-        ${slugs
-          .map(
-            (slug) => `
-              <div class="product-list-item">
-                <a href="${pageHref(`product/${slug}`)}">${escapeHtml(slug)}</a>
-                ${state.visualEditorActive && state.user && moduleEnabled("products") && hasPermission("update", "products") ? renderEditorButton("Edit Product", "data-edit-product", slug) : ""}
-              </div>
-            `
-          )
-          .join("")}
+      <section class="product-list-slot product-list-layout-${escapeHtml(layout)}" data-commerce-root style="--product-list-columns:${escapeHtml(columns)}">
+        ${title || body ? `<header class="product-list-heading">${title ? `<h3>${escapeHtml(title)}</h3>` : ""}${body ? `<div class="block-rich">${renderRichText(body)}</div>` : ""}</header>` : ""}
+        <div class="product-list-grid">
+          ${products.length
+            ? products.map((product) => renderShopProductCard(product, shopOptions)).join("")
+            : slugs.map((slug) => `<a class="product-list-fallback" href="${escapeHtml(localizedShopPath(`/product/${encodePathSegment(slug)}`, shopOptions))}">${escapeHtml(slug)}</a>`).join("") || '<div class="fallback-content">Choose products to display.</div>'}
+        </div>
         ${state.visualEditorActive && state.user && moduleEnabled("products") && hasPermission("create", "products") ? renderEditorButton("+ Product", "data-add-product-inline") : ""}
-      </div>
+      </section>
     `;
   }
 
@@ -1968,7 +1995,7 @@ function renderWebsiteSpecSection(section, renderContext) {
   }
 
   if (type === "custom") {
-    const custom = section.blocks.find((candidate) => candidate.type === "CUSTOM");
+    const custom = section.blocks.find((candidate) => candidate.type === "CUSTOM" || candidate.settings?.elementId);
     return custom ? renderBlock(custom, renderContext) : `<div class="section-copy content-block">${intro}${cta}</div>`;
   }
 
@@ -2015,7 +2042,10 @@ export function renderSections(page, options = {}) {
   const canEdit = options.canEdit === true;
   const renderContext = {
     ...(options.imageContext || { highPriorityImageUsed: false }),
-    allowCustomCode: options.allowCustomCode !== false && !canEdit
+    allowCustomCode: options.allowCustomCode !== false && !canEdit,
+    commerceEnabled: options.commerceEnabled,
+    locale: options.locale,
+    shopSettings: options.shopSettings
   };
 
   if (!page.sections?.length) {
@@ -2111,7 +2141,7 @@ function renderShopProductCard(product, options) {
         <span class="shop-product-category">${escapeHtml(product.category?.name || translateString("shop.product", "Product"))}</span>
         <strong>${escapeHtml(product.name)}</strong>
       </a>
-      <p>${escapeHtml(product.description || "")}</p>
+      ${settings.showDescriptions && options.showDescription !== false && product.description ? `<p>${escapeHtml(product.description)}</p>` : ""}
       <div class="shop-product-card-meta">
         ${settings.showSku && product.sku ? `<small>${escapeHtml(product.sku)}</small>` : ""}
         ${settings.showStock && purchaseMode === "buy" ? `<span>${escapeHtml(availableStock)} ${escapeHtml(translateString("shop.inStock", "in stock"))}</span>` : ""}
@@ -2216,7 +2246,7 @@ function renderShopPagination(pagination = {}, route = {}, options = {}) {
   `;
 }
 
-function renderShopCatalogHero(settings, route = {}) {
+function renderShopCatalogHero(settings, route = {}, catalogHeroMedia = null) {
   const hero = settings.catalogHero;
   const isMainListing = !route.category && !route.attributeName && Number(route.page || 1) === 1;
   const src = safeMediaSrc(hero.mediaUrl);
@@ -2233,7 +2263,11 @@ function renderShopCatalogHero(settings, route = {}) {
         loop: hero.loop,
         playback: hero.playback
       }, "shop-catalog-hero-media")
-    : renderImageTag({ url: src, alt: hero.altText || settings.catalogTitle }, hero.altText || settings.catalogTitle, "shop-hero", "shop-catalog-hero-media");
+    : renderImageTag({
+        ...(isRecord(catalogHeroMedia) ? catalogHeroMedia : {}),
+        url: src,
+        alt: hero.altText || settings.catalogTitle
+      }, hero.altText || settings.catalogTitle, "shop-hero", "shop-catalog-hero-media");
 
   return `
     <section class="shop-catalog-hero"${hero.mediaType === "VIDEO" ? " data-video-frame" : ""}>
@@ -2243,6 +2277,7 @@ function renderShopCatalogHero(settings, route = {}) {
         <p class="section-label">${escapeHtml(translateString("shop.catalog", "Catalog"))}</p>
         <h1>${escapeHtml(settings.catalogTitle)}</h1>
         ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
+        ${hero.ctaLabel && hero.ctaUrl ? `<a class="action-link" href="${escapeHtml(safePublicHref(hero.ctaUrl))}">${escapeHtml(hero.ctaLabel)}</a>` : ""}
       </div>
     </section>
   `;
@@ -2264,7 +2299,7 @@ export function renderShopListingContent(
   const attributesHtml = settings.showAttributes
     ? renderShopAttributeLinks(attributes, route, options)
     : "";
-  const hero = renderShopCatalogHero(settings, route);
+  const hero = renderShopCatalogHero(settings, route, options.catalogHeroMedia);
 
   return `
     <section class="shop-public-page shop-layout-${escapeHtml(settings.catalogLayout)} shop-card-${escapeHtml(settings.cardStyle)}" data-commerce-root>
@@ -2430,7 +2465,12 @@ export function renderPage(page) {
   elements.page.innerHTML = `
     ${canEditCms || canEditProducts ? renderVisualEditorToolbar(page) : ""}
     ${state.user && moduleEnabled("cms") && hasPermission("update", "cms") && !visualEditorActive ? '<button type="button" class="visual-editor-entry" data-enter-visual-editor><span aria-hidden="true">&#9998;</span> Edit page</button>' : ""}
-    ${renderPageContent(page, { canEdit: canEditCms })}
+    ${renderPageContent(page, {
+      canEdit: canEditCms,
+      commerceEnabled: moduleEnabled("products"),
+      locale: page.locale || currentLocale(),
+      shopSettings: state.config?.shopSettings
+    })}
   `;
   elements.page.removeAttribute("data-server-rendered");
   enhanceStructuredTabs(elements.page);

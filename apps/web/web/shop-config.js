@@ -3,6 +3,7 @@ export const defaultShopSettings = {
   catalogDescription: "Browse our products.",
   catalogLayout: "grid",
   cardStyle: "minimal",
+  catalogSort: "newest",
   detailLayout: "classic",
   detailStyle: "standard",
   productsPerPage: 20,
@@ -10,12 +11,15 @@ export const defaultShopSettings = {
   showAttributes: true,
   showSku: true,
   showStock: true,
+  showDescriptions: true,
   catalogHero: {
     enabled: false,
     mediaType: "VIDEO",
     mediaUrl: "",
     posterUrl: "",
     altText: "",
+    ctaLabel: "",
+    ctaUrl: "",
     playback: "hover-focus",
     loop: true
   }
@@ -31,6 +35,13 @@ export const cardStyleOptions = [
   { value: "minimal", label: "Minimal", body: "Simple cards with quiet details." },
   { value: "image-led", label: "Image led", body: "Prominent photos in framed cards." },
   { value: "technical", label: "Technical", body: "SKU and stock are easier to scan." }
+];
+
+export const catalogSortOptions = [
+  { value: "newest", label: "Newest first" },
+  { value: "name", label: "Name A-Z" },
+  { value: "price-low", label: "Lowest price" },
+  { value: "price-high", label: "Highest price" }
 ];
 
 export const detailLayoutOptions = [
@@ -61,6 +72,7 @@ export function normalizeShopSettings(value = {}) {
     catalogDescription: String(settings.catalogDescription ?? defaultShopSettings.catalogDescription),
     catalogLayout: allowed(settings.catalogLayout, shopLayoutOptions, defaultShopSettings.catalogLayout),
     cardStyle: allowed(settings.cardStyle, cardStyleOptions, defaultShopSettings.cardStyle),
+    catalogSort: allowed(settings.catalogSort, catalogSortOptions, defaultShopSettings.catalogSort),
     detailLayout: allowed(settings.detailLayout, detailLayoutOptions, defaultShopSettings.detailLayout),
     detailStyle: allowed(settings.detailStyle, detailStyleOptions, defaultShopSettings.detailStyle),
     productsPerPage: Number.isInteger(productsPerPage) ? Math.min(48, Math.max(8, productsPerPage)) : defaultShopSettings.productsPerPage,
@@ -68,12 +80,15 @@ export function normalizeShopSettings(value = {}) {
     showAttributes: settings.showAttributes !== false,
     showSku: settings.showSku !== false,
     showStock: settings.showStock !== false,
+    showDescriptions: settings.showDescriptions !== false,
     catalogHero: {
       enabled: catalogHero.enabled === true,
       mediaType: ["IMAGE", "VIDEO"].includes(catalogHero.mediaType) ? catalogHero.mediaType : "VIDEO",
       mediaUrl: String(catalogHero.mediaUrl || ""),
       posterUrl: String(catalogHero.posterUrl || ""),
       altText: String(catalogHero.altText || ""),
+      ctaLabel: String(catalogHero.ctaLabel || ""),
+      ctaUrl: String(catalogHero.ctaUrl || ""),
       playback: ["controls", "hover-focus"].includes(catalogHero.playback) ? catalogHero.playback : "hover-focus",
       loop: catalogHero.loop !== false
     }

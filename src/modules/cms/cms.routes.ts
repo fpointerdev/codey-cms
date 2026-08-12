@@ -55,6 +55,7 @@ import {
 } from "./custom-code.js";
 import { MediaService } from "./media.service.js";
 import { readLocalizationSettings, resolveLocale } from "../localization/localization.service.js";
+import { enrichProductListContent } from "../products/product-list-content.js";
 
 function canReadDrafts(user: Express.Request["user"]) {
   return hasPermission(user, "read", "cms");
@@ -113,6 +114,19 @@ async function localizeInput<T extends { locale?: string }>(
     ...input,
     locale: await requestLocale(context, input.locale)
   };
+}
+
+async function productsEnabled(context: ModuleContext) {
+  if (!context.config.features.products) return false;
+
+  const installedModules = await context.prisma.installedModule.findMany({
+    where: { site: { slug: "default" } },
+    select: { moduleId: true, status: true }
+  });
+
+  return installedModules.length === 0 || installedModules.some(
+    (module) => module.moduleId === "products" && module.status === "ENABLED"
+  );
 }
 
 function createContactFormLimiter() {
@@ -242,7 +256,12 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
 
       assertPageVisible(page, req.user);
 
-      return sendSuccess(res, { page });
+      const commerceEnabled = await productsEnabled(context);
+      const publicPage = commerceEnabled
+        ? await enrichProductListContent(context.prisma, page, locale)
+        : page;
+
+      return sendSuccess(res, { page: publicPage });
     })
   );
 

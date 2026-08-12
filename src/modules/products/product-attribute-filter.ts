@@ -23,11 +23,24 @@ type CandidateBatchLoader = (
 ) => Promise<ProductAttributeCandidate[]>;
 
 function normalizeAttribute(value: unknown) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const normalized: string[] = [];
+  let separatorPending = false;
+
+  for (const character of String(value || "").trim().toLowerCase()) {
+    const code = character.charCodeAt(0);
+    const isDigit = code >= 48 && code <= 57;
+    const isLetter = code >= 97 && code <= 122;
+    if (!isDigit && !isLetter) {
+      separatorPending = normalized.length > 0;
+      continue;
+    }
+
+    if (separatorPending) normalized.push("-");
+    normalized.push(character);
+    separatorPending = false;
+  }
+
+  return normalized.join("");
 }
 
 export function productMatchesAttributeFilter(

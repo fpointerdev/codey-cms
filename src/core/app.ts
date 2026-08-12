@@ -40,6 +40,8 @@ import {
   orderProductsByIds
 } from "../modules/products/product-attribute-filter.js";
 import { withAvailableInventory } from "../modules/products/product-inventory.js";
+import { enrichProductListContent } from "../modules/products/product-list-content.js";
+import { productCatalogOrderBy, type ProductCatalogSort } from "../modules/products/product-sort.js";
 import { readShopSettings } from "../modules/products/shop-settings.js";
 import { publicSiteStyleTag } from "../modules/config/site-design.js";
 import {
@@ -69,7 +71,7 @@ type PublicMarkupRenderer = {
   withPublicRenderContext<T>(context: Record<string, unknown>, render: () => T): T;
   renderFooter(page: unknown, canEdit?: boolean, options?: { menu?: string }): string;
   renderMenuItems(items: unknown[], canEdit?: boolean): string;
-  renderPageContent(page: unknown, options?: { canEdit?: boolean }): string;
+  renderPageContent(page: unknown, options?: { canEdit?: boolean; commerceEnabled?: boolean; shopSettings?: unknown }): string;
   renderPostContent(post: unknown): string;
   renderProductDetailContent(product: unknown, options?: Record<string, unknown>): string;
   renderShopListingContent(input: unknown, options?: Record<string, unknown>): string;
@@ -265,7 +267,8 @@ function publicContentRouteFromRequest(req: Request, localization?: RouteLocaliz
 
 async function readPublicShopProductPage(
   route: Extract<PublicContentRoute, { type: "shop" }>,
-  limit: number
+  limit: number,
+  sort: ProductCatalogSort = "newest"
 ) {
   const where: Prisma.ProductWhereInput = {
     locale: route.locale,
@@ -273,6 +276,7 @@ async function readPublicShopProductPage(
     ...(route.category ? { category: { slug: route.category, locale: route.locale } } : {})
   };
   const skip = (route.page - 1) * limit;
+  const orderBy = productCatalogOrderBy(sort);
   const include = {
     category: true,
     images: { orderBy: { sortOrder: "asc" as const } },
@@ -288,7 +292,7 @@ async function readPublicShopProductPage(
         where,
         take,
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        orderBy,
         select: { id: true, metadata: true }
       }),
       route,
@@ -315,7 +319,7 @@ async function readPublicShopProductPage(
       where,
       skip,
       take: limit,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy,
       include
     }),
     prisma.product.count({ where })
@@ -895,8 +899,9 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
 
     if (route.type === "shop") {
       const limit = shopSettings?.productsPerPage || 20;
-      const [productPage, categories, attributes] = await Promise.all([
-        readPublicShopProductPage(route, limit),
+      const hero = shopSettings?.catalogHero;
+      const [productPage, categories, attributes, catalogHeroMedia] = await Promise.all([
+        readPublicShopProductPage(route, limit, shopSettings?.catalogSort),
         prisma.productCategory.findMany({
           where: { locale: route.locale },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
@@ -904,7 +909,13 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         prisma.productAttribute.findMany({
           where: { locale: route.locale },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-        })
+        }),
+        hero?.enabled && hero.mediaType === "IMAGE" && hero.mediaUrl
+          ? enrichPublicMedia(prisma, {
+              url: hero.mediaUrl,
+              alt: hero.altText || shopSettings?.catalogTitle || "Shop"
+            })
+          : Promise.resolve(null)
       ]);
 
       return {
@@ -928,7 +939,8 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
           }, {
             locale: route.locale,
             defaultLocale: localization.defaultLocale,
-            shopSettings
+            shopSettings,
+            catalogHeroMedia
           })),
           footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
         }
@@ -960,7 +972,14 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         }))
       }))
     };
-    const enrichedPage = await enrichPublicMedia(prisma, sanitizedPage);
+    const mediaEnrichedPage = await enrichPublicMedia(prisma, sanitizedPage);
+    const commerceEnabled = publicModuleEnabled(moduleStates, "products");
+    const enrichedPage = commerceEnabled
+      ? await enrichProductListContent(prisma, mediaEnrichedPage, route.locale)
+      : mediaEnrichedPage;
+    const pageShopSettings = commerceEnabled
+      ? await readShopSettings(prisma)
+      : null;
 
     return {
       found: true,
@@ -971,7 +990,11 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         brand: renderPublicBrand(site),
         bodyAttributes: generatedPageBodyAttributes(enrichedPage),
         menu,
-        body: renderPublic(() => renderer.renderPageContent(enrichedPage, { canEdit: false })),
+        body: renderPublic(() => renderer.renderPageContent(enrichedPage, {
+          canEdit: false,
+          commerceEnabled,
+          shopSettings: pageShopSettings
+        })),
         footer: renderPublic(() => renderer.renderFooter(enrichedPage, false, { menu }))
       }
     };

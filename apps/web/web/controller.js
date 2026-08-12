@@ -581,6 +581,7 @@ async function loadPage() {
       api(publicLocaleUrl("/products/attributes"))
     ]);
     params.set("limit", String(settings.productsPerPage || 20));
+    params.set("sort", settings.catalogSort || "newest");
     const productsResponse = await apiWithMeta(publicLocaleUrl("/products", Object.fromEntries(params.entries())));
     renderShopListing({
       products: productsResponse.data.products,
@@ -610,6 +611,13 @@ async function loadPage() {
   const query = `?${params.toString()}`;
   try {
     const { page } = await api(`/cms/pages/${encodeURIComponent(pageSlug())}${query}`);
+    const usesProductList = (page.sections || []).some((section) =>
+      (section.blocks || []).some((block) => block.type === "PRODUCT_LIST")
+    );
+    if (usesProductList && moduleEnabled("products")) {
+      const response = await api("/products/settings").catch(() => null);
+      if (response?.settings) state.config = { ...(state.config || {}), shopSettings: response.settings };
+    }
     state.page = page;
     renderPage(page);
   } catch (error) {

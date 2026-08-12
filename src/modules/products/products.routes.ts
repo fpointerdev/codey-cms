@@ -36,6 +36,7 @@ import {
   canSetOnHandStock,
   withAvailableInventory
 } from "./product-inventory.js";
+import { productCatalogOrderBy, type ProductCatalogSort } from "./product-sort.js";
 
 function productInclude(canReadInactiveVariants = false) {
   return {
@@ -283,9 +284,10 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
     optionalAuth(context),
     validateRequest({ query: listProductsQuery }),
     asyncHandler(async (req, res) => {
-      const { page, limit, status, category, attributeName, attributeValue } = req.query as unknown as {
+      const { page, limit, sort, status, category, attributeName, attributeValue } = req.query as unknown as {
         page: number;
         limit: number;
+        sort: ProductCatalogSort;
         status?: "DRAFT" | "ACTIVE" | "ARCHIVED";
         locale?: string;
         category?: string;
@@ -306,6 +308,7 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
         ...(category ? { category: { slug: category, locale } } : {})
       };
       const needsAttributeFilter = Boolean(attributeName || attributeValue);
+      const orderBy = productCatalogOrderBy(sort);
 
       if (needsAttributeFilter) {
         const result = await findProductAttributePage(
@@ -313,7 +316,7 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
             where,
             take,
             ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            orderBy,
             select: { id: true, metadata: true }
           }),
           { attributeName, attributeValue },
@@ -343,7 +346,7 @@ export function registerProductRoutes(router: Router, context: ModuleContext) {
           where,
           skip,
           take: limit,
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          orderBy,
           include: productInclude(canReadDrafts)
         }),
         context.prisma.product.count({ where })

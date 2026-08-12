@@ -233,6 +233,33 @@ export const componentTemplates = [
     ]
   },
   {
+    id: "image-comparison",
+    label: "Image Comparison",
+    description: "Accessible before-and-after or option comparison with two clearly labelled images.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "Image comparison",
+        value: {
+          variant: "image-comparison",
+          title: "See the difference",
+          body: "Compare the two views side by side.",
+          items: [
+            {
+              title: "Before",
+              image: { url: placeholderImage(1000, 750, "Before image"), alt: "Before view" }
+            },
+            {
+              title: "After",
+              image: { url: placeholderImage(1000, 750, "After image"), alt: "After view" }
+            }
+          ],
+          display: { alignment: "left", density: "comfortable", surface: "plain", presentation: "split" }
+        }
+      }
+    ]
+  },
+  {
     id: "hero-creative",
     label: "Creative Hero",
     description: "Premium hero with headline, CTA, stats, and visual direction.",
@@ -743,7 +770,38 @@ export const componentTemplates = [
     description: "Product slot controlled by the shop module.",
     modules: ["products"],
     blocks: [
-      { type: "PRODUCT_LIST", label: "Products", value: { productSlugs: ["starter-product"] } }
+      {
+        type: "PRODUCT_LIST",
+        label: "Products",
+        value: {
+          title: "Featured products",
+          body: "Choose a focused selection from the live catalog.",
+          productSlugs: ["starter-product"],
+          layout: "grid",
+          columns: 3,
+          showDescription: true
+        }
+      }
+    ]
+  },
+  {
+    id: "product-showcase",
+    label: "Product Showcase",
+    description: "Focused product feature with live image, price, availability, and purchase action.",
+    modules: ["products"],
+    blocks: [
+      {
+        type: "PRODUCT_LIST",
+        label: "Featured product",
+        value: {
+          title: "Featured product",
+          body: "Give one important product more room to stand out.",
+          productSlugs: ["starter-product"],
+          layout: "spotlight",
+          columns: 2,
+          showDescription: true
+        }
+      }
     ]
   },
   {
@@ -1203,6 +1261,44 @@ export const sectionPatternTemplates = [
       responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
       style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
       decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "transformation-story",
+    label: "Transformation story",
+    description: "A clear image comparison supported by an attributable result.",
+    category: "Trust",
+    elements: ["image-comparison", "quote-highlight"],
+    settings: {
+      patternId: "transformation-story",
+      layout: "one-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "start",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "quiet", backgroundColor: "#f8faf7", textColor: "#1e2329", accentColor: "#0d7c68", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#0d7c68", opacity: 0.2 }
+    }
+  },
+  {
+    id: "product-spotlight",
+    label: "Product spotlight",
+    description: "A focused product feature paired with concise buying benefits.",
+    category: "Commerce",
+    elements: ["product-showcase", "checklist"],
+    settings: {
+      patternId: "product-spotlight",
+      layout: "two-column",
+      container: "wide",
+      spacing: "lg",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "one-column", spacing: "md" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "carded", backgroundColor: "#ffffff", textColor: "#1e2329", accentColor: "#0d7c68", radius: 18, shadow: "soft" },
+      decoration: { type: "frame", position: "bottom-right", color: "#0d7c68", opacity: 0.22 }
     }
   }
 ];

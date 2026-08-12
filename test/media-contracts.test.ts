@@ -133,6 +133,20 @@ test("rich CMS fields are sanitized before persistence and rendering", () => {
   );
 });
 
+test("product list persistence drops runtime-enriched product records", () => {
+  assert.deepEqual(
+    sanitizeContentBlockValue("PRODUCT_LIST", {
+      title: "Featured",
+      productSlugs: ["studio-chair"],
+      products: [{ id: "product-1", slug: "studio-chair", priceCents: 12900 }]
+    }),
+    {
+      title: "Featured",
+      productSlugs: ["studio-chair"]
+    }
+  );
+});
+
 test("manual payment events use an exact status mapping", () => {
   assert.equal(statusFromWebhook("payment.succeeded"), "SUCCEEDED");
   assert.equal(statusFromWebhook("payment.failed"), "FAILED");

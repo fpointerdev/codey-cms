@@ -735,6 +735,16 @@
   text-transform: uppercase;
 }
 
+.shop-preview-hero strong {
+  max-width: 100%;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #172127;
+  font-size: 10px;
+  line-height: 1;
+  padding: 7px 9px;
+}
+
 .shop-settings-preview > header > span,
 .shop-settings-preview article > small {
   color: #617078;

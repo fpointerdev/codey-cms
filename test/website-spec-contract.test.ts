@@ -186,12 +186,14 @@ test("generator-safe custom WebsiteSpec elements keep their portable values", ()
       elementId: section.settings.elementId,
       transportValueStored: Object.hasOwn(section.settings, "value"),
       blockElementId: section.blocks[0]?.settings?.elementId,
+      blockType: section.blocks[0]?.type,
       value: section.blocks[0]?.value
     })),
     Object.entries(values).map(([elementId, value]) => ({
       elementId,
       transportValueStored: false,
       blockElementId: elementId,
+      blockType: elementId === "product-showcase" ? "PRODUCT_LIST" : "CUSTOM",
       value
     }))
   );
@@ -300,6 +302,21 @@ function customElementValues() {
       title: "Explore",
       items: [{ title: "Services", body: "See what we offer.", url: "/services" }],
       display: { presentation: "cards", columns: 3 }
+    },
+    "image-comparison": {
+      title: "See the difference",
+      items: [
+        { title: "Before", image: { url: "/uploads/before.webp", alt: "Before" } },
+        { title: "After", image: { url: "/uploads/after.webp", alt: "After" } }
+      ],
+      display: { presentation: "split" }
+    },
+    "product-showcase": {
+      title: "Featured product",
+      productSlugs: ["starter-product"],
+      layout: "spotlight",
+      columns: 2,
+      showDescription: true
     }
   };
 }
@@ -313,7 +330,7 @@ function customElementsWebsiteSpec(values = customElementValues()) {
       slug: "portable-custom-elements",
       summary: "A generated page with canonical custom builder elements."
     },
-    modules: { cms: true },
+    modules: { cms: true, products: true },
     style: {
       theme: "system",
       colorPalette: { primary: "#17211b", accent: "#0f766e" }
