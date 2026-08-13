@@ -181,7 +181,7 @@ function auditEventPayload(
 
 function signAuditEvent(event: ReturnType<typeof auditEventPayload>, key: string) {
   // This HMAC signs an audit record for tamper evidence; it is not a password hash.
-  // lgtm[js/insufficient-password-hash]
+  // codeql[js/insufficient-password-hash]
   return createHmac("sha256", key).update(stableJson(event)).digest("hex");
 }
 
