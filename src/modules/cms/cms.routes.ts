@@ -149,7 +149,11 @@ function createContactFormLimiter() {
 
 export function registerCmsRoutes(router: Router, context: ModuleContext) {
   const cmsService = new CmsService(context.prisma);
-  const mediaService = new MediaService(context.prisma, context.config);
+  const mediaService = new MediaService(
+    context.prisma,
+    context.config,
+    context.storageSettings?.adapter
+  );
 
   router.get(
     "/sitemap.xml",

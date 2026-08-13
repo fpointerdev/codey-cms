@@ -681,6 +681,7 @@ export class CmsService {
         translationGroupId: true,
         status: true,
         excerpt: true,
+        content: true,
         publishedAt: true,
         createdAt: true,
         updatedAt: true

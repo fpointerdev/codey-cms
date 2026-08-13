@@ -16,5 +16,6 @@ prisma/generated/schema.prisma
 prisma/generated/migrations
 *.log
 .release
+storefront/
 .codey-local-port
 runtime-meta/release-public-key.pem

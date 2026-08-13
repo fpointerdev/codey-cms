@@ -15,6 +15,7 @@ import {
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { encryptBackupFile } from "./backup-crypto.mjs";
+import { resolveBackupStorage } from "./backup-storage-settings.mjs";
 import { postgresCliConnection } from "./postgres-cli-url.mjs";
 
 function requireEnv(name) {
@@ -53,6 +54,49 @@ function run(command, args, options = {}) {
       else reject(new Error(`${command} exited with code ${code}.`));
     });
   });
+}
+
+function runCapture(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: options.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    const output = [];
+    const errors = [];
+    child.stdout.on("data", (chunk) => output.push(chunk));
+    child.stderr.on("data", (chunk) => errors.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(Buffer.concat(output).toString("utf8"));
+      else reject(new Error(Buffer.concat(errors).toString("utf8").trim() || `${command} exited with code ${code}.`));
+    });
+  });
+}
+
+async function readDashboardStorage(connection, environment) {
+  const schema = `"${connection.schema}"`;
+  const query = `
+    SELECT setting."value"::text
+    FROM ${schema}."ModuleSetting" AS setting
+    INNER JOIN ${schema}."Site" AS site ON site."id" = setting."siteId"
+    WHERE site."slug" = 'default'
+      AND setting."moduleId" = 'config'
+      AND setting."key" = 'storage'
+    LIMIT 1
+  `;
+
+  const output = await runCapture("psql", [
+    "--tuples-only",
+    "--no-align",
+    "--set",
+    "ON_ERROR_STOP=1",
+    "--command",
+    query,
+    connection.url
+  ], { env: environment });
+  const value = output.trim();
+  return value ? JSON.parse(value) : null;
 }
 
 async function sha256File(filePath) {
@@ -149,18 +193,19 @@ let completedLocalStatus;
 
 try {
   const databaseConnection = postgresCliConnection(requireEnv("DATABASE_URL"));
-  delete process.env.DATABASE_URL;
   const databaseEnvironment = databaseCommandEnvironment(databaseConnection.password);
+  const dashboardStorage = await readDashboardStorage(databaseConnection, databaseEnvironment);
+  const storage = resolveBackupStorage(process.env, dashboardStorage);
+  delete process.env.DATABASE_URL;
   const retentionDays = positiveNumber(process.env.BACKUP_RETENTION_DAYS, 30, "BACKUP_RETENTION_DAYS");
   const encryptionKey = process.env.BACKUP_ENCRYPTION_KEY?.trim();
-  const storageDriver = process.env.STORAGE_DRIVER || "local";
   const backupRequired = enabled("BACKUP_REQUIRED");
 
   if (enabled("BACKUP_REQUIRE_ENCRYPTION") && !encryptionKey) {
     throw new Error("BACKUP_ENCRYPTION_KEY is required when BACKUP_REQUIRE_ENCRYPTION=true.");
   }
-  if (storageDriver === "s3" && backupRequired && !enabled("BACKUP_S3_MEDIA_PROTECTED")) {
-    throw new Error("S3 media protection must be confirmed with BACKUP_S3_MEDIA_PROTECTED=true.");
+  if (storage.driver === "s3" && backupRequired && !enabled("BACKUP_S3_MEDIA_PROTECTED")) {
+    throw new Error("Cloud media protection must be confirmed with BACKUP_S3_MEDIA_PROTECTED=true.");
   }
   if (mirrorDir && mirrorDir === backupDir) {
     throw new Error("BACKUP_MIRROR_DIR must be different from BACKUP_DIR.");
@@ -190,7 +235,7 @@ try {
   let mediaFile;
   let media;
 
-  if (storageDriver === "local") {
+  if (storage.driver === "local") {
     const mediaDir = path.resolve(process.env.STORAGE_LOCAL_DIR ?? "storage/uploads");
     const plainMediaFile = path.join(backupDir, `${baseName}-media.tar.gz`);
     try {
@@ -211,17 +256,18 @@ try {
         throw error;
       }
     }
-  } else if (storageDriver === "s3") {
+  } else if (storage.driver === "s3") {
     media = {
       driver: "s3",
+      provider: storage.provider,
       snapshotIncluded: false,
-      bucket: process.env.STORAGE_S3_BUCKET || null,
-      keyPrefix: process.env.STORAGE_KEY_PREFIX || null,
+      bucket: storage.bucket,
+      keyPrefix: storage.keyPrefix,
       externallyProtected: enabled("BACKUP_S3_MEDIA_PROTECTED"),
       requirement: "Enable bucket versioning or replication and test media recovery separately."
     };
   } else {
-    media = { driver: storageDriver, snapshotIncluded: false };
+    media = { driver: storage.driver, snapshotIncluded: false };
   }
 
   const completedAt = new Date();

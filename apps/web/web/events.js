@@ -15,6 +15,7 @@ import {
   publishPage,
   removeLocaleRow,
   saveEmailSettings,
+  saveStorageSettings,
   saveLocalizationSettings,
   syncLocaleLanguageFields,
   testEmailSettings,
@@ -28,6 +29,7 @@ import {
   addTemplateToBuilder,
   addTemplateToBuilderSection,
   comparePageRevision,
+  copyBuilderSelection,
   createPageFromBuilder,
   createPageFromDashboard,
   createPageTranslation,
@@ -37,6 +39,7 @@ import {
   deleteBuilderSection,
   deleteReusableTemplate,
   duplicateBuilderBlock,
+  duplicateBuilderSelection,
   duplicateBuilderSection,
   editBuilderBlock,
   editBuilderSection,
@@ -49,6 +52,7 @@ import {
   moveBuilderSection,
   openOrCreatePageTranslation,
   openOrCreatePostTranslation,
+  pasteBuilderSelection,
   reorderBuilderBlock,
   reorderBuilderSection,
   replaceReusableTemplateFromBuilder,
@@ -302,6 +306,13 @@ function bindSubmitEvents() {
       return;
     }
 
+    const storageSettingsForm = event.target.closest("[data-storage-settings-form]");
+    if (storageSettingsForm) {
+      event.preventDefault();
+      void saveStorageSettings(storageSettingsForm);
+      return;
+    }
+
     const localizationSettingsForm = event.target.closest("[data-localization-settings-form]");
     if (localizationSettingsForm) {
       event.preventDefault();
@@ -409,6 +420,7 @@ function focusBuilderStructureTarget(control) {
 
   setBuilderCanvasView(builder, "edit");
   if (sectionId) state.activeBuilderSectionId = sectionId;
+  state.activeBuilderBlockKey = blockKey || "";
   builder.querySelectorAll("[data-builder-section]").forEach((section) => {
     section.classList.toggle("active", section.dataset.builderSection === sectionId);
   });
@@ -419,8 +431,7 @@ function focusBuilderStructureTarget(control) {
     row.classList.toggle("active", Boolean(blockKey) && row.dataset.builderStructureBlockRow === blockKey);
   });
 
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  target.scrollIntoView?.({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+  target.scrollIntoView?.({ behavior: "auto", block: "center" });
   target.focus?.({ preventScroll: true });
   return true;
 }
@@ -540,6 +551,18 @@ function bindBuilderClick(event) {
   if (event.target.closest("[data-builder-redo]")) {
     event.preventDefault();
     void redoBuilderChange();
+    return true;
+  }
+
+  if (event.target.closest("[data-builder-copy]")) {
+    event.preventDefault();
+    copyBuilderSelection();
+    return true;
+  }
+
+  if (event.target.closest("[data-builder-paste]")) {
+    event.preventDefault();
+    void pasteBuilderSelection();
     return true;
   }
 
@@ -684,8 +707,15 @@ function bindBuilderClick(event) {
   if (section?.dataset.builderSection) {
     event.preventDefault();
     state.activeBuilderSectionId = section.dataset.builderSection;
+    state.activeBuilderBlockKey = "";
     section.closest("[data-page-builder]")?.querySelectorAll("[data-builder-section]").forEach((item) => {
       item.classList.toggle("active", item === section);
+    });
+    section.closest("[data-page-builder]")?.querySelectorAll("[data-builder-block-key]").forEach((item) => {
+      item.classList.remove("active");
+    });
+    section.closest("[data-page-builder]")?.querySelectorAll("[data-builder-structure-block-row]").forEach((item) => {
+      item.classList.remove("active");
     });
     return true;
   }
@@ -751,6 +781,24 @@ function bindBuilderClick(event) {
   if (movedBlock?.dataset.builderBlockKey) {
     event.preventDefault();
     void moveBuilderBlock(movedBlock.dataset.builderBlockKey, blockMoveButton.dataset.moveBuilderBlock);
+    return true;
+  }
+
+  const selectedBlock = event.target.closest("[data-builder-block-key]");
+  if (selectedBlock && !event.target.closest("a, button, input, textarea, select, [contenteditable='true']")) {
+    const builder = selectedBlock.closest("[data-page-builder]");
+    const selectedSection = selectedBlock.closest("[data-builder-section]");
+    state.activeBuilderBlockKey = selectedBlock.dataset.builderBlockKey || "";
+    state.activeBuilderSectionId = selectedSection?.dataset.builderSection || state.activeBuilderSectionId;
+    builder?.querySelectorAll("[data-builder-block-key]").forEach((item) => {
+      item.classList.toggle("active", item === selectedBlock);
+    });
+    builder?.querySelectorAll("[data-builder-section]").forEach((item) => {
+      item.classList.toggle("active", item === selectedSection);
+    });
+    builder?.querySelectorAll("[data-builder-structure-block-row]").forEach((item) => {
+      item.classList.toggle("active", item.dataset.builderStructureBlockRow === state.activeBuilderBlockKey);
+    });
     return true;
   }
 
@@ -1438,9 +1486,41 @@ function bindEmailSettingsEvents() {
 
     const endpointField = form.querySelector("[data-email-generic-endpoint]");
     const endpointInput = endpointField?.querySelector('input[name="httpEndpoint"]');
+    const smtpFields = form.querySelector("[data-email-smtp-settings]");
+    const apiKeyField = form.querySelector("[data-email-api-key]");
+    const apiKeyClearField = form.querySelector("[data-email-api-key-clear]");
     const generic = event.target.value === "generic";
+    const smtp = event.target.value === "smtp";
     if (endpointField) endpointField.hidden = !generic;
     if (endpointInput) endpointInput.disabled = !generic;
+    if (smtpFields) smtpFields.hidden = !smtp;
+    smtpFields?.querySelectorAll("input, select").forEach((input) => {
+      input.disabled = !smtp;
+    });
+    if (apiKeyField) apiKeyField.hidden = smtp;
+    if (apiKeyClearField) apiKeyClearField.hidden = smtp;
+    apiKeyField?.querySelectorAll("input").forEach((input) => {
+      input.disabled = smtp;
+    });
+    apiKeyClearField?.querySelectorAll("input").forEach((input) => {
+      input.disabled = smtp;
+    });
+  });
+}
+
+function bindStorageSettingsEvents() {
+  elements.page.addEventListener("change", (event) => {
+    const form = event.target.closest("[data-storage-settings-form]");
+    if (!form || !event.target.matches("[data-storage-provider]")) return;
+
+    const provider = event.target.value;
+    form.querySelectorAll("[data-storage-provider-panel]").forEach((panel) => {
+      const active = panel.dataset.storageProviderPanel === provider;
+      panel.hidden = !active;
+      panel.querySelectorAll("input, select").forEach((input) => {
+        input.disabled = !active;
+      });
+    });
   });
 }
 
@@ -1471,10 +1551,21 @@ function bindBuilderKeyboardEvents() {
   window.addEventListener("keydown", (event) => {
     if (handleVisualEditorKeydown(event)) return;
     if (!document.querySelector("[data-page-builder]")) return;
+    if (document.querySelector(".modal-backdrop")) return;
     if (!event.metaKey && !event.ctrlKey) return;
 
     const target = event.target;
     if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+
+    const focusedBlock = target?.closest?.("[data-builder-block-key]");
+    const focusedSection = target?.closest?.("[data-builder-section]");
+    if (focusedBlock?.dataset.builderBlockKey) {
+      state.activeBuilderBlockKey = focusedBlock.dataset.builderBlockKey;
+      state.activeBuilderSectionId = focusedSection?.dataset.builderSection || state.activeBuilderSectionId;
+    } else if (focusedSection?.dataset.builderSection) {
+      state.activeBuilderBlockKey = "";
+      state.activeBuilderSectionId = focusedSection.dataset.builderSection;
+    }
 
     const key = String(event.key || "").toLowerCase();
     if (key === "z") {
@@ -1484,6 +1575,13 @@ function bindBuilderKeyboardEvents() {
     } else if (key === "y") {
       event.preventDefault();
       void redoBuilderChange();
+    } else if (key === "c") {
+      if (copyBuilderSelection()) event.preventDefault();
+    } else if (key === "v") {
+      event.preventDefault();
+      void pasteBuilderSelection();
+    } else if (key === "d") {
+      if (duplicateBuilderSelection()) event.preventDefault();
     }
   });
 }
@@ -1688,6 +1786,7 @@ export function bindEvents() {
   bindBuilderControlEvents();
   bindShopControlEvents();
   bindEmailSettingsEvents();
+  bindStorageSettingsEvents();
   bindDesignSystemEvents();
   bindVisualEditorFocusEvents();
   bindBuilderKeyboardEvents();

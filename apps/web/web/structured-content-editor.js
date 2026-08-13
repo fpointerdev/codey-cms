@@ -784,6 +784,10 @@ export function structuredContentEditor(block) {
   const titleKey = firstKey(value, ["title", "heading", "headline", "name"]);
   const bodyKey = firstKey(value, ["body", "text", "copy", "description", "content"]);
   const noteKey = firstKey(value, ["note", "kicker", "eyebrow", "summary"]);
+  const secondaryBodyKey = firstKey(value, ["bodySecondary", "secondaryBody"]);
+  const quoteKey = firstKey(value, ["quote"]);
+  const emailKey = firstKey(value, ["email"]);
+  const addressKey = firstKey(value, ["address"]);
   const imageKey = firstKey(value, ["image", "media"]);
   const statsKey = firstKey(value, ["stats", "metrics"]);
   const itemsKey = firstKey(value, ["items", "points"]);
@@ -795,7 +799,21 @@ export function structuredContentEditor(block) {
   const displayEditor = structuredDisplayEditor(variant, value);
   const handledCollectionKey = collectionEditor?.collectionKey || "";
 
-  if (!titleKey && !bodyKey && !noteKey && !imageKey && !statsKey && !itemsKey && !actionsKey && !cardsKey && !projectsKey) {
+  if (
+    !titleKey
+    && !bodyKey
+    && !noteKey
+    && !secondaryBodyKey
+    && !quoteKey
+    && !emailKey
+    && !addressKey
+    && !imageKey
+    && !statsKey
+    && !itemsKey
+    && !actionsKey
+    && !cardsKey
+    && !projectsKey
+  ) {
     return null;
   }
 
@@ -823,6 +841,44 @@ export function structuredContentEditor(block) {
       name: "structuredNote",
       label: "Small note / eyebrow",
       value: firstText(value, [noteKey])
+    });
+  }
+
+  if (secondaryBodyKey) {
+    addField(fields, {
+      name: "structuredSecondaryBody",
+      label: "Secondary content",
+      type: "richtext",
+      value: firstText(value, [secondaryBodyKey])
+    });
+  }
+
+  if (quoteKey) {
+    addField(fields, {
+      name: "structuredQuote",
+      label: "Quote",
+      type: "textarea",
+      rows: 3,
+      value: firstText(value, [quoteKey])
+    });
+  }
+
+  if (emailKey) {
+    addField(fields, {
+      name: "structuredEmail",
+      label: "Email",
+      type: "email",
+      value: firstText(value, [emailKey])
+    });
+  }
+
+  if (addressKey) {
+    addField(fields, {
+      name: "structuredAddress",
+      label: "Address",
+      type: "textarea",
+      rows: 3,
+      value: firstText(value, [addressKey])
     });
   }
 
@@ -957,6 +1013,10 @@ export function structuredContentEditor(block) {
       if (titleKey) next[titleKey] = values.structuredTitle || "";
       if (bodyKey) next[bodyKey] = values.structuredBody || "";
       if (noteKey) next[noteKey] = values.structuredNote || "";
+      if (secondaryBodyKey) next[secondaryBodyKey] = values.structuredSecondaryBody || "";
+      if (quoteKey) next[quoteKey] = values.structuredQuote || "";
+      if (emailKey) next[emailKey] = values.structuredEmail || "";
+      if (addressKey) next[addressKey] = values.structuredAddress || "";
       if (statsKey && statsKey !== handledCollectionKey) next[statsKey] = textToStats(values.structuredStats);
       if (itemsKey && itemsKey !== handledCollectionKey) next[itemsKey] = textToStrings(values.structuredItems);
       if (actionsKey) next[actionsKey] = textToRows(values.structuredActions, value[actionsKey], ["label", "url", "variant"]);

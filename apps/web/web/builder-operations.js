@@ -132,6 +132,68 @@ export function duplicateBuilderBlockInSections(sections = [], blockKey = "") {
   return null;
 }
 
+export function createBuilderClipboardPayload(sections = [], { sectionId = "", blockKey = "" } = {}) {
+  if (blockKey) {
+    for (const section of sections) {
+      const block = (section.blocks || []).find((item) => item.key === blockKey);
+      if (block) return { version: 1, kind: "block", item: copyBuilderSections([block])[0] };
+    }
+  }
+
+  const section = sections.find((item) => item.id === sectionId);
+  return section
+    ? { version: 1, kind: "section", item: copyBuilderSections([section])[0] }
+    : null;
+}
+
+export function pasteBuilderClipboardInSections(
+  sections = [],
+  payload,
+  { sectionId = "", blockKey = "" } = {}
+) {
+  if (!payload || payload.version !== 1 || !payload.item || typeof payload.item !== "object") return null;
+
+  const nextSections = copyBuilderSections(sections);
+  if (payload.kind === "section") {
+    if (typeof payload.item.key !== "string" || !Array.isArray(payload.item.blocks)) return null;
+
+    const sectionKeys = new Set(nextSections.map((section) => section.key));
+    const blockKeys = builderBlockKeys(nextSections);
+    const copy = copyBuilderSections([payload.item])[0];
+    delete copy.id;
+    copy.key = uniqueCopyKey(copy.key, sectionKeys);
+    copy.label = copiedLabel(copy.label, "Container");
+    copy.blocks = copy.blocks.map((block) => {
+      delete block.id;
+      block.key = uniqueCopyKey(block.key, blockKeys);
+      return block;
+    });
+
+    const targetIndex = nextSections.findIndex((section) => section.id === sectionId);
+    nextSections.splice(targetIndex < 0 ? nextSections.length : targetIndex + 1, 0, copy);
+    return { sections: nextSections, activeSectionKey: copy.key, blockKey: "" };
+  }
+
+  if (payload.kind !== "block" || typeof payload.item.key !== "string" || typeof payload.item.type !== "string") {
+    return null;
+  }
+
+  const targetSection = nextSections.find((section) => section.id === sectionId)
+    || nextSections.find((section) => (section.blocks || []).some((block) => block.key === blockKey))
+    || nextSections[0];
+  if (!targetSection) return null;
+
+  const copy = copyBuilderSections([payload.item])[0];
+  delete copy.id;
+  copy.key = uniqueCopyKey(copy.key, builderBlockKeys(nextSections));
+  copy.label = copiedLabel(copy.label, "Element");
+  const targetIndex = (targetSection.blocks || []).findIndex((block) => block.key === blockKey);
+  targetSection.blocks ||= [];
+  targetSection.blocks.splice(targetIndex < 0 ? targetSection.blocks.length : targetIndex + 1, 0, copy);
+
+  return { sections: nextSections, activeSectionKey: targetSection.key, blockKey: copy.key };
+}
+
 export function moveBuilderSectionInSections(sections = [], sectionId = "", direction = "up") {
   const nextSections = copyBuilderSections(sections);
   const sectionIndex = nextSections.findIndex((section) => section.id === sectionId);

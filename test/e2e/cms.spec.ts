@@ -73,6 +73,15 @@ test("admin settings and builder controls complete their primary workflows", asy
   await page.getByRole("button", { name: "Undo last canvas change" }).click();
   await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
 
+  const selectedBlock = page.locator("[data-builder-block-key]").first();
+  await selectedBlock.click();
+  await expect(selectedBlock).toHaveClass(/active/);
+  await page.keyboard.press("Control+c");
+  await page.keyboard.press("Control+v");
+  await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount + 1);
+  await page.getByRole("button", { name: "Undo last canvas change" }).click();
+  await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
+
   expect(browserErrors).toEqual([]);
 });
 
@@ -192,6 +201,11 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await expect(page.locator("[data-page-builder]")).toBeVisible();
 
   const librarySearch = page.getByPlaceholder("Search sections and elements");
+  await librarySearch.fill("rich text");
+  await expect(page.locator("[data-builder-template='rich-text']")).toBeVisible();
+  await librarySearch.fill("heading");
+  await expect(page.locator("[data-builder-template='heading']")).toBeVisible();
+  await librarySearch.fill("");
   await page.getByRole("button", { name: "Advanced", exact: true }).click();
   await expect(page.locator("[data-builder-template='custom-code']")).toBeVisible();
   await expect(page.locator("[data-builder-template='resource-list']")).toBeHidden();
@@ -389,7 +403,7 @@ test("visual editing, design tokens, and reusable sections work without hover", 
   });
   await homeRow.getByRole("link", { name: "Backend builder" }).click();
   await page.getByRole("link", { name: "Visual editor", exact: true }).click();
-  await expect(page).toHaveURL(/\?edit=1/);
+  await expect(page).toHaveURL(/[?&]edit=1(?:&|$)/);
   await expect(page.locator("[data-editor-ui].visual-editor-bar")).toBeVisible();
   await expect(page.locator("[data-visual-section]").first()).toBeVisible();
   await expect(page.locator("[data-visual-block]").first()).toBeVisible();
@@ -400,9 +414,13 @@ test("visual editing, design tokens, and reusable sections work without hover", 
   await library.locator(":scope > summary").click();
   await page.getByRole("button", { name: "Section", exact: true }).click();
   const addSectionDialog = page.getByRole("dialog", { name: "Choose a section layout" });
+  await expect(page.locator("html")).toHaveClass(/modal-open/);
+  await expect(page.locator("body")).toHaveClass(/modal-open/);
   await expect(addSectionDialog.getByRole("group", { name: "Layout" })).toBeVisible();
   await expect(addSectionDialog.getByText("Container CSS", { exact: true })).toHaveCount(0);
   await addSectionDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("html")).not.toHaveClass(/modal-open/);
+  await expect(page.locator("body")).not.toHaveClass(/modal-open/);
 
   await library.locator(":scope > summary").click();
   await page.getByRole("button", { name: "Element", exact: true }).click();

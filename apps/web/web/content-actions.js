@@ -978,6 +978,8 @@ export async function saveSiteSettings(form) {
 export async function saveEmailSettings(form) {
   const formData = new FormData(form);
   const bearerToken = String(formData.get("bearerToken") || "").trim();
+  const smtpPassword = String(formData.get("smtpPassword") || "").trim();
+  const smtpPort = Number(formData.get("smtpPort") || 587);
 
   setFormDisabled(form, true);
   setFormMessage(form, "Saving email settings...");
@@ -992,12 +994,20 @@ export async function saveEmailSettings(form) {
         from: String(formData.get("from") || "").trim(),
         httpEndpoint: String(formData.get("httpEndpoint") || "").trim(),
         ...(bearerToken ? { bearerToken } : {}),
-        clearBearerToken: formData.get("clearBearerToken") === "on"
+        clearBearerToken: formData.get("clearBearerToken") === "on",
+        smtpHost: String(formData.get("smtpHost") || "").trim(),
+        smtpPort: Number.isInteger(smtpPort) ? smtpPort : 587,
+        smtpSecurity: String(formData.get("smtpSecurity") || "starttls"),
+        smtpUsername: String(formData.get("smtpUsername") || "").trim(),
+        ...(smtpPassword ? { smtpPassword } : {}),
+        clearSmtpPassword: formData.get("clearSmtpPassword") === "on"
       })
     });
     if (state.config && response.email) state.config.email = response.email;
     const secretInput = form.querySelector('[name="bearerToken"]');
     if (secretInput) secretInput.value = "";
+    const smtpSecretInput = form.querySelector('[name="smtpPassword"]');
+    if (smtpSecretInput) smtpSecretInput.value = "";
     setFormMessage(form, "Email settings saved. Test delivery before enabling recovery flows.");
     setStatus("Email settings saved.");
   } catch (error) {
@@ -1028,6 +1038,59 @@ export async function testEmailSettings(button) {
   } catch (error) {
     setFormMessage(form, error.message || "Email delivery test failed.", true);
     setStatus(error.message || "Email delivery test failed.", true);
+  } finally {
+    setFormDisabled(form, false);
+  }
+}
+
+export async function saveStorageSettings(form) {
+  const formData = new FormData(form);
+  const provider = String(formData.get("provider") || "local");
+  const secretAccessKey = provider === "r2"
+    ? String(formData.get("r2SecretAccessKey") || "").trim()
+    : String(formData.get("s3SecretAccessKey") || "").trim();
+  const body = provider === "local"
+    ? { provider }
+    : provider === "r2"
+      ? {
+          provider,
+          accountId: String(formData.get("r2AccountId") || "").trim(),
+          bucket: String(formData.get("r2Bucket") || "").trim(),
+          accessKeyId: String(formData.get("r2AccessKeyId") || "").trim(),
+          ...(secretAccessKey ? { secretAccessKey } : {})
+        }
+      : {
+          provider: "s3",
+          region: String(formData.get("s3Region") || "us-east-1").trim(),
+          bucket: String(formData.get("s3Bucket") || "").trim(),
+          accessKeyId: String(formData.get("s3AccessKeyId") || "").trim(),
+          ...(secretAccessKey ? { secretAccessKey } : {})
+        };
+
+  setFormDisabled(form, true);
+  setFormMessage(form, provider === "local" ? "Checking local storage..." : "Testing storage connection...");
+
+  try {
+    const response = await api("/config/storage", {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    });
+    if (state.config && response.storage) state.config.storage = response.storage;
+    form.querySelectorAll('input[type="password"]').forEach((input) => {
+      input.value = "";
+      input.placeholder = "Saved credential";
+    });
+    const copied = Number(response.migration?.copiedObjects || 0);
+    setFormMessage(
+      form,
+      copied > 0
+        ? `Storage connected. ${copied} existing media file${copied === 1 ? " was" : "s were"} copied safely.`
+        : "Storage connected and saved."
+    );
+    setStatus("Media storage is ready.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to save storage settings.", true);
+    setStatus(error.message || "Unable to save storage settings.", true);
   } finally {
     setFormDisabled(form, false);
   }

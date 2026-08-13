@@ -1,8 +1,12 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { connect as netConnect, type Socket } from "node:net";
 import { isIP, type LookupFunction } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import type { AppConfig } from "../../config/index.js";
+import nodemailer from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport/index.js";
 import { AppError } from "../../core/errors/app-error.js";
 import type {
   EmailClient,
@@ -12,7 +16,7 @@ import type {
   EmailProvider
 } from "./email.types.js";
 
-const providerEndpoints: Record<Exclude<EmailProvider, "generic">, string> = {
+const providerEndpoints: Record<Exclude<EmailProvider, "generic" | "smtp">, string> = {
   resend: "https://api.resend.com/emails",
   postmark: "https://api.postmarkapp.com/email"
 };
@@ -201,6 +205,7 @@ function provider(config: EmailDeliveryConfig) {
 
 export function emailProviderEndpoint(config: EmailDeliveryConfig) {
   const selectedProvider = provider(config);
+  if (selectedProvider === "smtp") return undefined;
   return selectedProvider === "generic" ? config.httpEndpoint : providerEndpoints[selectedProvider];
 }
 
@@ -213,6 +218,17 @@ function deliveryConfig(config: AppConfig | EmailDeliveryConfig): EmailDeliveryC
 export function isEmailDeliveryConfigured(config: AppConfig | EmailDeliveryConfig) {
   const email = deliveryConfig(config);
   const selectedProvider = provider(email);
+
+  if (selectedProvider === "smtp") {
+    return email.driver === "smtp" && Boolean(
+      email.from &&
+      email.smtpHost &&
+      email.smtpPort &&
+      email.smtpSecurity &&
+      email.credentialsRequired !== true &&
+      (!email.smtpUsername || email.smtpPassword)
+    );
+  }
 
   return email.driver === "http" && Boolean(
     email.from &&
@@ -228,10 +244,165 @@ export function createEmailClient(config: AppConfig | EmailDeliveryConfig): Emai
   }
 
   const email = deliveryConfig(config);
+  const selectedProvider = provider(email);
 
   return {
-    send: (message) => sendHttpEmail(email, message)
+    send: (message) => selectedProvider === "smtp"
+      ? sendSmtpEmail(email, message)
+      : sendHttpEmail(email, message)
   };
+}
+
+export function parseSmtpHost(value: string) {
+  const host = value.trim().replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+  if (!host || host.length > 253 || /[\s/@]/.test(host)) {
+    throw new AppError(422, "smtp_host_invalid", "SMTP host must be a valid hostname or IP address.");
+  }
+  if (!isIP(host)) {
+    const validHostname = host.split(".").every((label) =>
+      label.length > 0 &&
+      label.length <= 63 &&
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label)
+    );
+    if (!validHostname) {
+      throw new AppError(422, "smtp_host_invalid", "SMTP host must be a valid hostname or IP address.");
+    }
+  }
+  return host;
+}
+
+export async function resolveSafeSmtpHost(
+  value: string,
+  options: { lookup?: AddressLookup } = {}
+) {
+  const host = parseSmtpHost(value);
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  ) {
+    throw new AppError(422, "smtp_host_private", "SMTP host must resolve to a public address.");
+  }
+
+  const addresses = isIP(host)
+    ? [{ address: host, family: isIP(host) }]
+    : await (options.lookup ?? defaultAddressLookup)(host).catch(() => {
+        throw new AppError(422, "smtp_host_unreachable", "SMTP hostname could not be resolved.");
+      });
+  const normalizedAddresses = addresses.map(({ address }) => ({ address, family: isIP(address) }));
+  if (
+    !normalizedAddresses.length ||
+    normalizedAddresses.some(({ address, family }) => !family || !isPublicEmailAddress(address))
+  ) {
+    throw new AppError(422, "smtp_host_private", "SMTP host must resolve only to public addresses.");
+  }
+
+  return { host, addresses: normalizedAddresses };
+}
+
+export async function assertSafeSmtpHost(value: string, options: { lookup?: AddressLookup } = {}) {
+  return (await resolveSafeSmtpHost(value, options)).host;
+}
+
+function connectSmtpAddress(
+  address: AddressRecord,
+  config: EmailDeliveryConfig
+): Promise<{ connection: Socket; secured: boolean }> {
+  return new Promise((resolve, reject) => {
+    const secure = config.smtpSecurity === "tls";
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("SMTP connection timed out."));
+    }, config.timeoutMs);
+    const onError = (error: Error) => {
+      clearTimeout(timeout);
+      reject(error);
+    };
+    const onConnect = () => {
+      clearTimeout(timeout);
+      socket.removeListener("error", onError);
+      resolve({ connection: socket, secured: secure });
+    };
+    const socket = secure
+      ? tlsConnect({
+          host: address.address,
+          port: config.smtpPort!,
+          servername: config.smtpHost!,
+          minVersion: "TLSv1.2",
+          rejectUnauthorized: true
+        }, onConnect)
+      : netConnect({
+          host: address.address,
+          port: config.smtpPort!
+        }, onConnect);
+
+    socket.once("error", onError);
+  });
+}
+
+async function connectApprovedSmtpAddress(addresses: AddressRecord[], config: EmailDeliveryConfig) {
+  let lastError: unknown;
+  for (const address of addresses) {
+    try {
+      return await connectSmtpAddress(address, config);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("SMTP host could not be reached.");
+}
+
+function smtpTransportOptions(config: EmailDeliveryConfig): SMTPTransport.Options {
+  const options: SMTPTransport.Options = {
+    host: config.smtpHost,
+    port: config.smtpPort,
+    secure: config.smtpSecurity === "tls",
+    requireTLS: config.smtpSecurity === "starttls",
+    auth: config.smtpUsername
+      ? { user: config.smtpUsername, pass: config.smtpPassword }
+      : undefined,
+    connectionTimeout: config.timeoutMs,
+    greetingTimeout: config.timeoutMs,
+    socketTimeout: config.timeoutMs,
+    disableFileAccess: true,
+    disableUrlAccess: true,
+    tls: {
+      minVersion: "TLSv1.2",
+      rejectUnauthorized: true,
+      servername: config.smtpHost
+    }
+  };
+
+  if (config.protectInternalEndpoints) {
+    options.getSocket = (_transportOptions, callback) => {
+      void resolveSafeSmtpHost(config.smtpHost!)
+        .then(({ addresses }) => connectApprovedSmtpAddress(addresses, config))
+        .then((socketOptions) => callback(null, socketOptions), (error) => callback(error as Error, null));
+    };
+  }
+  return options;
+}
+
+async function sendSmtpEmail(
+  config: EmailDeliveryConfig,
+  message: EmailMessage
+): Promise<EmailDeliveryResult> {
+  const transport = nodemailer.createTransport(smtpTransportOptions(config));
+  try {
+    const result = await transport.sendMail({
+      to: message.to,
+      from: message.from,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+      disableFileAccess: true,
+      disableUrlAccess: true
+    });
+    return { providerMessageId: result.messageId };
+  } finally {
+    transport.close();
+  }
 }
 
 async function sendHttpEmail(
@@ -246,7 +417,7 @@ async function sendHttpEmail(
     const endpoint = emailProviderEndpoint(config)!;
     if (config.protectInternalEndpoints) {
       const safeEndpoint = await resolveSafeEmailEndpoint(endpoint, { requireHttps: true });
-      return sendPinnedHttpEmail(
+      return await sendPinnedHttpEmail(
         safeEndpoint.endpoint,
         safeEndpoint.addresses,
         selectedProvider,

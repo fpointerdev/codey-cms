@@ -684,7 +684,7 @@ export class MediaService {
   private async findUsedMediaAssetIds(assets: MediaUsageAsset[]) {
     if (assets.length === 0) return new Set<string>();
 
-    const [blocks, sections, productImages] = await Promise.all([
+    const [blocks, sections, posts, productImages] = await Promise.all([
       this.prisma.contentBlock.findMany({
         select: {
           mediaAssetId: true,
@@ -697,11 +697,17 @@ export class MediaService {
           settings: true
         }
       }),
+      this.prisma.cmsPost.findMany({
+        select: {
+          content: true
+        }
+      }),
       this.listProductImageUsage()
     ]);
     const values: unknown[] = [
       ...blocks.flatMap((block) => [block.mediaAssetId, block.value, block.settings]),
       ...sections.map((section) => section.settings),
+      ...posts.map((post) => post.content),
       ...productImages.flatMap((image) => [image.mediaAssetId, image.url])
     ];
     const usedAssetIds = new Set<string>();

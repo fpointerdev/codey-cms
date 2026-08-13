@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { pinoHttp } from "pino-http";
-import { config } from "../config/index.js";
+import { config, type AppConfig } from "../config/index.js";
 import { createAdminMutationAudit } from "./audit/admin-mutation-audit.middleware.js";
 import { errorHandler } from "./http/error.middleware.js";
 import { createMaintenanceMiddleware } from "./http/maintenance.middleware.js";
@@ -15,6 +15,10 @@ import { notFoundHandler } from "./http/not-found.middleware.js";
 import { requestContext } from "./http/request-context.middleware.js";
 import { injectPublicShellContent, type PublicShellContent } from "./public-shell.js";
 import { canonicalPublicRedirectTarget } from "./public-routing.js";
+import {
+  customStorefrontAssetCacheControl,
+  resolveCustomStorefrontRoot
+} from "./custom-storefront.js";
 import { registerPublicMediaRoutes } from "./public-media-router.js";
 import {
   createPlatformSecurityMiddleware,
@@ -22,6 +26,7 @@ import {
 } from "./security-middleware.js";
 import { prisma } from "../infrastructure/database/prisma.js";
 import { logger } from "../infrastructure/logging/logger.js";
+import { StorageSettingsService } from "../infrastructure/storage/storage-settings.service.js";
 import {
   serializeHttpRequest,
   serializeHttpResponse
@@ -439,7 +444,8 @@ async function readSiteSeoDefaults() {
 function seoDocumentContext(
   origin: string,
   site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
-  localization: RouteLocalizationSettings
+  localization: RouteLocalizationSettings,
+  storagePublicBaseUrl?: string
 ) {
   return {
     origin,
@@ -447,7 +453,7 @@ function seoDocumentContext(
     siteDescription: site.description,
     noindex: site.noindex === true,
     defaultLocale: localization.defaultLocale,
-    storagePublicBaseUrl: config.storage.publicBaseUrl,
+    storagePublicBaseUrl,
     organizationLogo: site.logoUrl,
     faviconUrl: site.faviconUrl,
     defaultImage: site.socialImageUrl
@@ -494,7 +500,8 @@ async function resolvePostSeo(
   origin: string,
   site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
   localization: RouteLocalizationSettings,
-  renderer: PublicSeoRenderer
+  renderer: PublicSeoRenderer,
+  storagePublicBaseUrl?: string
 ) {
   const post = await prisma.cmsPost.findFirst({
     where: visiblePublishedWhere(route.slug, route.locale),
@@ -521,7 +528,7 @@ async function resolvePostSeo(
   });
 
   return renderer.createPostSeoDocument({ ...post, translations }, {
-    ...seoDocumentContext(origin, site, localization),
+    ...seoDocumentContext(origin, site, localization, storagePublicBaseUrl),
     locale: post.locale
   });
 }
@@ -531,7 +538,8 @@ async function resolveProductSeo(
   origin: string,
   site: Awaited<ReturnType<typeof readSiteSeoDefaults>>,
   localization: RouteLocalizationSettings,
-  renderer: PublicSeoRenderer
+  renderer: PublicSeoRenderer,
+  storagePublicBaseUrl?: string
 ) {
   const product = await prisma.product.findFirst({
     where: {
@@ -591,12 +599,16 @@ async function resolveProductSeo(
   const enrichedProduct = await enrichPublicMedia(prisma, withAvailableInventory(product));
 
   return renderer.createProductSeoDocument({ ...enrichedProduct, translations }, {
-    ...seoDocumentContext(origin, site, localization),
+    ...seoDocumentContext(origin, site, localization, storagePublicBaseUrl),
     locale: product.locale
   });
 }
 
-async function resolveSeoMeta(req: Request, renderer: PublicSeoRenderer): Promise<SeoDocument> {
+async function resolveSeoMeta(
+  req: Request,
+  renderer: PublicSeoRenderer,
+  storagePublicBaseUrl?: string
+): Promise<SeoDocument> {
   if (isAdminShellPath(req.path)) {
     return renderer.createGenericSeoDocument({
       title: "Code Epsylon Admin",
@@ -618,12 +630,26 @@ async function resolveSeoMeta(req: Request, renderer: PublicSeoRenderer): Promis
     const origin = (site.publicBaseUrl || fallbackOrigin).replace(/\/+$/g, "");
 
     if (route.type === "post") {
-      const postMeta = await resolvePostSeo(route, origin, site, localization, renderer);
+      const postMeta = await resolvePostSeo(
+        route,
+        origin,
+        site,
+        localization,
+        renderer,
+        storagePublicBaseUrl
+      );
       if (postMeta) return postMeta;
     }
 
     if (route.type === "product") {
-      const productMeta = await resolveProductSeo(route, origin, site, localization, renderer);
+      const productMeta = await resolveProductSeo(
+        route,
+        origin,
+        site,
+        localization,
+        renderer,
+        storagePublicBaseUrl
+      );
       if (productMeta) return productMeta;
     }
 
@@ -674,7 +700,7 @@ async function resolveSeoMeta(req: Request, renderer: PublicSeoRenderer): Promis
         description: shopSettings.catalogDescription || site.description || "Browse products and product details.",
         translations
       }, {
-        ...seoDocumentContext(origin, site, localization),
+        ...seoDocumentContext(origin, site, localization, storagePublicBaseUrl),
         locale: route.locale,
         route
       });
@@ -698,7 +724,7 @@ async function resolveSeoMeta(req: Request, renderer: PublicSeoRenderer): Promis
       : null;
     if (!page) {
       return renderer.createGenericSeoDocument({
-        ...seoDocumentContext(origin, site, localization),
+        ...seoDocumentContext(origin, site, localization, storagePublicBaseUrl),
         title: site.title || config.app.name,
         description: site.description || "Modular project foundation.",
         htmlLang: htmlLangFromLocale(route.locale),
@@ -714,7 +740,7 @@ async function resolveSeoMeta(req: Request, renderer: PublicSeoRenderer): Promis
     });
 
     return renderer.createPageSeoDocument({ ...page, translations }, {
-      ...seoDocumentContext(origin, site, localization),
+      ...seoDocumentContext(origin, site, localization, storagePublicBaseUrl),
       locale: page.locale
     });
   } catch (error) {
@@ -778,7 +804,11 @@ async function resolvePublicMenu(
   }
 }
 
-async function resolvePublicShellContent(req: Request, webRoot: string): Promise<PublicShellResolution> {
+async function resolvePublicShellContent(
+  req: Request,
+  webRoot: string,
+  storage: AppConfig["storage"] = config.storage
+): Promise<PublicShellResolution> {
   if (isAdminShellPath(req.path)) return { found: true, content: null };
 
   try {
@@ -798,8 +828,8 @@ async function resolvePublicShellContent(req: Request, webRoot: string): Promise
         app: config.app,
         api: config.api,
         storage: {
-          publicBaseUrl: config.storage.publicBaseUrl,
-          imageVariantWidths: config.storage.imageVariantWidths
+          publicBaseUrl: storage.publicBaseUrl,
+          imageVariantWidths: storage.imageVariantWidths
         },
         siteSettings: {
           title: siteTitle,
@@ -1022,7 +1052,10 @@ export function publicNotFoundContent(siteTitle: string, renderer?: PublicMarkup
   };
 }
 
-function createAppShellRenderer(webRoot: string, options: { publicRoute?: boolean } = {}) {
+function createAppShellRenderer(
+  webRoot: string,
+  options: { publicRoute?: boolean; storageSettings?: StorageSettingsService } = {}
+) {
   const indexPath = join(webRoot, "index.html");
 
   return async function renderAppShell(req: Request, res: Response, next: NextFunction) {
@@ -1031,9 +1064,17 @@ function createAppShellRenderer(webRoot: string, options: { publicRoute?: boolea
       const [html, seoRenderer, meta, resolution] = await Promise.all([
         readFile(indexPath, "utf8"),
         seoRendererPromise,
-        seoRendererPromise.then((renderer) => resolveSeoMeta(req, renderer)),
+        seoRendererPromise.then((renderer) => resolveSeoMeta(
+          req,
+          renderer,
+          options.storageSettings?.getRuntimeConfig().publicBaseUrl
+        )),
         options.publicRoute
-          ? resolvePublicShellContent(req, webRoot)
+          ? resolvePublicShellContent(
+              req,
+              webRoot,
+              options.storageSettings?.getRuntimeConfig() ?? config.storage
+            )
           : Promise.resolve<PublicShellResolution>({ found: true, content: null })
       ]);
       const notFound = options.publicRoute && !resolution.found;
@@ -1067,12 +1108,17 @@ function createAppShellRenderer(webRoot: string, options: { publicRoute?: boolea
   };
 }
 
-function createStaticShellRenderer(root: string) {
+function createStaticShellRenderer(root: string, webRoot: string) {
   const indexPath = join(root, "index.html");
 
-  return async function renderStaticShell(_req: Request, res: Response, next: NextFunction) {
+  return async function renderStaticShell(req: Request, res: Response, next: NextFunction) {
     try {
-      res.type("html").send(await readFile(indexPath, "utf8"));
+      const [html, seoRenderer] = await Promise.all([
+        readFile(indexPath, "utf8"),
+        loadPublicSeoRenderer(webRoot)
+      ]);
+      const document = await resolveSeoMeta(req, seoRenderer);
+      res.type("html").send(seoRenderer.injectSeoDocument(html, document));
     } catch (error) {
       next(error);
     }
@@ -1082,9 +1128,15 @@ function createStaticShellRenderer(root: string) {
 export async function createApp() {
   const app = express();
   const webRoot = resolve(process.cwd(), "apps/web");
+  const customStorefrontRoot = await resolveCustomStorefrontRoot(config.app.customStorefrontDir);
   const localStorageRoot = resolve(process.cwd(), config.storage.localDir);
-  const renderAppShell = createAppShellRenderer(webRoot);
-  const renderPublicShell = createAppShellRenderer(webRoot, { publicRoute: true });
+  const storageSettings = new StorageSettingsService(prisma, config);
+  await storageSettings.initialize();
+  const renderAppShell = createAppShellRenderer(webRoot, { storageSettings });
+  const renderPublicShell = createAppShellRenderer(webRoot, { publicRoute: true, storageSettings });
+  const renderCustomStorefront = customStorefrontRoot
+    ? createStaticShellRenderer(customStorefrontRoot, webRoot)
+    : null;
   const copiedRuntimeEnabled = true;
   const cmsService = new CmsService(prisma);
   const security = createPlatformSecurityMiddleware(config, prisma);
@@ -1146,7 +1198,21 @@ export async function createApp() {
   if (copiedRuntimeEnabled) {
     app.use(express.static(webRoot, { index: false }));
   }
-  registerPublicMediaRoutes(app, config, localStorageRoot);
+  if (customStorefrontRoot) {
+    app.use("/__storefront", (_req, res, next) => {
+      res.setHeader("cache-control", customStorefrontAssetCacheControl(config.isProduction));
+      next();
+    });
+    app.use("/__storefront", express.static(customStorefrontRoot, {
+      cacheControl: false,
+      index: false,
+      etag: true
+    }));
+  }
+  registerPublicMediaRoutes(app, config, localStorageRoot, {
+    adapter: storageSettings.adapter,
+    getRuntimeConfig: () => storageSettings.getRuntimeConfig()
+  });
   app.get("/favicon.ico", (_req, res) => {
     res.status(204).end();
   });
@@ -1165,7 +1231,8 @@ export async function createApp() {
   const loadedModules = await loadModules(app, modules, {
     config,
     prisma,
-    logger
+    logger,
+    storageSettings
   });
 
   app.get(config.api.prefix, (_req, res) => {
@@ -1202,6 +1269,11 @@ export async function createApp() {
           ? "public, max-age=3600"
           : "no-store");
         res.redirect(redirect.statusCode, redirect.targetPath);
+        return;
+      }
+
+      if (renderCustomStorefront) {
+        await renderCustomStorefront(req, res, next);
         return;
       }
 

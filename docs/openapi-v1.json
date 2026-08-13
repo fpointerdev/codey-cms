@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CodeY CMS API",
-    "version": "0.9.11",
+    "version": "0.9.12",
     "description": "Generated stable /api/v1 contract. Each operation identifies its authentication, permission, path parameter, and authoritative Zod validation source."
   },
   "servers": [
@@ -1119,7 +1119,7 @@
         ],
         "operationId": "cms_get_cms_categories",
         "summary": "GET /cms/categories",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:527",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:531",
         "x-codey-validation": {
           "query": "localeQuerySchema"
         },
@@ -1155,7 +1155,7 @@
         ],
         "operationId": "cms_post_cms_categories",
         "summary": "POST /cms/categories",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:539",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:543",
         "x-codey-validation": {
           "body": "createCmsCategorySchema"
         },
@@ -1219,7 +1219,7 @@
         ],
         "operationId": "cms_delete_cms_categories_categorySlug",
         "summary": "DELETE /cms/categories/{categorySlug}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:562",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:566",
         "x-codey-validation": {
           "params": "categoryParams",
           "query": "localeQuerySchema"
@@ -1281,7 +1281,7 @@
         ],
         "operationId": "cms_patch_cms_categories_categorySlug",
         "summary": "PATCH /cms/categories/{categorySlug}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:550",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:554",
         "x-codey-validation": {
           "params": "categoryParams",
           "query": "localeQuerySchema",
@@ -1358,7 +1358,7 @@
         ],
         "operationId": "cms_get_cms_custom_code_blockId",
         "summary": "GET /cms/custom-code/{blockId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:170",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:174",
         "x-codey-validation": {
           "params": "customCodeParams"
         },
@@ -1407,7 +1407,7 @@
         ],
         "operationId": "cms_post_cms_forms_contact",
         "summary": "POST /cms/forms/contact",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:726",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:730",
         "x-codey-validation": {
           "body": "contactSubmissionSchema"
         },
@@ -1457,7 +1457,7 @@
         ],
         "operationId": "cms_get_cms_forms_contact_submissions",
         "summary": "GET /cms/forms/contact/submissions",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:737",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:741",
         "x-codey-permission": {
           "action": "read",
           "subject": "cms"
@@ -1506,7 +1506,7 @@
         ],
         "operationId": "cms_get_cms_media",
         "summary": "GET /cms/media",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:629",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:633",
         "x-codey-permission": {
           "action": "read",
           "subject": "cms"
@@ -1553,7 +1553,7 @@
         ],
         "operationId": "cms_post_cms_media",
         "summary": "POST /cms/media",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:649",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:653",
         "x-codey-validation": {
           "body": "createMediaAssetSchema"
         },
@@ -1617,7 +1617,7 @@
         ],
         "operationId": "cms_delete_cms_media_assetId",
         "summary": "DELETE /cms/media/{assetId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:715",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:719",
         "x-codey-validation": {
           "params": "mediaAssetParams",
           "body": "deleteMediaAssetSchema"
@@ -1693,7 +1693,7 @@
         ],
         "operationId": "cms_get_cms_media_assetId_download",
         "summary": "GET /cms/media/{assetId}/download",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:704",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:708",
         "x-codey-validation": {
           "params": "mediaAssetParams"
         },
@@ -1756,7 +1756,7 @@
         ],
         "operationId": "cms_post_cms_media_orphan_cleanup",
         "summary": "POST /cms/media/orphan-cleanup",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:693",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:697",
         "x-codey-validation": {
           "body": "cleanupOrphanMediaSchema"
         },
@@ -1820,7 +1820,7 @@
         ],
         "operationId": "cms_post_cms_media_upload",
         "summary": "POST /cms/media/upload",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:682",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:686",
         "x-codey-validation": {
           "body": "directMediaUploadSchema"
         },
@@ -1884,7 +1884,7 @@
         ],
         "operationId": "cms_post_cms_media_uploads",
         "summary": "POST /cms/media/uploads",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:660",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:664",
         "x-codey-validation": {
           "body": "createSignedUploadSchema"
         },
@@ -1948,7 +1948,7 @@
         ],
         "operationId": "cms_post_cms_media_uploads_complete",
         "summary": "POST /cms/media/uploads/complete",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:671",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:675",
         "x-codey-validation": {
           "body": "completeSignedUploadSchema"
         },
@@ -2012,7 +2012,7 @@
         ],
         "operationId": "cms_get_cms_media_usage",
         "summary": "GET /cms/media/usage",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:639",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:643",
         "x-codey-permission": {
           "action": "read",
           "subject": "cms"
@@ -2061,7 +2061,7 @@
         ],
         "operationId": "cms_post_cms_menus",
         "summary": "POST /cms/menus",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:470",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:474",
         "x-codey-validation": {
           "body": "createMenuSchema"
         },
@@ -2125,7 +2125,7 @@
         ],
         "operationId": "cms_get_cms_menus_menuSlug",
         "summary": "GET /cms/menus/{menuSlug}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:455",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:459",
         "x-codey-validation": {
           "params": "menuParams",
           "query": "localeQuerySchema"
@@ -2175,7 +2175,7 @@
         ],
         "operationId": "cms_post_cms_menus_menuSlug_items",
         "summary": "POST /cms/menus/{menuSlug}/items",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:481",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:485",
         "x-codey-validation": {
           "params": "menuParams",
           "query": "localeQuerySchema",
@@ -2252,7 +2252,7 @@
         ],
         "operationId": "cms_delete_cms_menus_menuSlug_items_itemId",
         "summary": "DELETE /cms/menus/{menuSlug}/items/{itemId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:512",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:516",
         "x-codey-validation": {
           "params": "menuItemParams",
           "query": "localeQuerySchema"
@@ -2323,7 +2323,7 @@
         ],
         "operationId": "cms_patch_cms_menus_menuSlug_items_itemId",
         "summary": "PATCH /cms/menus/{menuSlug}/items/{itemId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:496",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:500",
         "x-codey-validation": {
           "params": "menuItemParams",
           "query": "localeQuerySchema",
@@ -2409,7 +2409,7 @@
         ],
         "operationId": "cms_get_cms_pages",
         "summary": "GET /cms/pages",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:192",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:196",
         "x-codey-validation": {
           "query": "localeQuerySchema"
         },
@@ -2459,7 +2459,7 @@
         ],
         "operationId": "cms_post_cms_pages",
         "summary": "POST /cms/pages",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:268",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:272",
         "x-codey-validation": {
           "body": "createCmsPageSchema"
         },
@@ -2523,7 +2523,7 @@
         ],
         "operationId": "cms_get_cms_pages_slug",
         "summary": "GET /cms/pages/{slug}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:249",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:253",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "pageQuerySchema"
@@ -2571,7 +2571,7 @@
         ],
         "operationId": "cms_patch_cms_pages_slug",
         "summary": "PATCH /cms/pages/{slug}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:298",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:302",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema",
@@ -2648,7 +2648,7 @@
         ],
         "operationId": "cms_post_cms_pages_slug_archive",
         "summary": "POST /cms/pages/{slug}/archive",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:325",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:329",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema"
@@ -2712,7 +2712,7 @@
         ],
         "operationId": "cms_patch_cms_pages_slug_blocks_blockKey",
         "summary": "PATCH /cms/pages/{slug}/blocks/{blockKey}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:418",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:422",
         "x-codey-validation": {
           "params": "blockParams",
           "query": "localeQuerySchema",
@@ -2798,7 +2798,7 @@
         ],
         "operationId": "cms_post_cms_pages_slug_publish",
         "summary": "POST /cms/pages/{slug}/publish",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:310",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:314",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema"
@@ -2862,7 +2862,7 @@
         ],
         "operationId": "cms_get_cms_pages_slug_revisions",
         "summary": "GET /cms/pages/{slug}/revisions",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:340",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:344",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema"
@@ -2926,7 +2926,7 @@
         ],
         "operationId": "cms_get_cms_pages_slug_revisions_revisionId_compare",
         "summary": "GET /cms/pages/{slug}/revisions/{revisionId}/compare",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:354",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:358",
         "x-codey-validation": {
           "params": "revisionParams",
           "query": "localeQuerySchema"
@@ -2999,7 +2999,7 @@
         ],
         "operationId": "cms_post_cms_pages_slug_revisions_revisionId_restore",
         "summary": "POST /cms/pages/{slug}/revisions/{revisionId}/restore",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:369",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:373",
         "x-codey-validation": {
           "params": "revisionParams",
           "query": "localeQuerySchema"
@@ -3072,7 +3072,7 @@
         ],
         "operationId": "cms_post_cms_pages_slug_sections",
         "summary": "POST /cms/pages/{slug}/sections",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:385",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:389",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema",
@@ -3149,7 +3149,7 @@
         ],
         "operationId": "cms_post_cms_pages_slug_sections_sectionId_blocks",
         "summary": "POST /cms/pages/{slug}/sections/{sectionId}/blocks",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:401",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:405",
         "x-codey-validation": {
           "params": "sectionParams",
           "query": "localeQuerySchema",
@@ -3235,7 +3235,7 @@
         ],
         "operationId": "cms_post_cms_pages_slug_translations",
         "summary": "POST /cms/pages/{slug}/translations",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:279",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:283",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema",
@@ -3312,7 +3312,7 @@
         ],
         "operationId": "cms_get_cms_posts",
         "summary": "GET /cms/posts",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:747",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:751",
         "x-codey-validation": {
           "query": "postQuerySchema"
         },
@@ -3348,7 +3348,7 @@
         ],
         "operationId": "cms_post_cms_posts",
         "summary": "POST /cms/posts",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:780",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:784",
         "x-codey-validation": {
           "body": "createCmsPostSchema"
         },
@@ -3412,7 +3412,7 @@
         ],
         "operationId": "cms_get_cms_posts_slug",
         "summary": "GET /cms/posts/{slug}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:764",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:768",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "pageQuerySchema"
@@ -3460,7 +3460,7 @@
         ],
         "operationId": "cms_patch_cms_posts_slug",
         "summary": "PATCH /cms/posts/{slug}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:813",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:817",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema",
@@ -3537,7 +3537,7 @@
         ],
         "operationId": "cms_post_cms_posts_slug_translations",
         "summary": "POST /cms/posts/{slug}/translations",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:794",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:798",
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema",
@@ -3614,7 +3614,7 @@
         ],
         "operationId": "cms_post_cms_publishing_run",
         "summary": "POST /cms/publishing/run",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:445",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:449",
         "x-codey-permission": {
           "action": "update",
           "subject": "cms"
@@ -3663,7 +3663,7 @@
         ],
         "operationId": "cms_get_cms_publishing_scheduled",
         "summary": "GET /cms/publishing/scheduled",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:435",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:439",
         "x-codey-permission": {
           "action": "read",
           "subject": "cms"
@@ -3712,7 +3712,7 @@
         ],
         "operationId": "cms_get_cms_redirects",
         "summary": "GET /cms/redirects",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:586",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:590",
         "x-codey-permission": {
           "action": "read",
           "subject": "cms"
@@ -3759,7 +3759,7 @@
         ],
         "operationId": "cms_post_cms_redirects",
         "summary": "POST /cms/redirects",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:596",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:600",
         "x-codey-validation": {
           "body": "createRedirectSchema"
         },
@@ -3823,7 +3823,7 @@
         ],
         "operationId": "cms_delete_cms_redirects_redirectId",
         "summary": "DELETE /cms/redirects/{redirectId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:618",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:622",
         "x-codey-validation": {
           "params": "redirectParams"
         },
@@ -3884,7 +3884,7 @@
         ],
         "operationId": "cms_patch_cms_redirects_redirectId",
         "summary": "PATCH /cms/redirects/{redirectId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:607",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:611",
         "x-codey-validation": {
           "params": "redirectParams",
           "body": "updateRedirectSchema"
@@ -3960,7 +3960,7 @@
         ],
         "operationId": "cms_get_cms_redirects_resolve",
         "summary": "GET /cms/redirects/resolve",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:576",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:580",
         "x-codey-validation": {
           "query": "redirectResolveQuerySchema"
         },
@@ -3998,7 +3998,7 @@
         ],
         "operationId": "cms_get_cms_robots_txt",
         "summary": "GET /cms/robots.txt",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:163",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:167",
         "security": [],
         "responses": {
           "200": {
@@ -4033,7 +4033,7 @@
         ],
         "operationId": "cms_get_cms_sitemap_xml",
         "summary": "GET /cms/sitemap.xml",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:154",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:158",
         "security": [],
         "responses": {
           "200": {
@@ -4068,7 +4068,7 @@
         ],
         "operationId": "cms_get_cms_templates",
         "summary": "GET /cms/templates",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:205",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:209",
         "x-codey-validation": {
           "query": "templateQuerySchema"
         },
@@ -4118,7 +4118,7 @@
         ],
         "operationId": "cms_post_cms_templates",
         "summary": "POST /cms/templates",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:216",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:220",
         "x-codey-validation": {
           "body": "createCmsTemplateSchema"
         },
@@ -4182,7 +4182,7 @@
         ],
         "operationId": "cms_delete_cms_templates_templateId",
         "summary": "DELETE /cms/templates/{templateId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:238",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:242",
         "x-codey-validation": {
           "params": "templateParams"
         },
@@ -4243,7 +4243,7 @@
         ],
         "operationId": "cms_patch_cms_templates_templateId",
         "summary": "PATCH /cms/templates/{templateId}",
-        "x-codey-source": "src/modules/cms/cms.routes.ts:227",
+        "x-codey-source": "src/modules/cms/cms.routes.ts:231",
         "x-codey-validation": {
           "params": "templateParams",
           "body": "updateCmsTemplateSchema"
@@ -4319,7 +4319,7 @@
         ],
         "operationId": "config_get_config",
         "summary": "GET /config",
-        "x-codey-source": "src/modules/config/config.module.ts:200",
+        "x-codey-source": "src/modules/config/config.module.ts:206",
         "security": [],
         "responses": {
           "200": {
@@ -4354,7 +4354,7 @@
         ],
         "operationId": "config_get_config_admin",
         "summary": "GET /config/admin",
-        "x-codey-source": "src/modules/config/config.module.ts:213",
+        "x-codey-source": "src/modules/config/config.module.ts:220",
         "security": [
           {
             "bearerAuth": []
@@ -4399,7 +4399,7 @@
         ],
         "operationId": "config_get_config_audit_logs",
         "summary": "GET /config/audit-logs",
-        "x-codey-source": "src/modules/config/config.module.ts:547",
+        "x-codey-source": "src/modules/config/config.module.ts:615",
         "x-codey-validation": {
           "query": "auditLogQuerySchema"
         },
@@ -4451,7 +4451,7 @@
         ],
         "operationId": "config_get_config_compatibility",
         "summary": "GET /config/compatibility",
-        "x-codey-source": "src/modules/config/config.module.ts:266",
+        "x-codey-source": "src/modules/config/config.module.ts:270",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -4500,7 +4500,7 @@
         ],
         "operationId": "config_get_config_domains",
         "summary": "GET /config/domains",
-        "x-codey-source": "src/modules/config/config.module.ts:596",
+        "x-codey-source": "src/modules/config/config.module.ts:664",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -4547,7 +4547,7 @@
         ],
         "operationId": "config_post_config_domains",
         "summary": "POST /config/domains",
-        "x-codey-source": "src/modules/config/config.module.ts:680",
+        "x-codey-source": "src/modules/config/config.module.ts:748",
         "x-codey-validation": {
           "body": "createSiteDomainSchema"
         },
@@ -4611,7 +4611,7 @@
         ],
         "operationId": "config_patch_config_domains_domainId",
         "summary": "PATCH /config/domains/{domainId}",
-        "x-codey-source": "src/modules/config/config.module.ts:691",
+        "x-codey-source": "src/modules/config/config.module.ts:759",
         "x-codey-validation": {
           "params": "domainIdParams",
           "body": "updateSiteDomainSchema"
@@ -4687,7 +4687,7 @@
         ],
         "operationId": "config_post_config_domains_domainId_verify",
         "summary": "POST /config/domains/{domainId}/verify",
-        "x-codey-source": "src/modules/config/config.module.ts:702",
+        "x-codey-source": "src/modules/config/config.module.ts:770",
         "x-codey-validation": {
           "params": "domainIdParams"
         },
@@ -4750,7 +4750,7 @@
         ],
         "operationId": "config_get_config_email",
         "summary": "GET /config/email",
-        "x-codey-source": "src/modules/config/config.module.ts:313",
+        "x-codey-source": "src/modules/config/config.module.ts:318",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -4797,7 +4797,7 @@
         ],
         "operationId": "config_patch_config_email",
         "summary": "PATCH /config/email",
-        "x-codey-source": "src/modules/config/config.module.ts:321",
+        "x-codey-source": "src/modules/config/config.module.ts:326",
         "x-codey-validation": {
           "body": "emailSettingsSchema"
         },
@@ -4861,7 +4861,7 @@
         ],
         "operationId": "config_post_config_email_test",
         "summary": "POST /config/email/test",
-        "x-codey-source": "src/modules/config/config.module.ts:369",
+        "x-codey-source": "src/modules/config/config.module.ts:379",
         "x-codey-validation": {
           "body": "emailTestSchema"
         },
@@ -4925,7 +4925,7 @@
         ],
         "operationId": "config_post_config_generation_apply",
         "summary": "POST /config/generation/apply",
-        "x-codey-source": "src/modules/config/config.module.ts:667",
+        "x-codey-source": "src/modules/config/config.module.ts:735",
         "x-codey-validation": {
           "body": "applyWebsiteSpecRequestSchema"
         },
@@ -4989,7 +4989,7 @@
         ],
         "operationId": "config_get_config_generation_contract",
         "summary": "GET /config/generation/contract",
-        "x-codey-source": "src/modules/config/config.module.ts:606",
+        "x-codey-source": "src/modules/config/config.module.ts:674",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5038,7 +5038,7 @@
         ],
         "operationId": "config_post_config_generation_validate",
         "summary": "POST /config/generation/validate",
-        "x-codey-source": "src/modules/config/config.module.ts:656",
+        "x-codey-source": "src/modules/config/config.module.ts:724",
         "x-codey-validation": {
           "body": "websiteSpecRequestSchema"
         },
@@ -5102,7 +5102,7 @@
         ],
         "operationId": "config_get_config_launch_readiness",
         "summary": "GET /config/launch-readiness",
-        "x-codey-source": "src/modules/config/config.module.ts:277",
+        "x-codey-source": "src/modules/config/config.module.ts:281",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5151,7 +5151,7 @@
         ],
         "operationId": "config_get_config_maintenance",
         "summary": "GET /config/maintenance",
-        "x-codey-source": "src/modules/config/config.module.ts:427",
+        "x-codey-source": "src/modules/config/config.module.ts:495",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5198,7 +5198,7 @@
         ],
         "operationId": "config_patch_config_maintenance",
         "summary": "PATCH /config/maintenance",
-        "x-codey-source": "src/modules/config/config.module.ts:437",
+        "x-codey-source": "src/modules/config/config.module.ts:505",
         "x-codey-validation": {
           "body": "maintenanceSettingsSchema"
         },
@@ -5262,7 +5262,7 @@
         ],
         "operationId": "config_get_config_modules",
         "summary": "GET /config/modules",
-        "x-codey-source": "src/modules/config/config.module.ts:253",
+        "x-codey-source": "src/modules/config/config.module.ts:257",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5311,7 +5311,7 @@
         ],
         "operationId": "config_delete_config_modules_moduleId",
         "summary": "DELETE /config/modules/{moduleId}",
-        "x-codey-source": "src/modules/config/config.module.ts:749",
+        "x-codey-source": "src/modules/config/config.module.ts:817",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -5374,7 +5374,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_disable",
         "summary": "POST /config/modules/{moduleId}/disable",
-        "x-codey-source": "src/modules/config/config.module.ts:737",
+        "x-codey-source": "src/modules/config/config.module.ts:805",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -5437,7 +5437,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_enable",
         "summary": "POST /config/modules/{moduleId}/enable",
-        "x-codey-source": "src/modules/config/config.module.ts:725",
+        "x-codey-source": "src/modules/config/config.module.ts:793",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -5500,7 +5500,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_install",
         "summary": "POST /config/modules/{moduleId}/install",
-        "x-codey-source": "src/modules/config/config.module.ts:713",
+        "x-codey-source": "src/modules/config/config.module.ts:781",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -5563,7 +5563,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_lifecycle_hook",
         "summary": "POST /config/modules/{moduleId}/lifecycle/{hook}",
-        "x-codey-source": "src/modules/config/config.module.ts:780",
+        "x-codey-source": "src/modules/config/config.module.ts:848",
         "x-codey-validation": {
           "params": "moduleLifecycleParams"
         },
@@ -5635,7 +5635,7 @@
         ],
         "operationId": "config_patch_config_modules_moduleId_settings",
         "summary": "PATCH /config/modules/{moduleId}/settings",
-        "x-codey-source": "src/modules/config/config.module.ts:761",
+        "x-codey-source": "src/modules/config/config.module.ts:829",
         "x-codey-validation": {
           "params": "moduleIdParams",
           "body": "moduleSettingsSchema"
@@ -5711,7 +5711,7 @@
         ],
         "operationId": "config_get_config_runtime_update",
         "summary": "GET /config/runtime-update",
-        "x-codey-source": "src/modules/config/config.module.ts:614",
+        "x-codey-source": "src/modules/config/config.module.ts:682",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5760,7 +5760,7 @@
         ],
         "operationId": "config_post_config_runtime_update_apply",
         "summary": "POST /config/runtime-update/apply",
-        "x-codey-source": "src/modules/config/config.module.ts:630",
+        "x-codey-source": "src/modules/config/config.module.ts:698",
         "x-codey-permission": {
           "action": "manage",
           "subject": "modules"
@@ -5809,7 +5809,7 @@
         ],
         "operationId": "config_post_config_runtime_update_check",
         "summary": "POST /config/runtime-update/check",
-        "x-codey-source": "src/modules/config/config.module.ts:622",
+        "x-codey-source": "src/modules/config/config.module.ts:690",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5858,7 +5858,7 @@
         ],
         "operationId": "config_patch_config_site_settings",
         "summary": "PATCH /config/site-settings",
-        "x-codey-source": "src/modules/config/config.module.ts:478",
+        "x-codey-source": "src/modules/config/config.module.ts:546",
         "x-codey-validation": {
           "body": "siteSettingsSchema"
         },
@@ -5915,6 +5915,117 @@
         }
       }
     },
+    "/config/storage": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_get_config_storage",
+        "summary": "GET /config/storage",
+        "x-codey-source": "src/modules/config/config.module.ts:437",
+        "x-codey-permission": {
+          "action": "read",
+          "subject": "modules"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_patch_config_storage",
+        "summary": "PATCH /config/storage",
+        "x-codey-source": "src/modules/config/config.module.ts:445",
+        "x-codey-validation": {
+          "body": "storageSettingsSchema"
+        },
+        "x-codey-permission": {
+          "action": "manage",
+          "subject": "modules"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Validated at runtime by storageSettingsSchema.",
+                "x-codey-zod-schema": "storageSettingsSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -5922,7 +6033,7 @@
         ],
         "operationId": "health_get_health",
         "summary": "GET /health",
-        "x-codey-source": "src/modules/health/health.module.ts:157",
+        "x-codey-source": "src/modules/health/health.module.ts:161",
         "security": [],
         "responses": {
           "200": {
@@ -5957,7 +6068,7 @@
         ],
         "operationId": "health_get_health_diagnostics",
         "summary": "GET /health/diagnostics",
-        "x-codey-source": "src/modules/health/health.module.ts:191",
+        "x-codey-source": "src/modules/health/health.module.ts:195",
         "x-codey-permission": {
           "action": "manage",
           "subject": "modules"
@@ -6006,7 +6117,7 @@
         ],
         "operationId": "health_get_health_metrics",
         "summary": "GET /health/metrics",
-        "x-codey-source": "src/modules/health/health.module.ts:229",
+        "x-codey-source": "src/modules/health/health.module.ts:233",
         "x-codey-permission": {
           "action": "manage",
           "subject": "modules"
@@ -6055,7 +6166,7 @@
         ],
         "operationId": "health_get_health_ready",
         "summary": "GET /health/ready",
-        "x-codey-source": "src/modules/health/health.module.ts:165",
+        "x-codey-source": "src/modules/health/health.module.ts:169",
         "security": [],
         "responses": {
           "200": {

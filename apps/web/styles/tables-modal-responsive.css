@@ -35,6 +35,12 @@
   padding: 24px;
 }
 
+html.modal-open,
+body.modal-open {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .modal-panel {
   width: min(100%, 720px);
   max-height: min(760px, calc(100vh - 48px));

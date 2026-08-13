@@ -1,6 +1,6 @@
 {
   "name": "codey-cms",
-  "version": "0.9.11",
+  "version": "0.9.12",
   "author": "Fatlum Prekadini",
   "license": "GPL-2.0-or-later",
   "repository": {
@@ -53,7 +53,7 @@
     "db:schema": "node scripts/build-prisma-schema.mjs",
     "db:validate": "node scripts/validate-migrations.mjs",
     "prisma:generate": "pnpm db:schema && prisma generate --schema prisma/generated/schema.prisma",
-    "db:push": "pnpm db:schema && prisma db push --schema prisma/generated/schema.prisma",
+    "db:push": "pnpm db:schema && node scripts/prepare-db-push.mjs && prisma db push --schema prisma/generated/schema.prisma",
     "db:migrate": "pnpm db:schema && prisma migrate dev --schema prisma/generated/schema.prisma",
     "db:deploy": "pnpm db:schema && prisma migrate deploy --schema prisma/generated/schema.prisma",
     "db:seed": "pnpm prisma:generate && tsx prisma/seed.ts"
@@ -69,6 +69,7 @@
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.1.0",
     "jose": "^5.10.0",
+    "nodemailer": "9.0.5",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "prisma": "^6.8.2",
@@ -86,6 +87,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^24.0.0",
+    "@types/nodemailer": "6.4.22",
     "@types/sanitize-html": "^2.16.1",
     "eslint": "^9.39.5",
     "globals": "^16.5.0",

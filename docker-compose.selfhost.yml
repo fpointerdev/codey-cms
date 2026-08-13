@@ -14,6 +14,7 @@ x-runtime-environment: &runtime-environment
   APP_NAME: ${APP_NAME:-CodeY CMS}
   APP_MODE: ${APP_MODE:-cms}
   APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:4000}
+  CUSTOM_STOREFRONT_DIR: ${CUSTOM_STOREFRONT_DIR:-}
   API_PREFIX: /api/v1
   TRUST_PROXY: ${TRUST_PROXY:-false}
   SECURITY_AUDIT_KEY: ${SECURITY_AUDIT_KEY:-}

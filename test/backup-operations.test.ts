@@ -10,6 +10,7 @@ import {
   isEncryptedBackupFile
 } from "../scripts/backup-crypto.mjs";
 import { postgresCliConnection, postgresCliUrl } from "../scripts/postgres-cli-url.mjs";
+import { resolveBackupStorage } from "../scripts/backup-storage-settings.mjs";
 import {
   assertSafeMediaTree,
   assertSafeTarEntries,
@@ -53,6 +54,27 @@ test("PostgreSQL CLI URLs remove Prisma-only parameters", () => {
   assert.throws(
     () => postgresCliConnection(`postgresql://codey:secret@db:5432/codey?schema=${"a".repeat(64)}`),
     /valid PostgreSQL identifier/i
+  );
+});
+
+test("backup storage follows dashboard Local, S3, and Cloudflare R2 settings", () => {
+  assert.deepEqual(
+    resolveBackupStorage({ STORAGE_DRIVER: "local", STORAGE_KEY_PREFIX: "sites/example" }),
+    { provider: "local", driver: "local", bucket: null, keyPrefix: "sites/example" }
+  );
+  assert.deepEqual(
+    resolveBackupStorage(
+      { STORAGE_DRIVER: "local", STORAGE_KEY_PREFIX: "sites/example" },
+      { provider: "r2", bucket: "website-media" }
+    ),
+    { provider: "r2", driver: "s3", bucket: "website-media", keyPrefix: "sites/example" }
+  );
+  assert.deepEqual(
+    resolveBackupStorage(
+      { STORAGE_DRIVER: "s3", STORAGE_S3_BUCKET: "environment-bucket" },
+      { provider: "s3", bucket: "dashboard-bucket" }
+    ),
+    { provider: "s3", driver: "s3", bucket: "dashboard-bucket", keyPrefix: null }
   );
 });
 

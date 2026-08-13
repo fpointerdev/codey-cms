@@ -94,12 +94,18 @@ export const maintenanceSettingsSchema = z.object({
 
 export const emailSettingsSchema = z.object({
   enabled: z.boolean().optional(),
-  provider: z.enum(["generic", "resend", "postmark"]).optional(),
+  provider: z.enum(["generic", "resend", "postmark", "smtp"]).optional(),
   recoveryEnabled: z.boolean().optional(),
   from: z.string().trim().email().max(320).or(z.literal("")).optional(),
   httpEndpoint: httpEndpointSchema.or(z.literal("")).optional(),
   bearerToken: z.string().trim().max(2_000).optional(),
-  clearBearerToken: z.boolean().optional()
+  clearBearerToken: z.boolean().optional(),
+  smtpHost: z.string().trim().max(253).optional(),
+  smtpPort: z.coerce.number().int().min(1).max(65_535).optional(),
+  smtpSecurity: z.enum(["starttls", "tls"]).optional(),
+  smtpUsername: z.string().trim().max(320).optional(),
+  smtpPassword: z.string().trim().max(2_000).optional(),
+  clearSmtpPassword: z.boolean().optional()
 }).strict().superRefine((value, context) => {
   if (value.bearerToken && value.clearBearerToken) {
     context.addIssue({
@@ -108,11 +114,51 @@ export const emailSettingsSchema = z.object({
       message: "Cannot set and remove the bearer token together."
     });
   }
+  if (value.smtpPassword && value.clearSmtpPassword) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["clearSmtpPassword"],
+      message: "Cannot set and remove the SMTP password together."
+    });
+  }
 });
 
 export const emailTestSchema = z.object({
   recipient: z.string().trim().email().max(320).optional()
 }).strict();
+
+export const storageSettingsSchema = z.object({
+  provider: z.enum(["local", "s3", "r2"]),
+  region: z.string().trim().max(100).optional(),
+  bucket: z.string().trim().max(255).optional(),
+  accountId: z.string().trim().max(64).optional(),
+  accessKeyId: z.string().trim().max(512).optional(),
+  secretAccessKey: z.string().trim().max(2_000).optional()
+}).strict().superRefine((value, context) => {
+  if (value.provider === "local") return;
+
+  if (!value.bucket) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["bucket"],
+      message: "Bucket name is required."
+    });
+  }
+  if (!value.accessKeyId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["accessKeyId"],
+      message: "Access key ID is required."
+    });
+  }
+  if (value.provider === "r2" && !value.accountId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["accountId"],
+      message: "Cloudflare account ID is required."
+    });
+  }
+});
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color.");
 const designColorsSchema = z.object({

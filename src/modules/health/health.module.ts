@@ -33,9 +33,10 @@ async function runtimeReadiness(context: ModuleContext) {
 }
 
 async function runtimeDiagnostics(context: ModuleContext) {
+  const storageDriver = context.storageSettings?.getRuntimeConfig().driver ?? context.config.storage.driver;
   const [runtime, backup, inventory] = await Promise.all([
     runtimeReadiness(context),
-    readBackupHealth(context.config.backup),
+    readBackupHealth({ ...context.config.backup, storageDriver }),
     context.config.features.orders
       ? inventoryReservationDiagnostics(context)
       : Promise.resolve({ status: "skipped", blocking: false })
@@ -67,7 +68,7 @@ async function databaseReadinessCheck(context: ModuleContext): Promise<Readiness
 }
 
 async function storageReadinessCheck(context: ModuleContext): Promise<ReadinessCheck> {
-  const storage = context.config.storage;
+  const storage = context.storageSettings?.getRuntimeConfig() ?? context.config.storage;
 
   if (storage.driver === "disabled") {
     return context.config.isProduction
@@ -76,11 +77,14 @@ async function storageReadinessCheck(context: ModuleContext): Promise<ReadinessC
   }
 
   try {
-    await createStorageAdapter(storage).checkConnection();
+    await (context.storageSettings?.adapter ?? createStorageAdapter(storage)).checkConnection();
     return {
       status: "pass",
       blocking: true,
-      details: { driver: storage.driver }
+      details: {
+        driver: storage.driver,
+        provider: context.storageSettings ? (await context.storageSettings.getAdminStatus()).provider : storage.driver
+      }
     };
   } catch (error) {
     return {

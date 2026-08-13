@@ -73,7 +73,9 @@ Production media storage must be S3-compatible. The platform default is Cloudfla
 
 `MEDIA_MAX_PIXELS`, `MEDIA_MAX_WIDTH`, `MEDIA_MAX_HEIGHT`, and `MEDIA_MAX_FRAMES` bound decoded image work, including animated files. `MEDIA_PROCESSING_CONCURRENCY` limits simultaneous variant jobs per CMS process. Keep the defaults unless the host has been sized and monitored for larger workloads; raising upload bytes alone does not relax decoded-image protections.
 
-Codey supports one shared S3-compatible account and bucket for many copied customer runtimes. Keep the connection values managed by the platform, but assign each copied runtime a unique `STORAGE_KEY_PREFIX`. Media objects are written below that directory, for example `sites/project-123/media/...`.
+Site owners choose **Local storage**, **Amazon S3**, or **Cloudflare R2** under **Settings > Storage**. S3 and R2 access keys are encrypted database settings and remain write-only. A new connection is tested before activation. When the current media URLs use the stable `/uploads/...` proxy, existing objects are copied before a provider change becomes active. Custom S3-compatible endpoints remain an environment-only deployment option so browser-entered URLs cannot reach private server networks.
+
+The environment values below remain a bootstrap fallback for managed deployments and existing installations. The platform must still assign each copied runtime a unique `STORAGE_KEY_PREFIX`; this tenant boundary and the local filesystem path are deployment-owned and are not editable in the browser. Media objects are written below that directory, for example `sites/project-123/media/...`.
 
 Recommended Cloudflare R2 production example:
 
@@ -89,7 +91,7 @@ STORAGE_KEY_PREFIX=sites/{project-id}/media
 
 For AWS S3, use the AWS regional endpoint, the real region such as `eu-central-1`, and usually `STORAGE_S3_FORCE_PATH_STYLE=false`.
 
-Store `STORAGE_S3_ACCESS_KEY_ID` and `STORAGE_S3_SECRET_ACCESS_KEY` only in the real server/VPS environment or secret manager. Never commit those values.
+When environment fallback is used, store `STORAGE_S3_ACCESS_KEY_ID` and `STORAGE_S3_SECRET_ACCESS_KEY` only in the real server/VPS environment or secret manager. Never commit those values. Dashboard-managed credentials are encrypted with `CMS_CREDENTIAL_ENCRYPTION_KEY` and are never returned by an API.
 
 Before launch, verify upload, responsive variant delivery, signed download, and deletion against the configured S3-compatible bucket.
 
@@ -97,9 +99,9 @@ Before launch, verify upload, responsive variant delivery, signed download, and 
 
 Production runtimes need `CMS_CREDENTIAL_ENCRYPTION_KEY` to encrypt site-owned credentials and MFA secrets at rest. It also keys recovery codes and persisted login-throttle identifiers. This is stable deployment-owned infrastructure material, not a provider credential.
 
-Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Read APIs return public identifiers and write-only credential status; decrypted secrets never leave the server. Online payment credentials and connection tests require secret-management permission and recent authentication; manual-payment instructions remain available to users with ordinary payment-update permission.
+Site owners configure Stripe and PayPal under **Shop > Shop Configuration** and transactional email under **Settings > Email**. Transactional email supports Resend, Postmark, SMTP, and a generic HTTPS adapter. SMTP passwords and provider API keys are encrypted site settings and remain write-only. Read APIs return public identifiers and credential status; decrypted secrets never leave the server. Online payment credentials and connection tests require secret-management permission and recent authentication; manual-payment instructions remain available to users with ordinary payment-update permission.
 
-The email form supports Resend and Postmark presets plus a generic HTTP provider. Provider credentials are write-only, stored in an encrypted envelope, and can be tested from the dashboard. Owners can enable account recovery after a provider is configured without editing runtime environment files. Generic endpoints receive a JSON message containing `to`, `from`, `subject`, `text`, optional `html`, and `metadata`. Email endpoints must use HTTP or HTTPS, and production endpoints must use HTTPS.
+The email form supports Resend and Postmark presets, SMTP, and a generic HTTP provider. Provider credentials are write-only, stored in an encrypted envelope, and can be tested from the dashboard. Owners can enable account recovery after a provider is configured without editing runtime environment files. Generic endpoints receive a JSON message containing `to`, `from`, `subject`, `text`, optional `html`, and `metadata`. Email endpoints must use HTTP or HTTPS, and production endpoints must use HTTPS.
 
 These environment values are an optional initial fallback for transactional email:
 
@@ -173,7 +175,7 @@ Email verification and password reset tokens are created server-side, delivered 
 
 `runtime:start` deploys migrations before starting the API. `runtime:bootstrap` deploys migrations and runs the idempotent seed flow once after a new copied site is provisioned. By default, the seed creates only runtime roles, module settings, and an editable Home page; it does not publish sample posts, products, coupons, or shipping rules. Set `CODEY_SEED_DEMO_CONTENT=true` only for an intentional local demo or test fixture. The seed only creates an owner when explicit `CODEY_ADMIN_EMAIL` and `CODEY_ADMIN_PASSWORD` values are present; otherwise run `pnpm setup:admin` after bootstrap. If the configured email already belongs to a non-owner, the seed refuses to elevate it and `pnpm setup:admin` must be used to reset its password and sessions during promotion.
 
-Backup controls are `BACKUP_DIR`, `BACKUP_MIRROR_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_INTERVAL_HOURS`, `BACKUP_MAX_AGE_HOURS`, `BACKUP_REQUIRED`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_REQUIRE_ENCRYPTION`, `BACKUP_OFFSITE_REQUIRED`, `BACKUP_OFFSITE_PROTECTED`, `BACKUP_S3_MEDIA_PROTECTED`, and the optional alert webhook values. Production should require encryption, a recent successful backup, and a tested off-site mirror. See [backup-disaster-recovery.md](backup-disaster-recovery.md).
+Backup controls are `BACKUP_DIR`, `BACKUP_MIRROR_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_INTERVAL_HOURS`, `BACKUP_MAX_AGE_HOURS`, `BACKUP_REQUIRED`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_REQUIRE_ENCRYPTION`, `BACKUP_OFFSITE_REQUIRED`, `BACKUP_OFFSITE_PROTECTED`, `BACKUP_S3_MEDIA_PROTECTED`, and the optional alert webhook values. The backup job reads the active non-secret storage provider metadata from the database, so dashboard-managed S3 and R2 storage still require protected object versioning or replication. Production should require encryption, a recent successful backup, and a tested off-site mirror. See [backup-disaster-recovery.md](backup-disaster-recovery.md).
 
 Production restore requires `ALLOW_PRODUCTION_RESTORE=true`. Use the generated manifest so checksums, encryption, and matching media are verified.
 

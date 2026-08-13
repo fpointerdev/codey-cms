@@ -38,10 +38,14 @@ test("frontend builder templates match the registered editor elements", () => {
   const frontendIds = componentTemplates.map((template) => template.id).sort();
 
   assert.deepEqual(frontendIds, editorIds);
-  assert.equal(builderElementRegistry.length, 33);
-  assert.equal(editorIds.length, 32);
-  assert.equal(generatorIds.length, 31);
+  assert.equal(builderElementRegistry.length, 37);
+  assert.equal(editorIds.length, 36);
+  assert.equal(generatorIds.length, 35);
   assert.equal(generatorIds.includes("custom-code"), false);
+  assert.deepEqual(
+    ["heading", "rich-text", "image", "button"].filter((elementId) => !frontendIds.includes(elementId)),
+    []
+  );
 });
 
 test("custom code accepts bounded sandbox content and rejects unsafe libraries", () => {
@@ -173,6 +177,60 @@ test("expanded structured elements expose focused collection and quote fields", 
     structuredDensity: "comfortable",
     structuredSurface: "plain"
   }).attribution, "Sam, owner");
+});
+
+test("structured custom objects expose additional common text fields", () => {
+  const editor = structuredContentEditor({
+    key: "details",
+    type: "CUSTOM",
+    value: {
+      title: "Visit us",
+      bodySecondary: "A second paragraph.",
+      quote: "Made with care.",
+      email: "hello@example.com",
+      address: "10 High Street\nLondon",
+      theme: "light"
+    }
+  });
+
+  assert.ok(editor?.fields.some((field) => (
+    field.name === "structuredSecondaryBody"
+    && field.type === "richtext"
+    && field.value === "A second paragraph."
+  )));
+  assert.ok(editor?.fields.some((field) => field.name === "structuredQuote" && field.type === "textarea"));
+  assert.ok(editor?.fields.some((field) => field.name === "structuredEmail" && field.type === "email"));
+  assert.ok(editor?.fields.some((field) => field.name === "structuredAddress" && field.type === "textarea"));
+
+  const updated = editor?.valueFrom({
+    structuredTitle: "Come inside",
+    structuredSecondaryBody: "An updated second paragraph.",
+    structuredQuote: "Every detail matters.",
+    structuredEmail: "studio@example.com",
+    structuredAddress: "12 New Street\nLondon"
+  });
+
+  assert.deepEqual(updated, {
+    title: "Come inside",
+    bodySecondary: "An updated second paragraph.",
+    quote: "Every detail matters.",
+    email: "studio@example.com",
+    address: "12 New Street\nLondon",
+    theme: "light"
+  });
+
+  const aliasEditor = structuredContentEditor({
+    key: "secondary-copy",
+    type: "CUSTOM",
+    value: { secondaryBody: "Existing alias content." }
+  });
+
+  assert.equal(aliasEditor?.fields[0]?.value, "Existing alias content.");
+  assert.deepEqual(aliasEditor?.valueFrom({
+    structuredSecondaryBody: "Updated alias content."
+  }), {
+    secondaryBody: "Updated alias content."
+  });
 });
 
 test("collection editors preserve imported items beyond their visible row limit", () => {

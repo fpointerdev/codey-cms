@@ -8,6 +8,7 @@ Codey is the runtime base. The later selling/deployment platform can copy this r
 
 - API base path: `/api/v1`.
 - Public pages are served by the Node runtime from `apps/web/index.html` and CMS content.
+- A project may set `CUSTOM_STOREFRONT_DIR` to a compiled SPA or theme directory. CodeY serves that build at public routes while retaining `/dashboard`, `/cy-admin`, `/auth/*`, `/api/v1/*`, and `/uploads/*`. Build theme assets with `/__storefront/` as their base path so they cannot collide with CodeY runtime assets.
 - Admin login path: `/cy-admin`.
 - Admin dashboard path: `/dashboard`.
 - Auth uses JWT access tokens plus rotating refresh tokens.

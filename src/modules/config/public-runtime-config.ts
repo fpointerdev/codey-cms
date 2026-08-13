@@ -86,7 +86,8 @@ type SiteSettings = {
 export function buildPublicRuntimeConfig(
   config: AppConfig,
   siteSettings: SiteSettings,
-  localization: LocalizationSettings
+  localization: LocalizationSettings,
+  storage: AppConfig["storage"] = config.storage
 ): PublicRuntimeConfig {
   return publicRuntimeConfigSchema.parse({
     app: {
@@ -121,10 +122,10 @@ export function buildPublicRuntimeConfig(
       customCss: siteSettings.customCss
     },
     storage: {
-      ...(config.storage.publicBaseUrl
-        ? { publicBaseUrl: config.storage.publicBaseUrl }
+      ...(storage.publicBaseUrl
+        ? { publicBaseUrl: storage.publicBaseUrl }
         : {}),
-      imageVariantWidths: config.storage.imageVariantWidths
+      imageVariantWidths: storage.imageVariantWidths
     }
   });
 }

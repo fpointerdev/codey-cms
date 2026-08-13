@@ -22,6 +22,7 @@ export function testRuntimeEnvironment(overrides = {}) {
     APP_NAME: "CodeY CMS Test",
     APP_MODE: process.env.TEST_APP_MODE || "shop",
     APP_PUBLIC_URL: "http://127.0.0.1:4173",
+    CUSTOM_STOREFRONT_DIR: "",
     PORT: "4173",
     DATABASE_URL: requiredTestDatabaseUrl(),
     JWT_ACCESS_SECRET: "integration-access-secret-with-at-least-32-characters",
