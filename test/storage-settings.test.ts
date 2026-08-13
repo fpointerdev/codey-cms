@@ -5,7 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import { StorageSettingsService } from "../src/infrastructure/storage/storage-settings.service.js";
 
-function storageHarness(localDir: string, initialValue: unknown = null) {
+function storageHarness(
+  localDir: string,
+  initialValue: unknown = null,
+  runtimeOverrides: Record<string, unknown> = {}
+) {
   let storedValue = initialValue;
   const media: Array<{ storageKey: string | null; mimeType: string | null; variants: unknown }> = [];
   const prisma = {
@@ -48,7 +52,8 @@ function storageHarness(localDir: string, initialValue: unknown = null) {
         cms: 2 * 1024 * 1024 * 1024,
         shop: 5 * 1024 * 1024 * 1024,
         saas: 2 * 1024 * 1024 * 1024
-      }
+      },
+      ...runtimeOverrides
     }
   };
 
@@ -58,6 +63,27 @@ function storageHarness(localDir: string, initialValue: unknown = null) {
     storedValue: () => storedValue
   };
 }
+
+test("environment storage recognizes only bounded Cloudflare R2 hostnames", async () => {
+  const localDir = await mkdtemp(path.join(tmpdir(), "codey-storage-hostname-"));
+  const r2 = storageHarness(localDir, null, {
+    driver: "s3",
+    endpoint: "https://account.r2.cloudflarestorage.com",
+    bucket: "website-media",
+    accessKeyId: "test-access-key",
+    secretAccessKey: "test-secret-key"
+  });
+  const lookalike = storageHarness(localDir, null, {
+    driver: "s3",
+    endpoint: "https://account.r2.cloudflarestorage.com.attacker.example",
+    bucket: "website-media",
+    accessKeyId: "test-access-key",
+    secretAccessKey: "test-secret-key"
+  });
+
+  assert.equal((await r2.service.getAdminStatus()).provider, "r2");
+  assert.equal((await lookalike.service.getAdminStatus()).provider, "s3");
+});
 
 test("local storage can be selected without exposing a filesystem path", async () => {
   const localDir = await mkdtemp(path.join(tmpdir(), "codey-storage-local-"));

@@ -58,7 +58,19 @@ function clean(value?: string | null) {
 function providerFromRuntime(runtime: StorageRuntimeConfig): StorageProvider | "disabled" {
   if (runtime.driver === "local") return "local";
   if (runtime.driver !== "s3") return "disabled";
-  return runtime.endpoint?.includes(".r2.cloudflarestorage.com") ? "r2" : "s3";
+  return isR2Endpoint(runtime.endpoint) ? "r2" : "s3";
+}
+
+function isR2Endpoint(endpoint?: string) {
+  if (!endpoint) return false;
+
+  try {
+    const hostname = new URL(endpoint).hostname.toLowerCase();
+    const suffix = ".r2.cloudflarestorage.com";
+    return hostname.length > suffix.length && hostname.endsWith(suffix);
+  } catch {
+    return false;
+  }
 }
 
 function asStoredSettings(value: Prisma.JsonValue | null | undefined): StoredStorageSettings | null {
