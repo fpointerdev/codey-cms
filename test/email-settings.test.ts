@@ -4,9 +4,11 @@ import { AppError } from "../src/core/errors/app-error.js";
 import { EmailSettingsService } from "../src/infrastructure/email/email-settings.service.js";
 import {
   assertSafeEmailEndpoint,
+  assertSafeSmtpHost,
   createPinnedEmailLookup,
   isPublicEmailAddress,
-  parseEmailEndpoint
+  parseEmailEndpoint,
+  parseSmtpHost
 } from "../src/infrastructure/email/http-email.js";
 import { assertRecentSensitiveAuthentication } from "../src/modules/auth/auth.middleware.js";
 import { emailSettingsSchema } from "../src/modules/config/config.schemas.js";
@@ -125,6 +127,26 @@ test("production email endpoints resolve only to public addresses", async () => 
   assert.equal(endpoint.toString(), "https://mailer.example.com/send");
 });
 
+test("SMTP hosts are normalized and production rejects private destinations", async () => {
+  assert.equal(parseSmtpHost("SMTP.Example.com."), "smtp.example.com");
+  assert.equal(parseSmtpHost("2001:4860:4860::8888"), "2001:4860:4860::8888");
+  assert.throws(() => parseSmtpHost("smtp://example.com"), /valid hostname/i);
+
+  await assert.rejects(
+    assertSafeSmtpHost("localhost"),
+    /public address/i
+  );
+  await assert.rejects(
+    assertSafeSmtpHost("smtp.example.com", {
+      lookup: async () => [{ address: "192.168.1.20", family: 4 }]
+    }),
+    /public addresses/i
+  );
+  assert.equal(await assertSafeSmtpHost("smtp.example.com", {
+    lookup: async () => [{ address: "93.184.216.34", family: 4 }]
+  }), "smtp.example.com");
+});
+
 test("production email connections use only the addresses approved during validation", async () => {
   const lookup = createPinnedEmailLookup([
     { address: "93.184.216.34", family: 4 },
@@ -223,6 +245,77 @@ test("email settings encrypt credentials and never return the bearer token", asy
   assert.equal(typeof stored.encryptedCredentials, "string");
   assert.doesNotMatch(String(stored.encryptedCredentials), /secret-email-token/);
   assert.equal((await harness.service.resolve()).httpBearerToken, "secret-email-token");
+});
+
+test("SMTP settings encrypt passwords and expose only credential status", async () => {
+  const harness = emailSettingsHarness();
+  const status = await harness.service.update({
+    enabled: true,
+    provider: "smtp",
+    from: "notifications@example.com",
+    smtpHost: "SMTP.Example.com.",
+    smtpPort: 587,
+    smtpSecurity: "starttls",
+    smtpUsername: "mailer@example.com",
+    smtpPassword: "secret-smtp-password"
+  });
+  const stored = harness.storedValue() as Record<string, unknown>;
+  const resolved = await harness.service.resolve();
+
+  assert.equal(status.configured, true);
+  assert.equal(status.provider, "smtp");
+  assert.equal(status.smtpHost, "smtp.example.com");
+  assert.equal(status.smtpPasswordConfigured, true);
+  assert.doesNotMatch(JSON.stringify(status), /secret-smtp-password/);
+  assert.equal(typeof stored.encryptedCredentials, "string");
+  assert.doesNotMatch(String(stored.encryptedCredentials), /secret-smtp-password/);
+  assert.equal(resolved.smtpPassword, "secret-smtp-password");
+});
+
+test("changing the SMTP connection invalidates its bound password", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "smtp",
+    from: "notifications@example.com",
+    smtpHost: "smtp-a.example.com",
+    smtpPort: 587,
+    smtpSecurity: "starttls",
+    smtpUsername: "mailer@example.com",
+    smtpPassword: "smtp-a-password"
+  });
+  await harness.service.update({ enabled: false });
+
+  const changed = await harness.service.update({ smtpHost: "smtp-b.example.com" });
+  assert.equal(changed.enabled, false);
+  assert.equal(changed.smtpPasswordConfigured, false);
+  assert.equal((harness.storedValue() as Record<string, unknown>).credentialsRequired, true);
+  await assert.rejects(
+    harness.service.update({ enabled: true }),
+    /new SMTP password/i
+  );
+
+  const reconfigured = await harness.service.update({ enabled: true, smtpPassword: "smtp-b-password" });
+  assert.equal(reconfigured.configured, true);
+});
+
+test("SMTP connection changes require sensitive authorization", async () => {
+  const harness = emailSettingsHarness();
+  await harness.service.update({
+    enabled: true,
+    provider: "smtp",
+    from: "notifications@example.com",
+    smtpHost: "smtp.example.com",
+    smtpPort: 587,
+    smtpSecurity: "starttls",
+    smtpUsername: "mailer@example.com",
+    smtpPassword: "smtp-password"
+  });
+
+  assert.equal(await harness.service.requiresSensitiveAuthorization({ from: "accounts@example.com" }), false);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({ smtpPort: 465 }), true);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({ smtpPassword: "replacement" }), true);
+  assert.equal(await harness.service.requiresSensitiveAuthorization({ clearSmtpPassword: true }), true);
 });
 
 test("changing a generic endpoint invalidates its bound credential", async () => {

@@ -25,6 +25,10 @@ import {
   designSystemPresets,
   normalizeDesignSystem
 } from "./design-system.js";
+import {
+  customStorefrontEditorHref,
+  customStorefrontPageHref
+} from "./custom-storefront.js";
 
 function moduleAvailableInRuntime(config, moduleId) {
   if (moduleId === "localization") return config.features?.cms !== false;
@@ -153,7 +157,8 @@ function localizedPublicHref(path, locale) {
 }
 
 function publicHrefForPage(page) {
-  return localizedPublicHref(publicPageHref(page.slug), page.locale);
+  const fallback = localizedPublicHref(publicPageHref(page.slug), page.locale);
+  return customStorefrontPageHref(page, fallback);
 }
 
 function publicHrefForPost(post) {
@@ -426,7 +431,7 @@ export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
                               <a href="${escapeHtml(publicHrefForPage(page))}">View it</a>
                               ${canUpdatePages ? `
                                 <span class="table-separator">/</span>
-                                <a href="${escapeHtml(publicHrefForPage(page))}">Frontend editor</a>
+                                <a href="${escapeHtml(customStorefrontEditorHref(page, publicHrefForPage(page)))}">Frontend editor</a>
                                 <span class="table-separator">/</span>
                                 <a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link>Backend builder</a>
                               ` : ""}
@@ -2031,10 +2036,10 @@ function renderSettingsImagePicker({ name, label, url = "", alt = "", help = "",
 export function renderSettingsPage(config) {
   const settings = config.siteSettings || {};
   const email = config.email || {};
-  const storage = config.theme?.cms?.media || {};
-  const storageDriver = config.storage?.driver || storage.productionDriver || "s3";
-  const storageBucket = config.storage?.bucket || "Configured by deployment";
-  const storagePrefix = config.storage?.keyPrefix || "sites/{website-slug}";
+  const storage = config.storage || {};
+  const storageProvider = ["local", "s3", "r2"].includes(storage.provider)
+    ? storage.provider
+    : "local";
   const installedModules = new Map((config.installedModules || []).map((module) => [module.moduleId, module]));
   const localizationModule = installedModules.get("localization");
   const localizationEnabled = localizationModule?.status === "ENABLED";
@@ -2066,6 +2071,7 @@ export function renderSettingsPage(config) {
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-launch" checked />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-general" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-style" />
+          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-storage" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-email" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-multilingual" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-updates" />
@@ -2074,6 +2080,7 @@ export function renderSettingsPage(config) {
             <label for="settings-tab-launch">Launch</label>
             <label for="settings-tab-general">General settings</label>
             <label for="settings-tab-style">Style</label>
+            <label for="settings-tab-storage">Storage</label>
             <label for="settings-tab-email">Email</label>
             <label for="settings-tab-multilingual">Multilingual</label>
             <label for="settings-tab-updates">Updates</label>
@@ -2158,39 +2165,80 @@ export function renderSettingsPage(config) {
           </section>
           <section class="settings-tab-panel settings-tab-panel-style" data-settings-panel="style">
             ${renderDesignSystemEditor({ ...settings, title: settings.title || config.app?.name || "Code Epsylon" })}
-            <div class="admin-card settings-info-card">
-              <div>
-                <p class="section-label">Media Storage</p>
-                <h2>Website media folder</h2>
-                <p class="dashboard-copy compact">This website can share the main Codey S3 bucket with other websites, but every website must use its own folder prefix.</p>
-              </div>
-              <div class="translation-help">
-                <strong>How Codey keeps media separated</strong>
-                <span>Uploads go through Codey media APIs. Codey writes files only under this website prefix, so AI-generated themes and editors should never upload directly to random S3 paths.</span>
-              </div>
+          </section>
+          <section class="settings-tab-panel settings-tab-panel-storage" data-settings-panel="storage">
+            <form class="admin-card settings-form storage-settings-form" data-storage-settings-form>
               <div class="module-status-row">
                 <div>
-                  <strong>Storage driver</strong>
-                  <span>${escapeHtml(storageDriver)}</span>
+                  <strong>${storage.configured ? "Media storage configured" : "Media storage needs configuration"}</strong>
+                  <span>${storage.source === "dashboard" ? "Managed by this site" : "Loaded from the installation"}</span>
+                </div>
+                <span class="status-pill ${storage.configured ? "success" : ""}">${storage.configured ? "Configured" : "Not ready"}</span>
+              </div>
+              <label>
+                <span>Storage provider</span>
+                <select name="provider" data-storage-provider>
+                  <option value="local"${storageProvider === "local" ? " selected" : ""}>Local storage</option>
+                  <option value="s3"${storageProvider === "s3" ? " selected" : ""}>Amazon S3</option>
+                  <option value="r2"${storageProvider === "r2" ? " selected" : ""}>Cloudflare R2</option>
+                </select>
+              </label>
+              <div class="storage-provider-panel" data-storage-provider-panel="local" ${storageProvider === "local" ? "" : "hidden"}>
+                <div class="translation-help">
+                  <strong>Local storage</strong>
+                  <span>Media stays in the persistent storage volume created during installation.</span>
                 </div>
               </div>
-              <div class="module-status-row">
+              <div class="storage-provider-panel" data-storage-provider-panel="s3" ${storageProvider === "s3" ? "" : "hidden"}>
+                <div class="settings-two-column">
+                  <label>
+                    <span>Bucket name</span>
+                    <input name="s3Bucket" value="${escapeHtml(storageProvider === "s3" ? storage.bucket || "" : "")}" autocomplete="off" ${storageProvider === "s3" ? "" : "disabled"} />
+                  </label>
+                  <label>
+                    <span>AWS region</span>
+                    <input name="s3Region" value="${escapeHtml(storageProvider === "s3" ? storage.region || "us-east-1" : "us-east-1")}" placeholder="us-east-1" autocomplete="off" ${storageProvider === "s3" ? "" : "disabled"} />
+                  </label>
+                </div>
+                <label>
+                  <span>Access key ID</span>
+                  <input name="s3AccessKeyId" value="${escapeHtml(storageProvider === "s3" ? storage.accessKeyId || "" : "")}" autocomplete="username" ${storageProvider === "s3" ? "" : "disabled"} />
+                </label>
+                <label>
+                  <span>Secret access key</span>
+                  <input name="s3SecretAccessKey" type="password" value="" placeholder="${storageProvider === "s3" && storage.secretAccessKeyConfigured ? "Saved credential" : "Secret access key"}" autocomplete="new-password" ${storageProvider === "s3" ? "" : "disabled"} />
+                </label>
+              </div>
+              <div class="storage-provider-panel" data-storage-provider-panel="r2" ${storageProvider === "r2" ? "" : "hidden"}>
+                <div class="settings-two-column">
+                  <label>
+                    <span>Cloudflare account ID</span>
+                    <input name="r2AccountId" value="${escapeHtml(storageProvider === "r2" ? storage.accountId || "" : "")}" autocomplete="off" ${storageProvider === "r2" ? "" : "disabled"} />
+                  </label>
+                  <label>
+                    <span>Bucket name</span>
+                    <input name="r2Bucket" value="${escapeHtml(storageProvider === "r2" ? storage.bucket || "" : "")}" autocomplete="off" ${storageProvider === "r2" ? "" : "disabled"} />
+                  </label>
+                </div>
+                <label>
+                  <span>R2 access key ID</span>
+                  <input name="r2AccessKeyId" value="${escapeHtml(storageProvider === "r2" ? storage.accessKeyId || "" : "")}" autocomplete="username" ${storageProvider === "r2" ? "" : "disabled"} />
+                </label>
+                <label>
+                  <span>R2 secret access key</span>
+                  <input name="r2SecretAccessKey" type="password" value="" placeholder="${storageProvider === "r2" && storage.secretAccessKeyConfigured ? "Saved credential" : "Secret access key"}" autocomplete="new-password" ${storageProvider === "r2" ? "" : "disabled"} />
+                </label>
+              </div>
+              <div class="module-status-row storage-prefix-row">
                 <div>
-                  <strong>Shared bucket</strong>
-                  <span>${escapeHtml(storageBucket)}</span>
+                  <strong>Website media folder</strong>
+                  <span>${escapeHtml(storage.keyPrefix || "sites/default")}</span>
                 </div>
+                ${storage.lastTestedAt ? `<span class="status-pill success">Tested ${escapeHtml(formatDate(storage.lastTestedAt))}</span>` : ""}
               </div>
-              <div class="module-status-row">
-                <div>
-                  <strong>This website prefix</strong>
-                  <span>${escapeHtml(storagePrefix)}</span>
-                </div>
-              </div>
-              <div class="translation-help">
-                <strong>Deployment rule</strong>
-                <span>The platform may reuse the same S3 endpoint, bucket, and connection for many websites. It must generate a different <code>STORAGE_KEY_PREFIX</code> for every copied runtime, such as <code>sites/client-site</code>.</span>
-              </div>
-            </div>
+              ${renderFormMessage()}
+              <div class="form-actions"><button type="submit">Test and save storage</button></div>
+            </form>
           </section>
           <section class="settings-tab-panel settings-tab-panel-email" data-settings-panel="email">
             <form class="admin-card settings-form" data-email-settings-form>
@@ -2212,6 +2260,7 @@ export function renderSettingsPage(config) {
                   ${[
                     ["resend", "Resend"],
                     ["postmark", "Postmark"],
+                    ["smtp", "SMTP server"],
                     ["generic", "Generic HTTP endpoint"]
                   ].map(([value, label]) => `<option value="${value}"${(email.provider || "generic") === value ? " selected" : ""}>${label}</option>`).join("")}
                 </select>
@@ -2224,13 +2273,44 @@ export function renderSettingsPage(config) {
                 <span>HTTP endpoint (generic provider only)</span>
                 <input name="httpEndpoint" type="url" value="${escapeHtml(email.httpEndpoint || "")}" placeholder="https://email-provider.example/send" ${email.provider && email.provider !== "generic" ? "disabled" : ""} />
               </label>
-              <label>
+              <div class="settings-form" data-email-smtp-settings ${email.provider !== "smtp" ? "hidden" : ""}>
+                <label>
+                  <span>SMTP host</span>
+                  <input name="smtpHost" value="${escapeHtml(email.smtpHost || "")}" placeholder="smtp.example.com" autocomplete="off" ${email.provider !== "smtp" ? "disabled" : ""} />
+                </label>
+                <label>
+                  <span>SMTP port</span>
+                  <input name="smtpPort" type="number" min="1" max="65535" value="${escapeHtml(email.smtpPort || 587)}" ${email.provider !== "smtp" ? "disabled" : ""} />
+                </label>
+                <label>
+                  <span>Connection security</span>
+                  <select name="smtpSecurity" ${email.provider !== "smtp" ? "disabled" : ""}>
+                    <option value="starttls"${(email.smtpSecurity || "starttls") === "starttls" ? " selected" : ""}>STARTTLS (usually port 587)</option>
+                    <option value="tls"${email.smtpSecurity === "tls" ? " selected" : ""}>TLS from connection (usually port 465)</option>
+                  </select>
+                </label>
+                <label>
+                  <span>SMTP username</span>
+                  <input name="smtpUsername" value="${escapeHtml(email.smtpUsername || "")}" placeholder="username@example.com" autocomplete="username" ${email.provider !== "smtp" ? "disabled" : ""} />
+                </label>
+                <label>
+                  <span>SMTP password</span>
+                  <input name="smtpPassword" type="password" value="" placeholder="${email.smtpPasswordConfigured ? "Saved credential" : "Password or app password"}" autocomplete="new-password" ${email.provider !== "smtp" ? "disabled" : ""} />
+                </label>
+                ${email.smtpPasswordConfigured ? `
+                  <label class="inline-check">
+                    <input type="checkbox" name="clearSmtpPassword" ${email.provider !== "smtp" ? "disabled" : ""} />
+                    <span>Remove saved SMTP password</span>
+                  </label>
+                ` : ""}
+              </div>
+              <label data-email-api-key ${email.provider === "smtp" ? "hidden" : ""}>
                 <span>Provider API key</span>
-                <input name="bearerToken" type="password" value="" placeholder="${email.bearerTokenConfigured ? "Saved credential" : "Optional provider credential"}" autocomplete="new-password" />
+                <input name="bearerToken" type="password" value="" placeholder="${email.bearerTokenConfigured ? "Saved credential" : "Optional provider credential"}" autocomplete="new-password" ${email.provider === "smtp" ? "disabled" : ""} />
               </label>
               ${email.bearerTokenConfigured ? `
-                <label class="inline-check">
-                  <input type="checkbox" name="clearBearerToken" />
+                <label class="inline-check" data-email-api-key-clear ${email.provider === "smtp" ? "hidden" : ""}>
+                  <input type="checkbox" name="clearBearerToken" ${email.provider === "smtp" ? "disabled" : ""} />
                   <span>Remove saved bearer token</span>
                 </label>
               ` : ""}

@@ -9,7 +9,7 @@ The production Compose stack runs `scripts/backup-scheduler.mjs` immediately on 
 - A PostgreSQL custom-format dump of the schema selected by `DATABASE_URL`,
   verified with `pg_restore --list`.
 - A compressed media snapshot when `STORAGE_DRIVER=local`.
-- An S3 media-protection declaration when `STORAGE_DRIVER=s3`.
+- An S3-compatible media-protection declaration when the active dashboard or environment provider is S3 or Cloudflare R2.
 - A manifest containing checksums, byte sizes, timestamps, and encryption state.
 - `latest.json`, consumed by authenticated operational diagnostics.
 
@@ -33,7 +33,7 @@ BACKUP_ALERT_WEBHOOK_TOKEN=<optional bearer token>
 
 `BACKUP_MIRROR_DIR` must be mounted on independent storage or synchronized off-host. A second volume on the same server is not a complete disaster-recovery strategy and is reported as **Local only** under **Settings > Updates**. After the external copy and a restore test are working, set `BACKUP_OFFSITE_PROTECTED=true`. CodeY reports protection only when that confirmation is present and the latest backup was successfully mirrored.
 
-For S3-compatible media, enable and test bucket versioning, replication, or an independent object backup before setting `BACKUP_S3_MEDIA_PROTECTED=true`. The database dump does not copy S3 objects.
+For S3-compatible media, enable and test bucket versioning, replication, or an independent object backup before setting `BACKUP_S3_MEDIA_PROTECTED=true`. The database dump does not copy S3 or R2 objects. The backup manifest records the active dashboard provider and bucket without including credentials.
 
 Run one backup manually after provisioning:
 

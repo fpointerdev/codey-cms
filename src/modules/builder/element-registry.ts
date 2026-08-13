@@ -89,7 +89,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-08-11.1";
+export const builderRegistryVersion = "2026-08-12.1";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label
@@ -109,6 +109,38 @@ function registryPlaceholderImage(width: number, height: number, label: string) 
 
 export const builderElementRegistry = [
   {
+    id: "heading",
+    label: "Heading",
+    icon: "heading",
+    description: "A focused heading for introducing a section or separating content.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      text: "Section heading"
+    },
+    fieldSchema: [
+      { name: "text", label: "Heading", type: "text", required: true }
+    ]
+  },
+  {
+    id: "rich-text",
+    label: "Rich Text",
+    icon: "text",
+    description: "Formatted paragraphs, lists, links, and supporting page copy.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      body: "Write your content here."
+    },
+    fieldSchema: [
+      { name: "body", label: "Content", type: "richText", required: true }
+    ]
+  },
+  {
     id: "text-layout",
     label: "Text Layout",
     icon: "type",
@@ -124,6 +156,22 @@ export const builderElementRegistry = [
     fieldSchema: [
       { name: "heading", label: "Heading", type: "text", required: true },
       { name: "body", label: "Body", type: "richText", required: true }
+    ]
+  },
+  {
+    id: "image",
+    label: "Image",
+    icon: "image",
+    description: "A single accessible image with preview, replacement, and alt text controls.",
+    category: "media",
+    modules: ["cms"],
+    blockTypes: ["IMAGE"],
+    generatorSafe: true,
+    defaultValue: {
+      image: { url: registryPlaceholderImage(1200, 800, "Content image"), alt: "Content image" }
+    },
+    fieldSchema: [
+      { name: "image", label: "Image", type: "image", required: true }
     ]
   },
   {
@@ -214,6 +262,24 @@ export const builderElementRegistry = [
     fieldSchema: [
       { name: "items", label: "Images", type: "gallery", required: true },
       { name: "settings", label: "Gallery settings", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "button",
+    label: "Button",
+    icon: "mouse-pointer-click",
+    description: "A clear link or action button with editable label and destination.",
+    category: "content",
+    modules: ["cms"],
+    blockTypes: ["BUTTON"],
+    generatorSafe: true,
+    defaultValue: {
+      label: "Learn more",
+      url: "#"
+    },
+    fieldSchema: [
+      { name: "label", label: "Label", type: "text", required: true },
+      { name: "url", label: "Destination", type: "text", required: true }
     ]
   },
   {

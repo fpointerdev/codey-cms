@@ -21,7 +21,8 @@ export const config = {
   app: {
     name: env.APP_NAME,
     mode: env.APP_MODE,
-    publicUrl: env.APP_PUBLIC_URL
+    publicUrl: env.APP_PUBLIC_URL,
+    customStorefrontDir: env.CUSTOM_STOREFRONT_DIR
   },
   api: {
     prefix: env.API_PREFIX,

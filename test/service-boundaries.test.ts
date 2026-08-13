@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import express from "express";
 import type { PrismaClient } from "@prisma/client";
-import { normalizePublicMediaStorageKey } from "../src/core/public-media-router.js";
+import {
+  normalizePublicMediaStorageKey,
+  registerPublicMediaRoutes
+} from "../src/core/public-media-router.js";
 import { normalizeAllowedOrigin } from "../src/core/security-middleware.js";
 import { AuthEmailService } from "../src/modules/auth/auth-email.service.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
@@ -26,6 +33,55 @@ test("public media keys stay inside the configured prefix", () => {
   assert.equal(normalizePublicMediaStorageKey("sites/other/photo.png", "sites/default"), "");
   assert.equal(normalizePublicMediaStorageKey("sites/default/%2e%2e/secret", "sites/default"), "");
   assert.equal(normalizePublicMediaStorageKey("%E0%A4%A", "sites/default"), "");
+});
+
+test("dashboard cloud storage remains reachable after local bootstrap", async () => {
+  const localRoot = await mkdtemp(path.join(tmpdir(), "codey-local-bootstrap-"));
+  const app = express();
+  const runtimeStorage = {
+    driver: "s3",
+    keyPrefix: "sites/default",
+    imageVariantWidths: [320],
+    signedUrlTtlSeconds: 900
+  };
+  const adapter = {
+    enabled: true,
+    createDownloadUrl: async () => ({ url: "data:image/png,cloud-media" })
+  };
+  const config = {
+    storage: {
+      driver: "local",
+      keyPrefix: "sites/default",
+      imageVariantWidths: [320]
+    }
+  };
+
+  registerPublicMediaRoutes(app, config as never, localRoot, {
+    adapter: adapter as never,
+    getRuntimeConfig: () => runtimeStorage as never
+  });
+  const server = app.listen(0, "127.0.0.1");
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("listening", resolve);
+      server.once("error", reject);
+    });
+    const address = server.address();
+    assert(address && typeof address === "object");
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/uploads/sites/default/media/new.png`
+    );
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "cloud-media");
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+      });
+    }
+    await rm(localRoot, { recursive: true, force: true });
+  }
 });
 
 test("contact spam rules remain independent from CMS page persistence", () => {

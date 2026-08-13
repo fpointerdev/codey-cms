@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createBuilderClipboardPayload,
   duplicateBuilderBlockInSections,
   duplicateBuilderSectionInSections,
   instantiateBuilderSectionTemplate,
   moveBuilderBlockInSections,
   moveBuilderSectionInSections,
-  normalizeBuilderSectionsForSave
+  normalizeBuilderSectionsForSave,
+  pasteBuilderClipboardInSections
 } from "../apps/web/web/builder-operations.js";
 
 const sections = [
@@ -52,6 +54,36 @@ test("builder sections and elements move one position with boundary protection",
   const movedBlock = moveBuilderBlockInSections(sections, "block-a", "down");
   assert.deepEqual(movedBlock?.sections[0].blocks.map((block) => block.key), ["block-b", "block-a"]);
   assert.equal(moveBuilderBlockInSections(sections, "block-b", "down"), null);
+});
+
+test("builder clipboard pastes elements into the selected container with unique keys", () => {
+  const payload = createBuilderClipboardPayload(sections, { blockKey: "block-a" });
+  const result = pasteBuilderClipboardInSections(sections, payload, {
+    sectionId: "section-b",
+    blockKey: "block-c"
+  });
+
+  assert.ok(result);
+  assert.equal(result.activeSectionKey, "section-b");
+  assert.equal(result.blockKey, "block-a-copy");
+  assert.deepEqual(result.sections[1].blocks.map((block) => block.key), ["block-c", "block-a-copy"]);
+  assert.equal(result.sections[1].blocks[1].label, "Block A copy");
+  assert.deepEqual(sections[1].blocks.map((block) => block.key), ["block-c"]);
+});
+
+test("builder clipboard pastes containers after the selected container", () => {
+  const payload = createBuilderClipboardPayload(sections, { sectionId: "section-a" });
+  const result = pasteBuilderClipboardInSections(sections, payload, { sectionId: "section-b" });
+
+  assert.ok(result);
+  assert.deepEqual(result.sections.map((section) => section.key), ["section-a", "section-b", "section-a-copy"]);
+  assert.deepEqual(result.sections[2].blocks.map((block) => block.key), ["block-a-copy", "block-b-copy"]);
+  assert.equal(result.activeSectionKey, "section-a-copy");
+});
+
+test("builder clipboard rejects malformed payloads", () => {
+  assert.equal(pasteBuilderClipboardInSections(sections, { version: 2, kind: "block", item: {} }), null);
+  assert.equal(pasteBuilderClipboardInSections(sections, { version: 1, kind: "block", item: { key: "missing-type" } }), null);
 });
 
 test("reusable sections insert with unique keys and persistence-safe ordering", () => {

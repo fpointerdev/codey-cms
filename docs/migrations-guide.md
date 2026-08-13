@@ -42,6 +42,8 @@ pnpm run validate
 
 The development Compose stack uses `db push` and does not create Prisma migration history. Do not promote that database or run production `migrate deploy` against it. Use a fresh migrated database for staging/production, or create and verify a deliberate Prisma baseline after taking a backup.
 
+`pnpm db:push` runs a small compatibility preparation before Prisma synchronizes the development schema. This preserves refresh sessions created before token-family protection was introduced by backfilling each legacy token's `familyId` from its existing ID. It also creates the nullable, unique order lookup hash safely before Prisma evaluates legacy order data. Do not use `--force-reset` or `--accept-data-loss` to resolve these upgrades because those options can delete data or hide an unsafe schema transition.
+
 Production containers run `db:deploy` and expect either an empty database or an existing database already managed by these committed migrations.
 
 ## Current Migrations

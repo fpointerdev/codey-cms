@@ -992,6 +992,9 @@
 }
 
 .builder-canvas-tools {
+  position: sticky;
+  top: 112px;
+  z-index: 17;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1626,6 +1629,11 @@
   border-color: #b9cbd3;
 }
 
+.builder-block.active {
+  border-color: #8ac7b8;
+  box-shadow: 0 0 0 3px rgba(13, 124, 104, 0.1);
+}
+
 .builder-block header .secondary-button {
   min-height: 30px;
   border-radius: 999px;
@@ -1745,6 +1753,10 @@
 }
 
 @media (max-width: 900px) {
+  .builder-canvas-tools {
+    position: static;
+  }
+
   .builder-sticky-header,
   .builder-canvas-tools,
   .builder-live-preview-heading,

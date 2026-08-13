@@ -422,6 +422,17 @@ test("settings show whether backups are protected off-site", async () => {
       socialImageUrl: "/uploads/social.webp",
       socialImageAlt: "Example Studio preview"
     },
+    storage: {
+      source: "dashboard",
+      provider: "r2",
+      configured: true,
+      accountId: "0123456789abcdef0123456789abcdef",
+      bucket: "example-media",
+      accessKeyId: "r2-access-key",
+      secretAccessKeyConfigured: true,
+      keyPrefix: "sites/example",
+      lastTestedAt: "2026-08-12T07:00:00.000Z"
+    },
     operationsDiagnostics: {
       status: "attention",
       operations: {
@@ -444,6 +455,11 @@ test("settings show whether backups are protected off-site", async () => {
   assert.match(page.innerHTML, /src="\/uploads\/logo\.webp"/);
   assert.match(page.innerHTML, /data-clear-site-media/);
   assert.doesNotMatch(page.innerHTML, /name="(?:logo|favicon|socialImage)Url"/);
+  assert.match(page.innerHTML, /settings-tab-storage/);
+  assert.match(page.innerHTML, /Cloudflare R2/);
+  assert.match(page.innerHTML, /name="r2AccountId" value="0123456789abcdef0123456789abcdef"/);
+  assert.match(page.innerHTML, /name="r2SecretAccessKey"[^>]*value=""[^>]*placeholder="Saved credential"/);
+  assert.doesNotMatch(page.innerHTML, /name="(?:localDir|storageKeyPrefix)"/);
 });
 
 test("read-only dashboard views hide mutation controls", async () => {

@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { Application, NextFunction, Request, Response } from "express";
 import type { AppConfig } from "../config/index.js";
+import { AppError } from "./errors/app-error.js";
 import { createStorageAdapter } from "../infrastructure/storage/s3-storage.js";
 import type { StorageAdapter } from "../infrastructure/storage/storage.types.js";
 import {
@@ -189,7 +190,11 @@ function createLocalUploadVariantProxy(root: string, config: AppConfig) {
   };
 }
 
-function createLocalUploadProxy(root: string, config: AppConfig) {
+function createLocalUploadProxy(
+  root: string,
+  config: AppConfig,
+  options: { continueWhenMissing?: boolean } = {}
+) {
   return async function proxyLocalUpload(req: Request, res: Response, next: NextFunction) {
     try {
       const key = normalizePublicMediaStorageKey(req.params[0] || "", config.storage.keyPrefix);
@@ -217,7 +222,8 @@ function createLocalUploadProxy(root: string, config: AppConfig) {
         );
       } catch (error) {
         if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-          res.status(404).end();
+          if (options.continueWhenMissing) next();
+          else res.status(404).end();
           return;
         }
         throw error;
@@ -228,11 +234,100 @@ function createLocalUploadProxy(root: string, config: AppConfig) {
   };
 }
 
+function createManagedUploadProxy(
+  storage: StorageAdapter,
+  runtimeStorage: () => AppConfig["storage"]
+) {
+  return async function proxyManagedUpload(req: Request, res: Response, next: NextFunction) {
+    try {
+      const active = runtimeStorage();
+      const key = normalizePublicMediaStorageKey(req.params[0] || "", active.keyPrefix);
+      const responsePolicy = publicMediaResponsePolicy(key);
+      if (!key || !responsePolicy || active.driver === "disabled") {
+        res.status(404).end();
+        return;
+      }
+
+      const width = requestedImageWidth(req.query.w, active.imageVariantWidths);
+      if (acceptsWebp(req) && width && isOptimizableImageKey(key)) {
+        const variantKey = optimizedImageStorageKey(key, width);
+        try {
+          if (active.driver === "local") {
+            await sendBufferResponse(res, await storage.getObject(variantKey), "image/webp", true);
+          } else {
+            const variantResponse = await fetchStorageObject(storage, variantKey);
+            if (!variantResponse.ok) throw new AppError(404, "storage_object_not_found", "Variant not found.");
+            await sendStorageResponse(res, variantResponse, {
+              contentType: "image/webp",
+              varyAccept: true
+            });
+          }
+          return;
+        } catch (error) {
+          if (!(error instanceof AppError && error.statusCode === 404)) throw error;
+        }
+      }
+
+      if (active.driver === "local") {
+        await sendBufferResponse(
+          res,
+          await storage.getObject(key),
+          responsePolicy.mimeType,
+          false,
+          responsePolicy.disposition,
+          key
+        );
+        return;
+      }
+
+      const storageResponse = await fetchStorageObject(storage, key);
+      if (!storageResponse.ok) {
+        res.status(storageResponse.status === 404 ? 404 : 502).end();
+        return;
+      }
+      await sendStorageResponse(res, storageResponse, {
+        contentType: responsePolicy.mimeType,
+        disposition: responsePolicy.disposition,
+        filename: key
+      });
+    } catch (error) {
+      if (error instanceof AppError && error.statusCode === 404) {
+        res.status(404).end();
+        return;
+      }
+      next(error);
+    }
+  };
+}
+
 export function registerPublicMediaRoutes(
   app: Application,
   config: AppConfig,
-  localStorageRoot: string
+  localStorageRoot: string,
+  managed?: {
+    adapter: StorageAdapter;
+    getRuntimeConfig: () => AppConfig["storage"];
+  }
 ) {
+  if (managed) {
+    if (config.storage.driver === "local") {
+      const legacyLocalStorage = {
+        ...config,
+        storage: {
+          ...config.storage,
+          keyPrefix: ""
+        }
+      };
+      app.get("/uploads/*", createLocalUploadVariantProxy(localStorageRoot, legacyLocalStorage));
+      app.get(
+        "/uploads/*",
+        createLocalUploadProxy(localStorageRoot, legacyLocalStorage, { continueWhenMissing: true })
+      );
+    }
+    app.get("/uploads/*", createManagedUploadProxy(managed.adapter, managed.getRuntimeConfig));
+    return;
+  }
+
   if (config.storage.driver === "local") {
     app.get("/uploads/*", createLocalUploadVariantProxy(localStorageRoot, config));
     app.get("/uploads/*", createLocalUploadProxy(localStorageRoot, config));

@@ -18,6 +18,8 @@ import {
   optionalFormValue,
   productListModalFields,
   productListValueFromValues,
+  selectedFile,
+  uploadMediaFile,
   uploadedGalleryItemFiles,
   uploadedGalleryItems
 } from "./content-actions.js";
@@ -37,16 +39,19 @@ import {
 } from "./custom-css.js";
 import {
   copyBuilderSections,
+  createBuilderClipboardPayload,
   duplicateBuilderBlockInSections,
   duplicateBuilderSectionInSections,
   instantiateBuilderSectionTemplate,
   moveBuilderBlockInSections,
   moveBuilderSectionInSections,
   normalizeBuilderSectionsForSave,
+  pasteBuilderClipboardInSections,
   sectionToBuilderInput
 } from "./builder-operations.js";
 
 const builderHistoryLimit = 30;
+const builderClipboardStorageKey = "codey_builder_clipboard";
 
 const containerLayoutOptions = [
   { value: "one-column", label: "1 column", description: "Stacked content and long-form sections." },
@@ -1193,11 +1198,102 @@ export async function duplicateBuilderBlock(blockKey) {
   if (!result) return;
 
   try {
+    state.activeBuilderBlockKey = result.blockKey;
     await saveBuilderSections(result.sections, "Element duplicated.", result.activeSectionKey);
     focusBuilderControl("block", result.blockKey, "[data-builder-edit-block], [data-duplicate-builder-block]");
   } catch (error) {
     setStatus(error.message || "Unable to duplicate element.", true);
   }
+}
+
+function storedBuilderClipboard() {
+  if (state.builderClipboard) return state.builderClipboard;
+
+  try {
+    if (typeof sessionStorage === "undefined") return null;
+    const payload = JSON.parse(sessionStorage.getItem(builderClipboardStorageKey) || "null");
+    if (payload?.version === 1 && ["block", "section"].includes(payload.kind)) {
+      state.builderClipboard = payload;
+      return payload;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+export function copyBuilderSelection() {
+  if (!state.builderPage) return false;
+
+  const payload = createBuilderClipboardPayload(state.builderPage.sections || [], {
+    sectionId: state.activeBuilderSectionId || "",
+    blockKey: state.activeBuilderBlockKey || ""
+  });
+  if (!payload) return false;
+
+  state.builderClipboard = payload;
+  try {
+    sessionStorage.setItem(builderClipboardStorageKey, JSON.stringify(payload));
+  } catch {
+    // The in-memory clipboard remains available when session storage is blocked.
+  }
+
+  const label = payload.item.label || (payload.kind === "block" ? "Element" : "Container");
+  setStatus(`${label} copied. Select a destination and paste.`);
+  return true;
+}
+
+export async function pasteBuilderSelection() {
+  if (!state.builderPage) return false;
+
+  const payload = storedBuilderClipboard();
+  if (!payload) {
+    setStatus("Select and copy a container or element first.", true);
+    return false;
+  }
+
+  const result = pasteBuilderClipboardInSections(state.builderPage.sections || [], payload, {
+    sectionId: state.activeBuilderSectionId || "",
+    blockKey: state.activeBuilderBlockKey || ""
+  });
+  if (!result) {
+    setStatus("The copied item cannot be pasted here.", true);
+    return false;
+  }
+
+  try {
+    state.activeBuilderBlockKey = result.blockKey;
+    await saveBuilderSections(
+      result.sections,
+      payload.kind === "block" ? "Element pasted." : "Container pasted.",
+      result.activeSectionKey
+    );
+    focusBuilderControl(
+      payload.kind,
+      payload.kind === "block" ? result.blockKey : result.activeSectionKey,
+      payload.kind === "block" ? "[data-builder-edit-block], [data-duplicate-builder-block]" : "[data-edit-builder-section]"
+    );
+    return true;
+  } catch (error) {
+    setStatus(error.message || "Unable to paste the copied item.", true);
+    return false;
+  }
+}
+
+export function duplicateBuilderSelection() {
+  if (!state.builderPage) return false;
+
+  if (state.activeBuilderBlockKey) {
+    void duplicateBuilderBlock(state.activeBuilderBlockKey);
+    return true;
+  }
+  if (state.activeBuilderSectionId) {
+    void duplicateBuilderSection(state.activeBuilderSectionId);
+    return true;
+  }
+
+  return false;
 }
 
 export async function moveBuilderSection(sectionId, direction) {
@@ -1617,13 +1713,29 @@ export async function restorePageRevision(revisionId, version = "") {
   }
 }
 
-function postPayloadFromForm(form, existingPost = null) {
+async function postPayloadFromForm(form, existingPost = null) {
   syncRichEditors(form);
   const formData = new FormData(form);
   const title = String(formData.get("title") || "").trim();
   const tags = String(formData.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean);
   const slugInput = form.querySelector?.("[data-editable-slug]");
   const slugUnlocked = slugInput?.dataset?.slugUnlocked === "true";
+  const existingImage = typeof existingPost?.content?.image === "string"
+    ? { url: existingPost.content.image }
+    : existingPost?.content?.image || {};
+  const imageFile = selectedFile(formData.get("imageFile"));
+  const mediaAsset = imageFile
+    ? await uploadMediaFile(imageFile, String(formData.get("imageAlt") || title).trim())
+    : null;
+  const removeImage = formData.get("imageRemove") === "true";
+  const image = removeImage
+    ? null
+    : {
+        ...existingImage,
+        ...(mediaAsset?.id ? { mediaAssetId: mediaAsset.id } : {}),
+        url: mediaAsset?.url || existingImage.url || "",
+        alt: String(formData.get("imageAlt") || mediaAsset?.altText || existingImage.alt || title).trim()
+      };
 
   const payload = {
     title,
@@ -1631,7 +1743,9 @@ function postPayloadFromForm(form, existingPost = null) {
     content: {
       ...(existingPost?.content || {}),
       layout: normalizePageLayout(formData.get("layout")),
-      body: String(formData.get("body") || "").trim()
+      body: String(formData.get("body") || "").trim(),
+      category: String(formData.get("category") || "").trim(),
+      image
     },
     status: String(formData.get("status") || "DRAFT"),
     locale: activePostLocale(),
@@ -1649,12 +1763,12 @@ function postPayloadFromForm(form, existingPost = null) {
 export async function savePostEditor(form) {
   const existingPost = state.builderPost;
   const currentSlug = form.dataset.postSlug || existingPost?.slug;
-  const payload = postPayloadFromForm(form, existingPost);
 
   setFormDisabled(form, true);
   setFormMessage(form, currentSlug ? "Saving post..." : "Creating post...");
 
   try {
+    const payload = await postPayloadFromForm(form, existingPost);
     const locale = activePostLocale();
     const path = currentSlug ? `/cms/posts/${encodeURIComponent(currentSlug)}` : "/cms/posts";
     const { post } = await api(currentSlug ? withLocale(path, locale) : path, {

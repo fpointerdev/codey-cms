@@ -27,6 +27,7 @@ import {
   moduleLifecycleParams,
   moduleSettingsSchema,
   siteSettingsSchema,
+  storageSettingsSchema,
   updateSiteDomainSchema
 } from "./config.schemas.js";
 import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
@@ -61,6 +62,7 @@ import { AppError } from "../../core/errors/app-error.js";
 import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
 import { buildLaunchReadiness } from "./launch-readiness.js";
 import { buildPublicRuntimeConfig } from "./public-runtime-config.js";
+import { StorageSettingsService } from "../../infrastructure/storage/storage-settings.service.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -196,6 +198,10 @@ export const configModule: AppModule = {
       context.logger
     );
     const emailSettingsService = new EmailSettingsService(context.prisma, context.config);
+    const storageSettingsService = context.storageSettings ?? new StorageSettingsService(
+      context.prisma,
+      context.config
+    );
 
     router.get("/", asyncHandler(async (_req, res) => {
       const [siteSettings, localization] = await Promise.all([
@@ -206,14 +212,18 @@ export const configModule: AppModule = {
       return sendSuccess(res, buildPublicRuntimeConfig(
         context.config,
         siteSettings,
-        localization
+        localization,
+        storageSettingsService.getRuntimeConfig()
       ));
     }));
 
     router.get("/admin", requireAuth(context), asyncHandler(async (_req, res) => {
       let installedModules: unknown[] = [];
-      const siteSettings = await readSiteSettings(context);
-      const localization = await readLocalizationSettings(context.prisma);
+      const [siteSettings, localization, storage] = await Promise.all([
+        readSiteSettings(context),
+        readLocalizationSettings(context.prisma),
+        storageSettingsService.getAdminStatus()
+      ]);
 
       try {
         installedModules = await moduleAdminService.listPublicInstalledModules();
@@ -237,13 +247,7 @@ export const configModule: AppModule = {
           stylePresets: builderStylePresetRegistry,
           sectionPatterns: builderSectionPatternRegistry
         },
-        storage: {
-          driver: context.config.storage.driver,
-          bucket: context.config.storage.bucket,
-          keyPrefix: context.config.storage.keyPrefix,
-          publicBaseUrl: context.config.storage.publicBaseUrl,
-          imageVariantWidths: context.config.storage.imageVariantWidths
-        },
+        storage,
         installedModules,
         siteSettings,
         localization
@@ -278,10 +282,11 @@ export const configModule: AppModule = {
       "/launch-readiness",
       requirePermission(context, "read", "modules"),
       asyncHandler(async (_req, res) => {
+        const storageConfig = storageSettingsService.getRuntimeConfig();
         const [siteSettings, email, backup, owner] = await Promise.all([
           readSiteSettings(context),
           emailSettingsService.getAdminStatus(),
-          readBackupHealth(context.config.backup),
+          readBackupHealth({ ...context.config.backup, storageDriver: storageConfig.driver }),
           context.prisma.user.findFirst({
             where: {
               status: "ACTIVE",
@@ -300,7 +305,7 @@ export const configModule: AppModule = {
             searchIndexing: siteSettings.searchIndexing,
             sitemapEnabled: siteSettings.sitemapEnabled,
             metaDescription: siteSettings.metaDescription,
-            storageDriver: context.config.storage.driver,
+            storageDriver: storageConfig.driver,
             email,
             backup,
             ownerMfaEnabled: Boolean(owner?.mfaCredential?.enabledAt),
@@ -358,7 +363,12 @@ export const configModule: AppModule = {
             recoveryEnabled: email.recoveryEnabled,
             from: email.from,
             endpointHostname: emailEndpointHostname(email.httpEndpoint),
-            bearerTokenConfigured: email.bearerTokenConfigured
+            bearerTokenConfigured: email.bearerTokenConfigured,
+            smtpHost: email.smtpHost || undefined,
+            smtpPort: email.smtpPort || undefined,
+            smtpSecurity: email.smtpSecurity || undefined,
+            smtpUsernameConfigured: Boolean(email.smtpUsername),
+            smtpPasswordConfigured: email.smtpPasswordConfigured
           }
         });
 
@@ -421,6 +431,64 @@ export const configModule: AppModule = {
           });
           throw error;
         }
+      })
+    );
+
+    router.get(
+      "/storage",
+      requirePermission(context, "read", "modules"),
+      asyncHandler(async (_req, res) => {
+        return sendSuccess(res, { storage: await storageSettingsService.getAdminStatus() });
+      })
+    );
+
+    router.patch(
+      "/storage",
+      requirePermission(context, "manage", "modules"),
+      validateRequest({ body: storageSettingsSchema }),
+      asyncHandler(async (req, res) => {
+        const sensitiveChange = await storageSettingsService.requiresSensitiveAuthorization(req.body);
+        if (sensitiveChange && !hasPermission(req.user, "manage", "secrets")) {
+          await safeWriteAuditLog(context.prisma, {
+            actorUserId: req.user?.id,
+            action: "authorization.denied",
+            subject: "secrets",
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            requestId: req.requestId,
+            outcome: "DENIED",
+            severity: "HIGH",
+            metadata: {
+              requiredAction: "manage",
+              method: req.method,
+              path: req.originalUrl.split("?", 1)[0]
+            }
+          });
+          throw new AppError(403, "forbidden", "You do not have permission to change secrets.");
+        }
+        if (sensitiveChange) assertRecentSensitiveAuthentication(req.user);
+
+        const result = await storageSettingsService.update(req.body);
+        await writeAuditLog(context.prisma, {
+          actorUserId: req.user?.id,
+          action: "storage.settings.update",
+          subject: "site",
+          ipAddress: req.ip,
+          userAgent: req.header("user-agent"),
+          requestId: req.requestId,
+          metadata: {
+            provider: result.storage.provider,
+            bucket: result.storage.bucket || undefined,
+            endpointHostname: result.storage.endpoint
+              ? new URL(result.storage.endpoint).hostname
+              : undefined,
+            accessKeyIdConfigured: Boolean(result.storage.accessKeyId),
+            secretAccessKeyConfigured: result.storage.secretAccessKeyConfigured,
+            copiedObjects: result.migration.copiedObjects
+          }
+        });
+
+        return sendSuccess(res, result);
       })
     );
 

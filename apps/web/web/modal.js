@@ -2,6 +2,82 @@ import { escapeHtml } from "./core.js";
 import { renderRichText } from "./public-renderer.js";
 import { hydrateRichEditors, syncRichEditors } from "./rich-editor.js";
 
+const modalStack = [];
+const backgroundInertStates = new Map();
+let pageScrollLock = null;
+
+function syncModalBackground() {
+  const activeModal = modalStack.at(-1);
+
+  for (const element of document.body.children) {
+    if (!(element instanceof HTMLElement)) continue;
+    if (!backgroundInertStates.has(element)) {
+      backgroundInertStates.set(element, element.inert);
+    }
+    element.inert = Boolean(activeModal && element !== activeModal);
+  }
+}
+
+function freezePageForModal(modal) {
+  if (!pageScrollLock) {
+    const body = document.body;
+    const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    const computedPaddingRight = Number.parseFloat(getComputedStyle(body).paddingRight) || 0;
+
+    pageScrollLock = {
+      x: window.scrollX,
+      y: window.scrollY,
+      styles: {
+        left: body.style.left,
+        paddingRight: body.style.paddingRight,
+        position: body.style.position,
+        top: body.style.top,
+        width: body.style.width
+      }
+    };
+    document.documentElement.classList.add("modal-open");
+    body.classList.add("modal-open");
+    body.style.position = "fixed";
+    body.style.left = `${-pageScrollLock.x}px`;
+    body.style.top = `${-pageScrollLock.y}px`;
+    body.style.width = "100%";
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${computedPaddingRight + scrollbarWidth}px`;
+    }
+  }
+
+  modalStack.push(modal);
+  syncModalBackground();
+}
+
+function restorePageAfterModal(modal) {
+  const modalIndex = modalStack.lastIndexOf(modal);
+  if (modalIndex !== -1) modalStack.splice(modalIndex, 1);
+  if (modalStack.length > 0) {
+    syncModalBackground();
+    return;
+  }
+
+  for (const [element, wasInert] of backgroundInertStates) {
+    element.inert = wasInert;
+  }
+  backgroundInertStates.clear();
+
+  if (!pageScrollLock) return;
+  const { x, y, styles } = pageScrollLock;
+  pageScrollLock = null;
+  document.documentElement.classList.remove("modal-open");
+  document.body.classList.remove("modal-open");
+  Object.assign(document.body.style, styles);
+  window.scrollTo(x, y);
+}
+
+function modalFocusableElements(modal) {
+  return Array.from(modal.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter((element) => element instanceof HTMLElement && element.getClientRects().length > 0);
+}
+
 function richTextFieldHtml(name, label, value = "", options = {}) {
   const help = options.help ? `<small class="field-help">${escapeHtml(options.help)}</small>` : "";
   const surfaceHtml = value ? renderRichText(value) : renderRichText(options.emptyHtml || "");
@@ -757,7 +833,7 @@ function openModalForm(config) {
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.innerHTML = `
-      <section class="modal-panel${fields.length ? "" : " modal-panel-confirmation"}" role="dialog" aria-modal="true" aria-labelledby="modal-title"${config.description ? ' aria-describedby="modal-description"' : ""}>
+      <section class="modal-panel${fields.length ? "" : " modal-panel-confirmation"}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"${config.description ? ' aria-describedby="modal-description"' : ""}>
         <form data-modal-form novalidate>
           <div class="modal-header">
             <div>
@@ -776,9 +852,14 @@ function openModalForm(config) {
       </section>
     `;
 
+    let closed = false;
+
     function close(result) {
+      if (closed) return;
+      closed = true;
       document.removeEventListener("keydown", handleKeydown);
       modal.remove();
+      restorePageAfterModal(modal);
       if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
         previouslyFocused.focus();
       }
@@ -786,7 +867,31 @@ function openModalForm(config) {
     }
 
     function handleKeydown(event) {
-      if (event.key === "Escape") close(null);
+      if (modalStack.at(-1) !== modal) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(null);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusableElements = modalFocusableElements(modal);
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        modal.querySelector(".modal-panel")?.focus();
+        return;
+      }
+
+      const first = focusableElements[0];
+      const last = focusableElements.at(-1);
+      const focusOutsideModal = !modal.contains(document.activeElement);
+      if (event.shiftKey && (document.activeElement === first || focusOutsideModal)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || focusOutsideModal)) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
     modal.addEventListener("click", (event) => {
@@ -912,6 +1017,7 @@ function openModalForm(config) {
     });
 
     document.body.append(modal);
+    freezePageForModal(modal);
     document.addEventListener("keydown", handleKeydown);
     modal.querySelectorAll("[data-gallery-sort-list]").forEach(renumberGalleryItems);
     hydrateRichEditors(modal);

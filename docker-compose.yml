@@ -12,6 +12,7 @@ services:
       APP_NAME: ${APP_NAME:-CodeY CMS}
       APP_MODE: ${APP_MODE:-cms}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:4000}
+      CUSTOM_STOREFRONT_DIR: ${CUSTOM_STOREFRONT_DIR:-}
       API_PREFIX: ${API_PREFIX:-/api/v1}
       TRUST_PROXY: ${TRUST_PROXY:-false}
       DATABASE_URL: postgresql://${POSTGRES_USER:-codey}:${POSTGRES_PASSWORD:-codey}@postgres:5432/${POSTGRES_DB:-codey_site}?schema=public

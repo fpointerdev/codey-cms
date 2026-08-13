@@ -4,6 +4,7 @@ services:
   backend:
     environment:
       APP_PUBLIC_URL: https://${CODEY_DOMAIN:?Set CODEY_DOMAIN to the public hostname}
+      CUSTOM_STOREFRONT_DIR: ${CUSTOM_STOREFRONT_DIR:-}
       CORS_ORIGINS: https://${CODEY_DOMAIN:?Set CODEY_DOMAIN to the public hostname}
       CODEY_ALLOW_LOCAL_SETUP_HTTP: "false"
       TRUST_PROXY: "1"

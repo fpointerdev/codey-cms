@@ -2,6 +2,8 @@
 
 Stripe, PayPal, and manual payments are configured per site under **Shop > Shop Configuration**. Provider credentials belong to the site owner and are stored in `PaymentProviderConfig`, not in `.env`.
 
+Online gateways are explicit adapters because each provider has its own redirect, capture, refund, and signed-webhook contract. Add another gateway as a reusable payments-module adapter before exposing it in the dashboard; do not accept an arbitrary API URL as a payment provider. Use Manual for bank transfer, invoice, cash on delivery, or another staff-settled method.
+
 ## Secret Boundary
 
 - `CMS_CREDENTIAL_ENCRYPTION_KEY` is the only deployment-level payment-related secret. It encrypts dashboard-supplied credentials with AES-256-GCM.

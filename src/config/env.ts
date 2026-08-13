@@ -50,6 +50,7 @@ const envSchema = z.object({
   APP_NAME: z.string().default("CodeY CMS"),
   APP_MODE: z.enum(["presentation", "shop", "cms", "saas", "landing"]).default("cms"),
   APP_PUBLIC_URL: optionalHttpUrlFromEnv,
+  CUSTOM_STOREFRONT_DIR: optionalStringFromEnv,
   API_PREFIX: z.string().default("/api/v1"),
   PORT: z.coerce.number().int().positive().default(4000),
   TRUST_PROXY: trustProxyFromEnv,

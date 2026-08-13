@@ -16,6 +16,12 @@ import { designSystemCss } from "./design-system.js";
 import { hydrateRichEditors } from "./rich-editor.js";
 import { sanitizeStylesheet, styleAttribute } from "./custom-css.js";
 import { pageChangeToken } from "./editor-sync.js";
+import {
+  customStorefrontEditorHref,
+  customStorefrontPageHref,
+  customStorefrontPreviewHref,
+  usesCustomStorefront
+} from "./custom-storefront.js";
 
 function statusOptionHtml(value = "DRAFT") {
   return ["DRAFT", "PUBLISHED", "ARCHIVED"]
@@ -179,6 +185,10 @@ function localizedPublicPageHref(page) {
   return `/${encodeURIComponent(locale)}${href}`;
 }
 
+function storefrontPageHref(page) {
+  return customStorefrontPageHref(page, localizedPublicPageHref(page));
+}
+
 function templateCategory(templateId) {
   const categories = {
     slider: "media",
@@ -265,7 +275,7 @@ function renderBuilderStructure(page) {
                         const blockType = String(block.type || "element").replaceAll("_", " ").toLowerCase();
 
                         return `
-                          <li class="builder-structure-block" data-builder-structure-block-row="${escapeHtml(block.key)}">
+                          <li class="builder-structure-block${block.key === state.activeBuilderBlockKey ? " active" : ""}" data-builder-structure-block-row="${escapeHtml(block.key)}">
                             <div class="builder-structure-row">
                               <button type="button" class="builder-structure-target" data-builder-structure-block="${escapeHtml(block.key)}" data-builder-section-id="${escapeHtml(section.id)}">
                                 <span class="builder-structure-line" aria-hidden="true"></span>
@@ -568,7 +578,7 @@ function renderMoveToContainerControl(block, section, sections) {
 
 function renderBuilderBlock(block, index, blocks, section, sections) {
   return `
-    <article class="builder-block" data-builder-block-key="${escapeHtml(block.key)}" tabindex="-1">
+    <article class="builder-block${block.key === state.activeBuilderBlockKey ? " active" : ""}" data-builder-block-key="${escapeHtml(block.key)}" tabindex="0" aria-label="${escapeHtml(block.label || block.key)} element">
       <header>
         <div class="builder-block-heading"><strong>${escapeHtml(block.label || block.key)}</strong><span>${escapeHtml(block.type.replace("_", " "))}</span></div>
         <div class="builder-block-actions">
@@ -790,7 +800,7 @@ function renderBuilderStickyHeader(page, layout) {
       </div>
       <div class="builder-sticky-actions">
         <a class="secondary-button" href="/dashboard/pages" data-dashboard-link>Pages</a>
-        <a class="secondary-button" href="${escapeHtml(`${localizedPublicPageHref(page)}${localizedPublicPageHref(page).includes("?") ? "&" : "?"}edit=1`)}">Visual editor</a>
+        <a class="secondary-button" href="${escapeHtml(customStorefrontEditorHref(page, storefrontPageHref(page)))}">Visual editor</a>
         ${hasPermission("create", "cms") ? '<button type="button" class="secondary-button" data-save-builder-page-template>Save as template</button>' : ""}
         <button type="submit" form="builder-page-settings-form">Save</button>
         <details class="builder-sticky-details">
@@ -853,7 +863,7 @@ function renderBuilderLivePreview(page) {
           <h2>Public page viewport</h2>
           <p>Styles and media queries run inside the selected device width.</p>
         </div>
-        <a class="secondary-button" href="${escapeHtml(localizedPublicPageHref(page))}" target="_blank" rel="noreferrer">Open full page</a>
+        <a class="secondary-button" href="${escapeHtml(storefrontPageHref(page))}" target="_blank" rel="noreferrer">Open full page</a>
       </header>
       <div class="builder-preview-stage">
         <iframe title="Responsive preview of ${escapeHtml(page.title || "page")}" data-builder-preview-frame></iframe>
@@ -866,7 +876,11 @@ export function hydrateBuilderPreview(page) {
   const frame = elements.page?.querySelector?.("[data-builder-preview-frame]");
   if (!frame || frame.dataset.builderPreviewHydrated === "true") return;
 
-  frame.srcdoc = renderBuilderPreviewDocument(page);
+  if (usesCustomStorefront()) {
+    frame.src = customStorefrontPreviewHref(page, storefrontPageHref(page));
+  } else {
+    frame.srcdoc = renderBuilderPreviewDocument(page);
+  }
   frame.dataset.builderPreviewHydrated = "true";
 }
 
@@ -875,6 +889,25 @@ function renderBuilderCanvasTools() {
     ? state.builderPreviewDevice
     : "desktop";
   const canvasView = state.builderCanvasView === "preview" ? "preview" : "edit";
+
+  if (usesCustomStorefront()) {
+    return `
+      <section class="builder-canvas-tools builder-theme-preview-tools">
+        <div>
+          <p class="section-label">Live design</p>
+          <h2>Theme preview</h2>
+        </div>
+        <div class="builder-canvas-actions">
+          <span class="builder-device-switch" role="group" aria-label="Preview device">
+            ${["desktop", "tablet", "mobile"]
+              .map((device) => `<button type="button" class="secondary-button${previewDevice === device ? " active" : ""}" data-builder-preview-device="${device}" aria-pressed="${previewDevice === device}">${device[0].toUpperCase()}${device.slice(1)}</button>`)
+              .join("")}
+          </span>
+          <button type="button" class="secondary-button" data-load-page-revisions>Revisions</button>
+        </div>
+      </section>
+    `;
+  }
 
   return `
     <section class="builder-canvas-tools">
@@ -886,6 +919,10 @@ function renderBuilderCanvasTools() {
         <span class="builder-order-controls" role="group" aria-label="Canvas history">
           <button type="button" class="secondary-button builder-icon-button" data-builder-undo aria-label="Undo last canvas change" title="Undo"${state.builderUndoStack.length ? "" : " disabled"}>&#8630;</button>
           <button type="button" class="secondary-button builder-icon-button" data-builder-redo aria-label="Redo canvas change" title="Redo"${state.builderRedoStack.length ? "" : " disabled"}>&#8631;</button>
+        </span>
+        <span class="builder-order-controls" role="group" aria-label="Selected canvas item">
+          <button type="button" class="secondary-button" data-builder-copy title="Copy selected (Ctrl/Cmd+C)">Copy</button>
+          <button type="button" class="secondary-button" data-builder-paste title="Paste after selected (Ctrl/Cmd+V)">Paste</button>
         </span>
         <span class="builder-canvas-view-switch" role="group" aria-label="Canvas view">
           ${["edit", "preview"]
@@ -911,8 +948,9 @@ export function renderPageBuilderPage(page, message = "") {
     state.builderUndoStack = [];
     state.builderRedoStack = [];
     state.builderRailView = "library";
-    state.builderCanvasView = "edit";
+    state.builderCanvasView = usesCustomStorefront() ? "preview" : "edit";
     state.builderPreviewDevice = "desktop";
+    state.activeBuilderBlockKey = "";
   }
   if (enteringBuilderPage && window.matchMedia?.("(max-width: 1180px)").matches) {
     state.builderRailCollapsed = true;
@@ -928,6 +966,9 @@ export function renderPageBuilderPage(page, message = "") {
   state.builderPageChangeToken = pageChangeToken(page);
   if (!state.activeBuilderSectionId || !page.sections?.some((section) => section.id === state.activeBuilderSectionId)) {
     state.activeBuilderSectionId = page.sections?.[0]?.id || null;
+  }
+  if (!page.sections?.some((section) => section.blocks?.some((block) => block.key === state.activeBuilderBlockKey))) {
+    state.activeBuilderBlockKey = "";
   }
   const layout = normalizePageLayout(page.content?.layout);
 
@@ -963,6 +1004,7 @@ export function renderPostEditorPage(post = null, message = "") {
   const isNew = !post;
   const content = post?.content || {};
   const layout = normalizePageLayout(content.layout);
+  const image = typeof content.image === "string" ? { url: content.image } : content.image || {};
 
   renderAdminShell(
     { view: isNew ? "post-create" : "post-builder", slug: post?.slug || "" },
@@ -984,6 +1026,13 @@ export function renderPostEditorPage(post = null, message = "") {
               <label><span>Article layout</span><select name="layout">${layoutOptionHtml(layout)}</select></label>
             </div>
             <label><span>Excerpt</span><textarea name="excerpt" rows="3">${escapeHtml(post?.excerpt || "")}</textarea></label>
+            <div class="builder-form-grid post-editor-media-fields">
+              <label><span>Journal label</span><input name="category" value="${escapeHtml(content.category || "")}" placeholder="Inside the house" /></label>
+              <label><span>Article image description</span><input name="imageAlt" value="${escapeHtml(image.alt || "")}" placeholder="Describe the image" /></label>
+              <label><span>Article image</span><input accept="image/*" name="imageFile" type="file" /></label>
+              ${image.url ? `<label class="checkbox-field"><input name="imageRemove" type="checkbox" value="true" /><span>Remove current article image</span></label>` : ""}
+            </div>
+            ${image.url ? `<img alt="${escapeHtml(image.alt || post?.title || "Article image")}" class="post-editor-image-preview" src="${escapeHtml(image.url)}" />` : ""}
             <label><span>Tags</span><input name="tags" value="${escapeHtml((post?.tags || []).join(", "))}" placeholder="fabrication, updates" /></label>
           </section>
           <section class="builder-card">

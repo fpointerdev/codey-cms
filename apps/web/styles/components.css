@@ -400,6 +400,20 @@
   aspect-ratio: 1;
 }
 
+.post-editor-media-fields {
+  margin-top: 1rem;
+}
+
+.post-editor-image-preview {
+  display: block;
+  width: min(100%, 32rem);
+  max-height: 20rem;
+  margin: 1rem 0;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
 .settings-media-picker-footer {
   display: flex;
   align-items: flex-start;
@@ -476,6 +490,7 @@
 #settings-tab-general:checked ~ .settings-tabs label[for="settings-tab-general"],
 #settings-tab-launch:checked ~ .settings-tabs label[for="settings-tab-launch"],
 #settings-tab-style:checked ~ .settings-tabs label[for="settings-tab-style"],
+#settings-tab-storage:checked ~ .settings-tabs label[for="settings-tab-storage"],
 #settings-tab-email:checked ~ .settings-tabs label[for="settings-tab-email"],
 #settings-tab-multilingual:checked ~ .settings-tabs label[for="settings-tab-multilingual"],
 #settings-tab-updates:checked ~ .settings-tabs label[for="settings-tab-updates"],
@@ -487,12 +502,30 @@
 #settings-tab-general:checked ~ .settings-tab-panel-general,
 #settings-tab-launch:checked ~ .settings-tab-panel-launch,
 #settings-tab-style:checked ~ .settings-tab-panel-style,
+#settings-tab-storage:checked ~ .settings-tab-panel-storage,
 #settings-tab-email:checked ~ .settings-tab-panel-email,
 #settings-tab-multilingual:checked ~ .settings-tab-panel-multilingual,
 #settings-tab-updates:checked ~ .settings-tab-panel-updates,
 #settings-tab-security:checked ~ .settings-tab-panel-security {
   display: grid;
   gap: 18px;
+}
+
+.storage-settings-form {
+  max-width: 760px;
+}
+
+.storage-provider-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.storage-provider-panel[hidden] {
+  display: none;
+}
+
+.storage-prefix-row {
+  margin-top: 2px;
 }
 
 .runtime-update-card {
@@ -667,6 +700,18 @@
 }
 
 @media (max-width: 760px) {
+  .settings-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  .settings-tabs label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
   .settings-two-column,
   .locale-row,
   .settings-media-grid {

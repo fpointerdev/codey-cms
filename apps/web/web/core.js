@@ -35,6 +35,8 @@ export const state = {
   shopProduct: null,
   shopCategories: [],
   activeBuilderSectionId: null,
+  activeBuilderBlockKey: "",
+  builderClipboard: null,
   builderRailCollapsed: false,
   builderRailView: "library",
   builderHistorySlug: "",
@@ -133,6 +135,22 @@ function placeholderImage(width, height, label) {
 }
 
 export const componentTemplates = [
+  {
+    id: "heading",
+    label: "Heading",
+    description: "Add a clear heading without a prebuilt layout.",
+    blocks: [
+      { type: "TEXT", label: "Heading", value: "Section heading" }
+    ]
+  },
+  {
+    id: "rich-text",
+    label: "Rich Text",
+    description: "Add formatted paragraphs, lists, and links.",
+    blocks: [
+      { type: "RICH_TEXT", label: "Content", value: "<p>Write your content here.</p>" }
+    ]
+  },
   {
     id: "slider",
     label: "Slider",
@@ -255,6 +273,23 @@ export const componentTemplates = [
             }
           ],
           display: { alignment: "left", density: "comfortable", surface: "plain", presentation: "split" }
+        }
+      }
+    ]
+  },
+  {
+    id: "image",
+    label: "Image",
+    description: "Add one image with accessible alternative text.",
+    blocks: [
+      {
+        type: "IMAGE",
+        label: "Image",
+        value: {
+          url: placeholderImage(1200, 800, "Content image"),
+          alt: "Content image",
+          width: 1200,
+          height: 800
         }
       }
     ]
@@ -728,6 +763,14 @@ export const componentTemplates = [
     blocks: [
       { type: "TEXT", label: "Heading", value: "Section heading" },
       { type: "RICH_TEXT", label: "Body", value: "Write the content for this section." }
+    ]
+  },
+  {
+    id: "button",
+    label: "Button",
+    description: "Add a focused link or action without extra copy.",
+    blocks: [
+      { type: "BUTTON", label: "Button", value: { label: "Learn more", url: "#" } }
     ]
   },
   {
