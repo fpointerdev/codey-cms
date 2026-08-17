@@ -2312,9 +2312,12 @@ export function renderShopListingContent(
               <h1>${escapeHtml(title)}</h1>
               ${settings.catalogDescription ? `<p>${escapeHtml(settings.catalogDescription)}</p>` : ""}
             </div>`}
-        <button type="button" class="secondary-button commerce-cart-trigger" data-commerce-cart-toggle>
-          ${escapeHtml(translateString("shop.cart", "Cart"))} <span data-commerce-cart-count>0</span>
-        </button>
+        <div class="shop-public-actions">
+          <a class="secondary-button" href="${escapeHtml(localizedShopPath("/account/orders", options))}">Your orders</a>
+          <button type="button" class="secondary-button commerce-cart-trigger" data-commerce-cart-toggle>
+            ${escapeHtml(translateString("shop.cart", "Cart"))} <span data-commerce-cart-count>0</span>
+          </button>
+        </div>
       </header>
       ${categoriesHtml || attributesHtml ? `<aside class="shop-public-filters">${categoriesHtml}${attributesHtml}</aside>` : ""}
       <div class="shop-product-grid">
@@ -2323,6 +2326,47 @@ export function renderShopListingContent(
           : `<div class="fallback-content">${escapeHtml(translateString("shop.empty", "No products match this filter yet."))}</div>`}
       </div>
       ${renderShopPagination(pagination, route, options)}
+    </section>
+  `;
+}
+
+export function renderBuyerAccountContent(options = {}) {
+  return `
+    <section class="buyer-account" data-commerce-account-root>
+      <header class="buyer-account-header">
+        <div>
+          <p class="section-label">Your account</p>
+          <h1>Your orders</h1>
+          <p>Follow delivery progress, review previous purchases, or contact the shop about an order.</p>
+        </div>
+        <a class="secondary-button" href="${escapeHtml(localizedShopPath("/shop", options))}">Continue shopping</a>
+      </header>
+      <div class="buyer-account-layout">
+        <section class="buyer-order-history" aria-labelledby="buyer-order-history-title">
+          <div class="buyer-account-section-heading">
+            <div><p class="section-label">Order history</p><h2 id="buyer-order-history-title">Purchases on this device</h2></div>
+            <div class="buyer-account-actions">
+              <button type="button" class="secondary-button" data-buyer-refresh>Refresh</button>
+              <button type="button" class="secondary-button danger" data-buyer-forget>Forget this device</button>
+            </div>
+          </div>
+          <div class="buyer-order-list" data-buyer-orders aria-live="polite">
+            <p class="commerce-loading">Loading your orders...</p>
+          </div>
+        </section>
+        <aside class="buyer-order-claim">
+          <p class="section-label">Another device?</p>
+          <h2>Add an order</h2>
+          <p>Use the order number and private lookup token from your receipt email.</p>
+          <form data-buyer-claim-form>
+            <label><span>Order number</span><input name="orderNumber" autocomplete="off" required maxlength="80" /></label>
+            <label><span>Private lookup token</span><input name="lookupToken" type="password" autocomplete="one-time-code" required minlength="40" maxlength="100" /></label>
+            <p class="commerce-message" data-commerce-message aria-live="polite"></p>
+            <button type="submit">Add order</button>
+          </form>
+          <p class="buyer-account-privacy">Orders are added only after the private credential is verified. An email address alone cannot open order history.</p>
+        </aside>
+      </div>
     </section>
   `;
 }
@@ -2349,7 +2393,10 @@ export function renderProductDetailContent(product, options = {}) {
     <article class="shop-product-detail shop-detail-layout-${escapeHtml(settings.detailLayout)} shop-detail-style-${escapeHtml(settings.detailStyle)}" data-commerce-root>
       <div class="shop-detail-navigation">
         <a class="secondary-button" href="${escapeHtml(localizedShopPath("/shop", options))}">${escapeHtml(translateString("shop.backToShop", "Back to shop"))}</a>
-        <button type="button" class="secondary-button commerce-cart-trigger" data-commerce-cart-toggle>${escapeHtml(translateString("shop.cart", "Cart"))} <span data-commerce-cart-count>0</span></button>
+        <div class="shop-public-actions">
+          <a class="secondary-button" href="${escapeHtml(localizedShopPath("/account/orders", options))}">Your orders</a>
+          <button type="button" class="secondary-button commerce-cart-trigger" data-commerce-cart-toggle>${escapeHtml(translateString("shop.cart", "Cart"))} <span data-commerce-cart-count>0</span></button>
+        </div>
       </div>
       <section class="shop-product-detail-hero">
         <div class="shop-product-gallery">

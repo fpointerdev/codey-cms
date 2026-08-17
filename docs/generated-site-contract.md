@@ -211,6 +211,27 @@ validation, payment or manual-order confirmation, and the resulting admin order.
 Payment-owned `PAID` and `REFUNDED` states cannot be set through the generic
 merchant order-status endpoint.
 
+Buyer self-service is canonical at `/account/orders` and must remain a real CMS
+route in generated storefronts. It uses an HTTP-only buyer session scoped to
+orders proven by checkout or by the private lookup credential in the receipt;
+never list orders from an email address alone.
+
+- `GET /orders/buyer/orders` returns only orders claimed by the current buyer session.
+- `DELETE /orders/buyer/session` removes the current device-scoped session and clears its HTTP-only cookie.
+- `POST /orders/buyer/orders/claim` accepts `orderNumber` and `lookupToken`, then adds that order to the session.
+- `POST /orders/buyer/orders/:orderNumber/cancel` cancels an unpaid order only when no payment attempt exists; otherwise it creates an idempotent cancellation request for staff review.
+- `POST /orders/buyer/orders/:orderNumber/cases` creates a bounded complaint, return, or other support request.
+- `PATCH /orders/:id/tracking` and `PATCH /orders/cases/:caseId` are authenticated staff APIs. Tracking URLs must be HTTP(S).
+- `[data-commerce-account-root]`, `[data-buyer-orders]`, `[data-buyer-claim-form]`, and `[data-buyer-forget]` are the default storefront runtime hooks.
+
+Custom storefronts should link to `/account/orders` after checkout. The CMS owns
+that route even when `CUSTOM_STOREFRONT_DIR` is configured, so a generated theme
+cannot accidentally replace the private buyer portal with its generic SPA shell.
+Custom commerce clients may consume the same APIs elsewhere, but must preserve
+`credentials: "same-origin"` so the HTTP-only buyer session works. Do not copy
+lookup tokens into local storage, query strings, analytics, or generated page
+content.
+
 Site settings:
 
 - Store title, description, meta title, and meta description through settings APIs.

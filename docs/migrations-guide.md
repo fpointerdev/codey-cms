@@ -233,6 +233,30 @@ Rollback notes:
 - The added nullable audit columns and index are safe for the previous runtime to ignore.
 - Keep every audit key with retained backups so historical signatures remain verifiable.
 
+### `20260817000000_buyer_order_portal`
+
+Purpose:
+
+- Adds hashed, passwordless buyer sessions with explicit per-order membership.
+- Adds merchant-managed delivery tracking and buyer-visible support cases.
+- Supports secure order history, cancellation requests, complaints, returns, and delivery progress.
+
+Risk:
+
+- Low to medium. Existing orders remain unchanged and are not automatically attached to a browser session.
+- Existing buyers can add an older order using its order number and private lookup token.
+
+Forward deploy notes:
+
+- Deploy before enabling `/account/orders` or the buyer order APIs.
+- Keep the existing credential encryption key until queued receipt notifications have been delivered because their private lookup credentials are encrypted in the queue. Stored lookup-token hashes do not depend on that key.
+- Verify that checkout responses can set the `codey_buyer_session` HTTP-only cookie through the production proxy.
+
+Rollback notes:
+
+- The previous runtime ignores the new tables and enum types.
+- Preserve support cases and tracking records in an export or backup before removing the migration.
+
 ## Clean Clone Migration Smoke
 
 For a copied runtime smoke test:
