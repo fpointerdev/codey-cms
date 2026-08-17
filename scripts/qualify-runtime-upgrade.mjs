@@ -18,6 +18,7 @@ import {
   createSignedRelease,
   sha256File
 } from "./release-contract.mjs";
+import { preparePreviousRuntimeBuild } from "./runtime-build-compatibility.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
@@ -47,6 +48,10 @@ try {
   if (previousPackage.version !== previousRelease.version) {
     throw new Error("Previous release ZIP contains unexpected package metadata.");
   }
+  const buildCompatibility = await preparePreviousRuntimeBuild(
+    extractedPreviousRoot,
+    candidateManifest.payload.supplyChain?.apkPackages
+  );
 
   const successFixture = await createCandidateFixture("success", candidateArtifact, candidateManifest.payload);
   const rollbackFixture = await createCandidateFixture("rollback", candidateArtifact, candidateManifest.payload, true);
@@ -55,14 +60,16 @@ try {
     previousRoot: extractedPreviousRoot,
     previousVersion: previousRelease.version,
     fixture: successFixture,
-    expectedStatus: "succeeded"
+    expectedStatus: "succeeded",
+    buildEnvironment: buildCompatibility.environment
   });
   const rollback = await qualifyScenario({
     name: "rollback",
     previousRoot: extractedPreviousRoot,
     previousVersion: previousRelease.version,
     fixture: rollbackFixture,
-    expectedStatus: "rolled_back"
+    expectedStatus: "rolled_back",
+    buildEnvironment: buildCompatibility.environment
   });
 
   const report = {
@@ -72,6 +79,7 @@ try {
     previousVersion: previousRelease.version,
     candidateVersion: version,
     signature: "ephemeral-qualification-key",
+    previousRuntimeBuildCompatibility: buildCompatibility.report,
     successfulUpdate: success,
     forcedFailureRollback: rollback
   };
@@ -133,7 +141,14 @@ async function createCandidateFixture(name, sourceArtifact, payload, breakRuntim
   return { directory, artifactPath, manifestPath };
 }
 
-async function qualifyScenario({ name, previousRoot, previousVersion, fixture, expectedStatus }) {
+async function qualifyScenario({
+  name,
+  previousRoot,
+  previousVersion,
+  fixture,
+  expectedStatus,
+  buildEnvironment
+}) {
   const scenarioRoot = path.join(temporaryRoot, `scenario-${name}`);
   await cp(previousRoot, scenarioRoot, { recursive: true });
   const port = await availablePort();
@@ -144,6 +159,7 @@ async function qualifyScenario({ name, previousRoot, previousVersion, fixture, e
   const imageTag = `upgrade-from-${previousVersion}`;
   const environment = {
     ...process.env,
+    ...buildEnvironment,
     API_PORT: String(port),
     APP_PUBLIC_URL: baseUrl,
     CORS_ORIGINS: baseUrl,

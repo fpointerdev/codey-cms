@@ -5,6 +5,9 @@ x-codey-image: &codey-image
   build:
     context: .
     target: production
+    args:
+      CODEY_APK_OPENSSL_VERSION: ${CODEY_APK_OPENSSL_VERSION:-3.5.7-r0}
+      CODEY_APK_POSTGRESQL16_CLIENT_VERSION: ${CODEY_APK_POSTGRESQL16_CLIENT_VERSION:-16.15-r0}
 
 x-runtime-environment: &runtime-environment
   NODE_ENV: production
