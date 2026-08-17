@@ -8,7 +8,7 @@ ENV XDG_CACHE_HOME=/runtime/xdg-cache
 ENV XDG_CONFIG_HOME=/runtime/xdg-config
 ENV XDG_DATA_HOME=/runtime/xdg-data
 
-RUN apk add --no-cache openssl=3.5.7-r0 postgresql16-client=16.14-r0 \
+RUN apk add --no-cache openssl=3.5.7-r0 postgresql16-client=16.15-r0 \
   && corepack enable \
   && corepack prepare pnpm@11.3.0 --activate
 
