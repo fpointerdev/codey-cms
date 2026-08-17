@@ -5,6 +5,6 @@
   "caddy": "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
   "apkPackages": {
     "openssl": "3.5.7-r0",
-    "postgresql16-client": "16.14-r0"
+    "postgresql16-client": "16.15-r0"
   }
 }

@@ -485,6 +485,13 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.match(shopHtml, /shop-layout-editorial shop-card-technical/);
     assert.match(shopHtml, /data-server-rendered="true"/);
 
+    const buyerAccount = await request("/account/orders");
+    const buyerAccountHtml = await buyerAccount.text();
+    assert.equal(buyerAccount.status, 200);
+    assert.match(buyerAccountHtml, /data-commerce-account-root/);
+    assert.match(buyerAccountHtml, /Purchases on this device/);
+    assert.match(buyerAccountHtml, /name="robots" content="noindex, nofollow"/);
+
     const product = await request("/product/starter-product");
     const productHtml = await product.text();
     assert.equal(product.status, 200);
@@ -546,6 +553,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const orderId = String(completedCheckoutBody.data?.order.id);
     const orderNumber = String(completedCheckoutBody.data?.order.orderNumber);
     const lookupToken = String(completedCheckoutBody.data?.order.lookupToken);
+    const buyerCookie = cookieFrom(completedCheckout);
     commerceOrderId = orderId;
     assert.match(lookupToken, /^[A-Za-z0-9_-]{43}$/);
     const storedLookup = await prisma.order.findUniqueOrThrow({
@@ -554,6 +562,43 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     });
     assert.equal(storedLookup.lookupTokenHash, hashOrderLookupToken(lookupToken));
     assert.equal(JSON.stringify(storedLookup).includes(lookupToken), false);
+
+    const emptyBuyerOrders = await request("/api/v1/orders/buyer/orders");
+    const emptyBuyerOrdersBody = await responseJson(emptyBuyerOrders);
+    assert.equal(emptyBuyerOrders.status, 200);
+    assert.deepEqual(emptyBuyerOrdersBody.data?.orders, []);
+
+    const buyerOrders = await request("/api/v1/orders/buyer/orders", {
+      headers: { cookie: buyerCookie }
+    });
+    const buyerOrdersBody = await responseJson(buyerOrders);
+    assert.equal(buyerOrders.status, 200, JSON.stringify(buyerOrdersBody));
+    assert.equal(buyerOrdersBody.data?.orders.length, 1);
+    assert.equal(buyerOrdersBody.data?.orders[0].orderNumber, orderNumber);
+    assert.equal(JSON.stringify(buyerOrdersBody).includes("customerEmail"), false);
+
+    const isolatedSupportCase = await request(`/api/v1/orders/buyer/orders/${orderNumber}/cases`, {
+      method: "POST",
+      headers: { cookie: `codey_buyer_session=${"x".repeat(43)}` },
+      body: JSON.stringify({
+        type: "COMPLAINT",
+        subject: "Must stay private",
+        message: "A different browser must not access this order."
+      })
+    });
+    assert.equal(isolatedSupportCase.status, 404);
+
+    const createSupportCase = await request(`/api/v1/orders/buyer/orders/${orderNumber}/cases`, {
+      method: "POST",
+      headers: { cookie: buyerCookie },
+      body: JSON.stringify({
+        type: "COMPLAINT",
+        subject: "Delivery preference",
+        message: "Please leave the parcel with the building reception."
+      })
+    });
+    const createSupportCaseBody = await responseJson(createSupportCase);
+    assert.equal(createSupportCase.status, 201, JSON.stringify(createSupportCaseBody));
 
     const validLookup = await request("/api/v1/orders/lookup", {
       method: "POST",
@@ -600,6 +645,44 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(adminOrders.status, 200, JSON.stringify(adminOrdersBody));
     assert.equal(JSON.stringify(adminOrdersBody).includes("lookupTokenHash"), false);
     assert.equal(JSON.stringify(adminOrdersBody).includes("secretEnvelope"), false);
+    const adminOrder = adminOrdersBody.data?.orders.find((order: { id: string }) => order.id === orderId);
+    assert.equal(adminOrder.supportCases.length, 1);
+    assert.equal("id" in (createSupportCaseBody.data?.supportCase ?? {}), false);
+    const updateTracking = await request(`/api/v1/orders/${orderId}/tracking`, {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({
+        status: "IN_TRANSIT",
+        carrier: "CodeY Parcel",
+        trackingNumber: `TRACK-${runId}`,
+        trackingUrl: "https://tracking.example/order",
+        note: "Expected this week."
+      })
+    });
+    assert.equal(updateTracking.status, 200, JSON.stringify(await responseJson(updateTracking)));
+    const updateSupportCase = await request(
+      `/api/v1/orders/cases/${String(adminOrder.supportCases[0].id)}`,
+      {
+        method: "PATCH",
+        headers: authorization,
+        body: JSON.stringify({
+          status: "IN_REVIEW",
+          merchantResponse: "The delivery note was added for the fulfillment team."
+        })
+      }
+    );
+    assert.equal(updateSupportCase.status, 200, JSON.stringify(await responseJson(updateSupportCase)));
+
+    const trackedBuyerOrders = await request("/api/v1/orders/buyer/orders", {
+      headers: { cookie: buyerCookie }
+    });
+    const trackedBuyerOrdersBody = await responseJson(trackedBuyerOrders);
+    assert.equal(trackedBuyerOrdersBody.data?.orders[0].tracking.carrier, "CodeY Parcel");
+    assert.equal(trackedBuyerOrdersBody.data?.orders[0].supportCases.length, 1);
+    assert.equal(
+      trackedBuyerOrdersBody.data?.orders[0].supportCases[0].merchantResponse,
+      "The delivery note was added for the fulfillment team."
+    );
     const selectedVariant = starterProduct.variants[0];
     const inventoryBeforePayment = selectedVariant
       ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
@@ -702,6 +785,33 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
       : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
     assert.equal(inventoryAfterSuccess.stockQuantity, inventoryBeforePayment.stockQuantity - 1);
     assert.equal(inventoryAfterSuccess.reservedQuantity, 0);
+
+    const cancellationRequest = await request(`/api/v1/orders/buyer/orders/${orderNumber}/cancel`, {
+      method: "POST",
+      headers: { cookie: buyerCookie },
+      body: JSON.stringify({ reason: "The paid order is no longer needed." })
+    });
+    const cancellationRequestBody = await responseJson(cancellationRequest);
+    assert.equal(cancellationRequest.status, 200, JSON.stringify(cancellationRequestBody));
+    assert.equal(cancellationRequestBody.data?.cancellation.action, "requested");
+    assert.equal(
+      await prisma.orderSupportCase.count({ where: { orderId, type: "CANCELLATION" } }),
+      1
+    );
+
+    const forgetBuyer = await request("/api/v1/orders/buyer/session", {
+      method: "DELETE",
+      headers: { cookie: buyerCookie }
+    });
+    const forgetBuyerBody = await responseJson(forgetBuyer);
+    assert.equal(forgetBuyer.status, 200, JSON.stringify(forgetBuyerBody));
+    assert.equal(forgetBuyerBody.data?.session.forgotten, true);
+    assert.match(forgetBuyer.headers.get("set-cookie") ?? "", /codey_buyer_session=;/);
+    const forgottenBuyerOrders = await request("/api/v1/orders/buyer/orders", {
+      headers: { cookie: buyerCookie }
+    });
+    const forgottenBuyerOrdersBody = await responseJson(forgottenBuyerOrders);
+    assert.deepEqual(forgottenBuyerOrdersBody.data?.orders, []);
 
     const createRedirect = await request("/api/v1/cms/redirects", {
       method: "POST",

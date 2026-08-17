@@ -31,6 +31,8 @@ export async function exportCustomerData(context: ModuleContext, email: string) 
       orderBy: { createdAt: "asc" },
       include: {
         items: true,
+        tracking: true,
+        supportCases: { orderBy: { createdAt: "asc" } },
         notifications: { orderBy: { createdAt: "asc" } }
       }
     }),
@@ -58,7 +60,7 @@ export async function exportCustomerData(context: ModuleContext, email: string) 
     : [];
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     customerEmail: normalizedEmail,
     orders: orders.map(adminOrderDto),
@@ -102,6 +104,14 @@ export async function anonymizeCustomerData(
       select: { id: true }
     });
     const orderIds = orders.map((order) => order.id);
+    const buyerSessionLinks = orderIds.length
+      ? await tx.buyerSessionOrder.findMany({
+          where: { orderId: { in: orderIds } },
+          select: { sessionId: true },
+          distinct: ["sessionId"]
+        })
+      : [];
+    const buyerSessionIds = buyerSessionLinks.map((membership) => membership.sessionId);
     const carts = await tx.cart.findMany({
       where: { customerEmail: { equals: normalizedEmail, mode: "insensitive" } },
       select: { id: true }
@@ -147,6 +157,33 @@ export async function anonymizeCustomerData(
         where: { orderId: { in: orderIds } },
         data: { metadata: Prisma.DbNull }
       });
+      await tx.orderSupportCase.updateMany({
+        where: { orderId: { in: orderIds } },
+        data: {
+          subject: "Customer request content removed",
+          message: "Customer request content removed by data anonymization.",
+          merchantResponse: null
+        }
+      });
+      await tx.orderTracking.updateMany({
+        where: { orderId: { in: orderIds } },
+        data: {
+          trackingNumber: null,
+          trackingUrl: null,
+          note: null
+        }
+      });
+      await tx.buyerSessionOrder.deleteMany({
+        where: { orderId: { in: orderIds } }
+      });
+      if (buyerSessionIds.length) {
+        await tx.buyerSession.deleteMany({
+          where: {
+            id: { in: buyerSessionIds },
+            orders: { none: {} }
+          }
+        });
+      }
     }
     const anonymizedWebhooks = paymentReferences.length
       ? await tx.paymentWebhook.updateMany({

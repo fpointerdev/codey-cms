@@ -10,12 +10,25 @@ import {
 const {
   renderPageContent,
   renderFooter,
+  renderBuyerAccountContent,
   renderMenuItems,
   renderPostContent,
   renderProductDetailContent,
   renderShopListingContent,
   withPublicRenderContext
 } = await import("../apps/web/web/public-renderer.js");
+
+test("buyer account shell is useful before JavaScript loads", () => {
+  const html = renderBuyerAccountContent({ locale: "en", defaultLocale: "en" });
+
+  assert.match(html, /data-commerce-account-root/);
+  assert.match(html, /data-buyer-orders/);
+  assert.match(html, /data-buyer-claim-form/);
+  assert.match(html, /data-buyer-forget/);
+  assert.match(html, /Private lookup token/i);
+  assert.match(html, /href="\/shop"/);
+  assert.doesNotMatch(html, /customerEmail|lookupTokenHash/);
+});
 
 test("public shell includes an accessible mobile navigation control", async () => {
   const shell = await readFile(new URL("../apps/web/index.html", import.meta.url), "utf8");

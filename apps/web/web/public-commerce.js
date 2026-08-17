@@ -44,6 +44,17 @@ function money(cents = 0, currency = "EUR") {
   }
 }
 
+function localizedCommercePath(path) {
+  const normalizedPath = `/${String(path || "").replace(/^\/+/, "")}`;
+  const [pathLocale] = window.location.pathname.split("/").filter(Boolean);
+  const documentLocale = String(document.documentElement.lang || "").toLowerCase();
+  const activeLocale = String(pathLocale || "").toLowerCase();
+
+  return documentLocale && activeLocale === documentLocale
+    ? `/${encodeURIComponent(pathLocale)}${normalizedPath}`
+    : normalizedPath;
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`/api/v1${path}`, {
     credentials: "same-origin",
@@ -137,6 +148,173 @@ function openDialog() {
 
 function closeButton() {
   return '<button type="button" class="commerce-dialog-close" data-commerce-close aria-label="Close">&times;</button>';
+}
+
+function dateLabel(value) {
+  if (!value) return "";
+
+  try {
+    return new Intl.DateTimeFormat(document.documentElement.lang || "en", {
+      dateStyle: "medium"
+    }).format(new Date(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function statusLabel(value = "") {
+  return String(value).toLowerCase().replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function buyerOrderProgress(order) {
+  const steps = ["Placed", "Confirmed", "On the way", "Delivered"];
+  const trackingStatus = order.tracking?.status || "";
+  let activeIndex = 0;
+  if (["CONFIRMED", "PAID", "FULFILLED", "REFUNDED"].includes(order.status)) activeIndex = 1;
+  if (["SHIPPED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELAYED"].includes(trackingStatus)) activeIndex = 2;
+  if (trackingStatus === "DELIVERED" || order.status === "FULFILLED") activeIndex = 3;
+
+  return `
+    <ol class="buyer-order-progress" aria-label="Order progress">
+      ${steps.map((step, index) => `
+        <li class="${index < activeIndex ? "complete" : index === activeIndex ? "active" : ""}">
+          <span aria-hidden="true">${index < activeIndex ? "&#10003;" : index + 1}</span>
+          <strong>${escapeHtml(step)}</strong>
+        </li>
+      `).join("")}
+    </ol>
+  `;
+}
+
+function buyerTrackingMarkup(tracking) {
+  if (!tracking) {
+    return '<p class="buyer-order-note">Tracking will appear here when the order is prepared for delivery.</p>';
+  }
+
+  const details = [tracking.carrier, tracking.trackingNumber].filter(Boolean).join(" · ");
+  return `
+    <div class="buyer-order-tracking">
+      <div>
+        <span>Delivery</span>
+        <strong>${escapeHtml(statusLabel(tracking.status))}</strong>
+        ${details ? `<small>${escapeHtml(details)}</small>` : ""}
+      </div>
+      ${tracking.estimatedDeliveryAt ? `<div><span>Estimated</span><strong>${escapeHtml(dateLabel(tracking.estimatedDeliveryAt))}</strong></div>` : ""}
+      ${tracking.trackingUrl ? `<a class="secondary-button" href="${escapeHtml(tracking.trackingUrl)}" target="_blank" rel="noopener noreferrer">Track parcel</a>` : ""}
+      ${tracking.note ? `<p>${escapeHtml(tracking.note)}</p>` : ""}
+    </div>
+  `;
+}
+
+function buyerCasesMarkup(cases = []) {
+  if (!cases.length) return "";
+
+  return `
+    <div class="buyer-order-cases">
+      <h3>Requests</h3>
+      ${cases.map((supportCase) => `
+        <article>
+          <div><strong>${escapeHtml(supportCase.subject)}</strong><span class="status-pill">${escapeHtml(statusLabel(supportCase.status))}</span></div>
+          <p>${escapeHtml(supportCase.message)}</p>
+          ${supportCase.merchantResponse ? `<blockquote><strong>Shop response</strong><p>${escapeHtml(supportCase.merchantResponse)}</p></blockquote>` : ""}
+          <small>${escapeHtml(statusLabel(supportCase.type))} · ${escapeHtml(dateLabel(supportCase.createdAt))}</small>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function buyerOrderMarkup(order) {
+  const inactive = ["CANCELLED", "REFUNDED"].includes(order.status);
+  const openCancellation = order.supportCases?.some((supportCase) => (
+    supportCase.type === "CANCELLATION" && ["OPEN", "IN_REVIEW"].includes(supportCase.status)
+  ));
+  const visibleStatus = order.tracking?.status || order.status;
+  return `
+    <article class="buyer-order-card" data-buyer-order="${escapeHtml(order.orderNumber)}">
+      <header>
+        <div><p>Order ${escapeHtml(order.orderNumber)}</p><h3>${escapeHtml(dateLabel(order.createdAt))}</h3></div>
+        <span class="status-pill${inactive ? " error" : ""}">${escapeHtml(statusLabel(visibleStatus))}</span>
+      </header>
+      ${inactive ? `<p class="buyer-order-state-message">This order is ${escapeHtml(statusLabel(order.status).toLowerCase())}.</p>` : buyerOrderProgress(order)}
+      <div class="buyer-order-items">
+        ${(order.items || []).map((item) => `
+          <div>
+            <span><strong>${escapeHtml(item.productName)}</strong>${item.variantName ? `<small>${escapeHtml(item.variantName)}</small>` : ""}</span>
+            <span>${escapeHtml(item.quantity)} &times; ${escapeHtml(money(item.unitPriceCents, order.currency))}</span>
+          </div>
+        `).join("")}
+      </div>
+      ${buyerTrackingMarkup(order.tracking)}
+      <div class="buyer-order-total"><span>Total</span><strong>${escapeHtml(money(order.totalCents, order.currency))}</strong></div>
+      ${buyerCasesMarkup(order.supportCases)}
+      <footer>
+        ${inactive
+          ? ""
+          : openCancellation
+            ? '<span class="buyer-cancellation-pending">Cancellation pending</span>'
+            : `<button type="button" class="secondary-button danger" data-buyer-cancel="${escapeHtml(order.orderNumber)}">Cancel order</button>`}
+        <button type="button" class="secondary-button" data-buyer-support="${escapeHtml(order.orderNumber)}">Get help</button>
+      </footer>
+    </article>
+  `;
+}
+
+function renderBuyerOrders(orders = [], message = "") {
+  const root = document.querySelector("[data-buyer-orders]");
+  if (!root) return;
+
+  root.innerHTML = `
+    ${message ? `<p class="commerce-message">${escapeHtml(message)}</p>` : ""}
+    ${orders.length
+      ? orders.map(buyerOrderMarkup).join("")
+      : '<div class="buyer-order-empty"><h3>No orders on this device</h3><p>Complete checkout here or add an order using the private token from its receipt.</p></div>'}
+  `;
+}
+
+async function loadBuyerOrders(message = "") {
+  const result = await request("/orders/buyer/orders");
+  renderBuyerOrders(result.orders || [], message);
+  return result.orders || [];
+}
+
+function cancellationMarkup(orderNumber) {
+  return `
+    <form class="commerce-dialog-shell" data-buyer-cancel-form data-order-number="${escapeHtml(orderNumber)}">
+      <header class="commerce-dialog-header"><div><p>Order ${escapeHtml(orderNumber)}</p><h2>Cancel order</h2></div>${closeButton()}</header>
+      <p>Unpaid orders are cancelled immediately when it is safe. Paid, authorized, or dispatched orders are sent to the shop for review.</p>
+      <label><span>Reason</span><textarea name="reason" rows="5" minlength="3" maxlength="1000" required></textarea></label>
+      <p class="commerce-message" data-commerce-message aria-live="polite"></p>
+      <button type="submit" class="danger">Continue</button>
+    </form>
+  `;
+}
+
+function supportCaseMarkup(orderNumber) {
+  return `
+    <form class="commerce-dialog-shell" data-buyer-support-form data-order-number="${escapeHtml(orderNumber)}">
+      <header class="commerce-dialog-header"><div><p>Order ${escapeHtml(orderNumber)}</p><h2>Contact the shop</h2></div>${closeButton()}</header>
+      <label><span>Request type</span><select name="type"><option value="COMPLAINT">Problem or complaint</option><option value="RETURN">Return request</option><option value="OTHER">Other question</option></select></label>
+      <label><span>Subject</span><input name="subject" minlength="3" maxlength="160" required /></label>
+      <label><span>What happened?</span><textarea name="message" rows="7" minlength="10" maxlength="4000" required></textarea></label>
+      <p class="commerce-message" data-commerce-message aria-live="polite"></p>
+      <button type="submit">Send request</button>
+    </form>
+  `;
+}
+
+function forgetBuyerSessionMarkup() {
+  return `
+    <form class="commerce-dialog-shell" data-buyer-forget-form>
+      <header class="commerce-dialog-header"><div><p>Privacy</p><h2>Forget orders on this device?</h2></div>${closeButton()}</header>
+      <p>This removes this browser's access to its saved order history. You can add an order again later with the private lookup token from its receipt.</p>
+      <p class="commerce-message" data-commerce-message aria-live="polite"></p>
+      <div class="commerce-dialog-actions">
+        <button type="button" class="secondary-button" data-commerce-close>Keep orders</button>
+        <button type="submit" class="danger">Forget this device</button>
+      </div>
+    </form>
+  `;
 }
 
 function cartItemMarkup(item) {
@@ -337,7 +515,7 @@ function completionMarkup(order, title, message) {
       <header class="commerce-dialog-header"><div><p>Order ${escapeHtml(order.orderNumber)}</p><h2>${escapeHtml(title)}</h2></div>${closeButton()}</header>
       <p>${escapeHtml(message)}</p>
       <div class="commerce-order-total"><span>Total</span><strong>${escapeHtml(money(order.totalCents, order.currency))}</strong></div>
-      <a class="secondary-button" href="/shop">Continue shopping</a>
+      <div class="commerce-complete-actions"><a class="secondary-button" href="${escapeHtml(localizedCommercePath("/account/orders"))}">View your order</a><a class="secondary-button" href="${escapeHtml(localizedCommercePath("/shop"))}">Continue shopping</a></div>
     </div>
   `;
 }
@@ -350,7 +528,7 @@ function paymentRetryMarkup(order, provider, message) {
       <p class="commerce-message error">${escapeHtml(message)}</p>
       <div class="commerce-order-total"><span>Order total</span><strong>${escapeHtml(money(order.totalCents, order.currency))}</strong></div>
       <button type="button" data-commerce-retry-payment="${escapeHtml(provider)}">Try ${escapeHtml(labels[provider] || "payment")} again</button>
-      <a class="secondary-button" href="/shop">Continue shopping</a>
+      <a class="secondary-button" href="${escapeHtml(localizedCommercePath("/shop"))}">Continue shopping</a>
     </div>
   `;
 }
@@ -376,7 +554,7 @@ async function startPayment(order, provider) {
   const idempotencyKey = existing?.order?.id === order.id && existing?.provider === provider
     ? existing.idempotencyKey || crypto.randomUUID()
     : crypto.randomUUID();
-  const returnUrl = new URL("/shop", window.location.origin);
+  const returnUrl = new URL(localizedCommercePath("/shop"), window.location.origin);
   returnUrl.searchParams.set("codey_payment", provider.toLowerCase());
   returnUrl.searchParams.set("orderId", order.id);
   sessionStorage.setItem(orderStorageKey, JSON.stringify({ order, provider, idempotencyKey }));
@@ -388,7 +566,7 @@ async function startPayment(order, provider) {
       idempotencyKey,
       ...(provider === "PAYPAL" ? {
         returnUrl: returnUrl.toString(),
-        cancelUrl: new URL("/shop?codey_payment=cancelled", window.location.origin).toString()
+        cancelUrl: new URL(`${localizedCommercePath("/shop")}?codey_payment=cancelled`, window.location.origin).toString()
       } : {})
     })
   });
@@ -546,6 +724,27 @@ async function resumePaymentReturn() {
 
 function bindCommerceEvents() {
   document.addEventListener("click", (event) => {
+    if (event.target.closest("[data-buyer-refresh]")) {
+      void loadBuyerOrders().catch((error) => renderBuyerOrders([], error.message));
+      return;
+    }
+    if (event.target.closest("[data-buyer-forget]")) {
+      openDialog();
+      dialog.innerHTML = forgetBuyerSessionMarkup();
+      return;
+    }
+    const cancelButton = event.target.closest("[data-buyer-cancel]");
+    if (cancelButton) {
+      openDialog();
+      dialog.innerHTML = cancellationMarkup(cancelButton.dataset.buyerCancel);
+      return;
+    }
+    const supportButton = event.target.closest("[data-buyer-support]");
+    if (supportButton) {
+      openDialog();
+      dialog.innerHTML = supportCaseMarkup(supportButton.dataset.buyerSupport);
+      return;
+    }
     if (event.target.closest("[data-commerce-close]")) {
       dialog?.close();
       return;
@@ -616,6 +815,96 @@ function bindCommerceEvents() {
   });
 
   document.addEventListener("submit", (event) => {
+    const forgetForm = event.target.closest("[data-buyer-forget-form]");
+    if (forgetForm) {
+      event.preventDefault();
+      const submit = forgetForm.querySelector('button[type="submit"]');
+      const message = forgetForm.querySelector("[data-commerce-message]");
+      submit.disabled = true;
+      message.textContent = "Removing saved order access...";
+      void request("/orders/buyer/session", { method: "DELETE" }).then(() => {
+        dialog.close();
+        renderBuyerOrders([], "This device no longer has access to saved orders.");
+      }).catch((error) => {
+        message.textContent = error.message;
+        message.classList.add("error");
+        submit.disabled = false;
+      });
+      return;
+    }
+    const claimForm = event.target.closest("[data-buyer-claim-form]");
+    if (claimForm) {
+      event.preventDefault();
+      const data = new FormData(claimForm);
+      const message = claimForm.querySelector("[data-commerce-message]");
+      const submit = claimForm.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      message.textContent = "Verifying order...";
+      void request("/orders/buyer/orders/claim", {
+        method: "POST",
+        body: JSON.stringify({
+          orderNumber: String(data.get("orderNumber") || "").trim(),
+          lookupToken: String(data.get("lookupToken") || "").trim()
+        })
+      }).then((result) => {
+        renderBuyerOrders(result.orders || [], "Order added securely.");
+        claimForm.reset();
+        message.textContent = "Order added.";
+      }).catch((error) => {
+        message.textContent = error.message;
+        message.classList.add("error");
+      }).finally(() => { submit.disabled = false; });
+      return;
+    }
+    const cancellationForm = event.target.closest("[data-buyer-cancel-form]");
+    if (cancellationForm) {
+      event.preventDefault();
+      const data = new FormData(cancellationForm);
+      const message = cancellationForm.querySelector("[data-commerce-message]");
+      const submit = cancellationForm.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      message.textContent = "Checking the order...";
+      void request(`/orders/buyer/orders/${encodeURIComponent(cancellationForm.dataset.orderNumber)}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({ reason: String(data.get("reason") || "").trim() })
+      }).then((result) => {
+        const cancelled = result.cancellation?.action === "cancelled";
+        dialog.close();
+        return loadBuyerOrders(cancelled
+          ? "Order cancelled and reserved stock was restored."
+          : "Cancellation request sent to the shop.");
+      }).catch((error) => {
+        message.textContent = error.message;
+        message.classList.add("error");
+        submit.disabled = false;
+      });
+      return;
+    }
+    const supportForm = event.target.closest("[data-buyer-support-form]");
+    if (supportForm) {
+      event.preventDefault();
+      const data = new FormData(supportForm);
+      const message = supportForm.querySelector("[data-commerce-message]");
+      const submit = supportForm.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      message.textContent = "Sending request...";
+      void request(`/orders/buyer/orders/${encodeURIComponent(supportForm.dataset.orderNumber)}/cases`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: String(data.get("type") || "COMPLAINT"),
+          subject: String(data.get("subject") || "").trim(),
+          message: String(data.get("message") || "").trim()
+        })
+      }).then(() => {
+        dialog.close();
+        return loadBuyerOrders("Your request was sent to the shop.");
+      }).catch((error) => {
+        message.textContent = error.message;
+        message.classList.add("error");
+        submit.disabled = false;
+      });
+      return;
+    }
     const productForm = event.target.closest("[data-commerce-product-form]");
     if (productForm) {
       event.preventDefault();
@@ -663,7 +952,7 @@ function bindCommerceEvents() {
       message.textContent = "Confirming payment...";
       void stripe.confirmPayment({
         elements: stripeElements,
-        confirmParams: { return_url: new URL("/shop?codey_payment=stripe", window.location.origin).toString() },
+        confirmParams: { return_url: new URL(`${localizedCommercePath("/shop")}?codey_payment=stripe`, window.location.origin).toString() },
         redirect: "if_required"
       }).then((result) => {
         if (result.error) throw new Error(result.error.message || "Card payment failed.");
@@ -681,23 +970,33 @@ function bindCommerceEvents() {
 
 export async function enhanceCommerce() {
   bindCommerceEvents();
-  const [providerResult, shippingResult] = await Promise.allSettled([
-    request("/payments/providers/public"),
-    request("/orders/shipping/zones")
-  ]);
-  providers = providerResult.status === "fulfilled" ? providerResult.value.providers || [] : [];
-  shippingZones = shippingResult.status === "fulfilled" ? shippingResult.value.zones || [] : [];
+  if (document.querySelector("[data-commerce-root]")) {
+    const [providerResult, shippingResult] = await Promise.allSettled([
+      request("/payments/providers/public"),
+      request("/orders/shipping/zones")
+    ]);
+    providers = providerResult.status === "fulfilled" ? providerResult.value.providers || [] : [];
+    shippingZones = shippingResult.status === "fulfilled" ? shippingResult.value.zones || [] : [];
 
-  const token = cartToken();
-  if (token) {
-    try {
-      setCart((await request(`/orders/carts/${encodeURIComponent(token)}`)).cart);
-    } catch {
-      clearCart();
+    const token = cartToken();
+    if (token) {
+      try {
+        setCart((await request(`/orders/carts/${encodeURIComponent(token)}`)).cart);
+      } catch {
+        clearCart();
+      }
+    } else {
+      updateCartCounts();
     }
-  } else {
-    updateCartCounts();
+
+    await resumePaymentReturn();
   }
 
-  await resumePaymentReturn();
+  if (document.querySelector("[data-commerce-account-root]")) {
+    try {
+      await loadBuyerOrders();
+    } catch (error) {
+      renderBuyerOrders([], error instanceof Error ? error.message : "Your orders could not be loaded.");
+    }
+  }
 }

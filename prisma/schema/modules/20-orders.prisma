@@ -52,6 +52,29 @@ enum InventoryReservationStatus {
   EXPIRED
 }
 
+enum OrderTrackingStatus {
+  PREPARING
+  SHIPPED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  DELAYED
+}
+
+enum OrderSupportCaseType {
+  CANCELLATION
+  COMPLAINT
+  RETURN
+  OTHER
+}
+
+enum OrderSupportCaseStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
 model Order {
   id                 String        @id @default(cuid())
   orderNumber        String        @unique
@@ -77,12 +100,73 @@ model Order {
   items              OrderItem[]
   notifications      OrderNotification[]
   inventoryReservations InventoryReservation[]
+  buyerSessions      BuyerSessionOrder[]
+  tracking           OrderTracking?
+  supportCases       OrderSupportCase[]
 
   @@index([status, createdAt])
   @@index([checkoutStatus, createdAt])
   @@index([customerEmail])
   @@index([checkoutEmailHash, status, checkoutStatus])
   @@index([checkoutIpHash, status, checkoutStatus])
+}
+
+model BuyerSession {
+  id           String              @id @default(cuid())
+  tokenHash    String              @unique
+  expiresAt    DateTime
+  lastSeenAt   DateTime            @default(now())
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  orders       BuyerSessionOrder[]
+
+  @@index([expiresAt])
+}
+
+model BuyerSessionOrder {
+  sessionId String
+  orderId   String
+  claimedAt DateTime     @default(now())
+  session   BuyerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  order     Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, orderId])
+  @@index([orderId])
+}
+
+model OrderTracking {
+  id                  String              @id @default(cuid())
+  orderId             String              @unique
+  order               Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status              OrderTrackingStatus @default(PREPARING)
+  carrier             String?
+  trackingNumber      String?
+  trackingUrl         String?
+  estimatedDeliveryAt DateTime?
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
+  note                String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([status, updatedAt])
+}
+
+model OrderSupportCase {
+  id               String                 @id @default(cuid())
+  orderId          String
+  order            Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type             OrderSupportCaseType
+  status           OrderSupportCaseStatus @default(OPEN)
+  subject          String
+  message          String
+  merchantResponse String?
+  resolvedAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([orderId, status, createdAt])
+  @@index([status, createdAt])
 }
 
 model InventoryReservation {

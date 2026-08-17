@@ -60,6 +60,22 @@ test("customer anonymization clears linked commerce metadata and webhook payload
     orderItem: {
       updateMany: async (args: unknown) => { calls.orderItem = args; }
     },
+    orderSupportCase: {
+      updateMany: async (args: unknown) => { calls.supportCase = args; }
+    },
+    orderTracking: {
+      updateMany: async (args: unknown) => { calls.tracking = args; }
+    },
+    buyerSessionOrder: {
+      findMany: async (args: unknown) => {
+        calls.buyerSessionOrderFind = args;
+        return [{ sessionId: "session-1" }];
+      },
+      deleteMany: async (args: unknown) => { calls.buyerSessionOrder = args; }
+    },
+    buyerSession: {
+      deleteMany: async (args: unknown) => { calls.buyerSession = args; }
+    },
     auditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: "audit-1", ...data })
     }
@@ -78,6 +94,19 @@ test("customer anonymization clears linked commerce metadata and webhook payload
     where: { orderId: { in: ["order-1"] } },
     data: { metadata: Prisma.DbNull }
   });
+  assert.deepEqual(calls.buyerSessionOrder, {
+    where: { orderId: { in: ["order-1"] } }
+  });
+  assert.deepEqual(calls.buyerSession, {
+    where: {
+      id: { in: ["session-1"] },
+      orders: { none: {} }
+    }
+  });
+  assert.deepEqual(calls.tracking, {
+    where: { orderId: { in: ["order-1"] } },
+    data: { trackingNumber: null, trackingUrl: null, note: null }
+  });
   const webhookUpdate = calls.paymentWebhook as {
     where: unknown;
     data: { payload: { anonymized: boolean; anonymizedAt: string } };
@@ -88,4 +117,44 @@ test("customer anonymization clears linked commerce metadata and webhook payload
   assert.equal(webhookUpdate.data.payload.anonymized, true);
   assert.match(webhookUpdate.data.payload.anonymizedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(result.paymentWebhooksAnonymized, 2);
+});
+
+test("customer anonymization does not remove unrelated empty buyer sessions", async () => {
+  let buyerSessionDeleted = false;
+  const transaction = {
+    order: { findMany: async () => [] },
+    cart: {
+      findMany: async () => [],
+      deleteMany: async () => ({ count: 0 })
+    },
+    buyerSessionOrder: {
+      findMany: async () => {
+        throw new Error("No order membership lookup expected.");
+      }
+    },
+    buyerSession: {
+      deleteMany: async () => {
+        buyerSessionDeleted = true;
+      }
+    },
+    auditLog: {
+      create: async ({ data }: { data: Record<string, unknown> }) => ({ id: "audit-2", ...data })
+    }
+  };
+  const context = {
+    prisma: {
+      $transaction: async (operation: (tx: typeof transaction) => Promise<unknown>) => operation(transaction)
+    }
+  } as unknown as ModuleContext;
+
+  const result = await anonymizeCustomerData(context, "missing@example.com", {
+    actorUserId: "owner-1"
+  });
+
+  assert.deepEqual(result, {
+    ordersAnonymized: 0,
+    cartsDeleted: 0,
+    paymentWebhooksAnonymized: 0
+  });
+  assert.equal(buyerSessionDeleted, false);
 });

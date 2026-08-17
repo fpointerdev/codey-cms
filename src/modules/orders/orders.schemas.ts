@@ -8,6 +8,14 @@ export const orderNotificationIdParams = z.object({
   notificationId: z.string().cuid()
 });
 
+export const orderNumberParams = z.object({
+  orderNumber: z.string().trim().min(1).max(80)
+});
+
+export const supportCaseIdParams = z.object({
+  caseId: z.string().cuid()
+});
+
 export const cartTokenParams = z.object({
   token: z.string().trim().min(16).max(160)
 });
@@ -130,6 +138,40 @@ export const checkoutCartSchema = z.object({
 export const lookupOrderSchema = z.object({
   orderNumber: z.string().trim().min(1).max(80),
   lookupToken: z.string().trim().min(40).max(100)
+}).strict();
+
+export const cancelBuyerOrderSchema = z.object({
+  reason: z.string().trim().min(3).max(1000)
+}).strict();
+
+export const createBuyerSupportCaseSchema = z.object({
+  type: z.enum(["COMPLAINT", "RETURN", "OTHER"]),
+  subject: z.string().trim().min(3).max(160),
+  message: z.string().trim().min(10).max(4000)
+}).strict();
+
+const publicTrackingUrlSchema = z.string().trim().url().max(2048).refine((value) => {
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}, "Tracking link must use HTTP or HTTPS.");
+
+export const updateOrderTrackingSchema = z.object({
+  status: z.enum(["PREPARING", "SHIPPED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "DELAYED"]),
+  carrier: z.string().trim().max(120).nullable().optional(),
+  trackingNumber: z.string().trim().max(160).nullable().optional(),
+  trackingUrl: publicTrackingUrlSchema.nullable().optional(),
+  estimatedDeliveryAt: z.coerce.date().nullable().optional(),
+  shippedAt: z.coerce.date().nullable().optional(),
+  deliveredAt: z.coerce.date().nullable().optional(),
+  note: z.string().trim().max(1000).nullable().optional()
+}).strict();
+
+export const updateOrderSupportCaseSchema = z.object({
+  status: z.enum(["OPEN", "IN_REVIEW", "RESOLVED", "CLOSED"]),
+  merchantResponse: z.string().trim().max(4000).nullable().optional()
 }).strict();
 
 export const customerDataExportSchema = z.object({

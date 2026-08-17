@@ -430,12 +430,12 @@ export const themeManifest = {
     entry: "/",
     routePattern: "/:slug",
     homeRoute: "/",
-    shopRoutes: ["/shop", "/shop/category/:slug", "/shop/attribute/:name/:value", "/product/:slug"],
+    shopRoutes: ["/shop", "/shop/category/:slug", "/shop/attribute/:name/:value", "/product/:slug", "/account/orders"],
     pageQueryParamFallback: "slug",
     editableWhenAuthenticated: true,
     serverRenderedSeo: true,
     seoFields: ["title", "description", "canonical", "openGraph", "twitterCard"],
-    noindexRoutes: ["/cy-admin", "/dashboard/*", "/auth/*"]
+    noindexRoutes: ["/cy-admin", "/dashboard/*", "/auth/*", "/account/orders"]
   },
   cms: {
     publicRoutes: {

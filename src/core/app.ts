@@ -17,6 +17,7 @@ import { injectPublicShellContent, type PublicShellContent } from "./public-shel
 import { canonicalPublicRedirectTarget } from "./public-routing.js";
 import {
   customStorefrontAssetCacheControl,
+  isCmsOwnedPublicPath,
   resolveCustomStorefrontRoot
 } from "./custom-storefront.js";
 import { registerPublicMediaRoutes } from "./public-media-router.js";
@@ -78,6 +79,7 @@ type PublicMarkupRenderer = {
   renderMenuItems(items: unknown[], canEdit?: boolean): string;
   renderPageContent(page: unknown, options?: { canEdit?: boolean; commerceEnabled?: boolean; shopSettings?: unknown }): string;
   renderPostContent(post: unknown): string;
+  renderBuyerAccountContent(options?: Record<string, unknown>): string;
   renderProductDetailContent(product: unknown, options?: Record<string, unknown>): string;
   renderShopListingContent(input: unknown, options?: Record<string, unknown>): string;
 };
@@ -96,6 +98,7 @@ type PublicContentRoute =
   | { type: "page"; slug: string; locale: string }
   | { type: "post"; slug: string; locale: string }
   | { type: "product"; slug: string; locale: string }
+  | { type: "buyer-account"; locale: string }
   | {
       type: "shop";
       locale: string;
@@ -252,6 +255,9 @@ function publicContentRouteFromRequest(req: Request, localization?: RouteLocaliz
   if (isConfiguredRouteLocale(parts[0], localization)) locale = normalizeLocale(parts.shift());
   if (parts[0] === "posts" && parts[1]) return { type: "post", slug: parts.slice(1).join("/"), locale };
   if (parts[0] === "product" && parts[1]) return { type: "product", slug: parts.slice(1).join("/"), locale };
+  if (parts[0] === "account" && parts[1] === "orders" && parts.length === 2) {
+    return { type: "buyer-account", locale };
+  }
   const page = publicPageNumber(req.query.page);
   if (parts[0] === "shop" && parts.length === 1) return { type: "shop", locale, page };
   if (parts[0] === "shop" && parts[1] === "category" && parts[2]) {
@@ -350,7 +356,7 @@ async function readPublicModuleStates() {
 
 function publicModuleEnabled(
   states: Awaited<ReturnType<typeof readPublicModuleStates>>,
-  moduleId: "cms" | "products"
+  moduleId: "cms" | "products" | "orders"
 ) {
   return config.features[moduleId] && (!states.configured || states.enabled.has(moduleId));
 }
@@ -706,6 +712,17 @@ async function resolveSeoMeta(
       });
     }
 
+    if (route.type === "buyer-account") {
+      return renderer.createGenericSeoDocument({
+        ...seoDocumentContext(origin, site, localization, storagePublicBaseUrl),
+        title: `Your orders | ${site.title || config.app.name}`,
+        description: "View order history, delivery progress, cancellations, and support requests.",
+        htmlLang: htmlLangFromLocale(route.locale),
+        canonicalUrl: `${origin}${route.locale === localization.defaultLocale ? "" : `/${route.locale}`}/account/orders`,
+        noindex: true
+      });
+    }
+
     const page = route.type === "page"
       ? await prisma.cmsPage.findFirst({
           where: visiblePublishedWhere(route.slug, route.locale),
@@ -844,7 +861,11 @@ async function resolvePublicShellContent(
     };
     const renderPublic = <T>(render: () => T) =>
       renderer.withPublicRenderContext(publicRenderContext, render);
-    const requiredModule = route.type === "product" || route.type === "shop" ? "products" : "cms";
+    const requiredModule = route.type === "buyer-account"
+      ? "orders"
+      : route.type === "product" || route.type === "shop"
+        ? "products"
+        : "cms";
     if (!publicModuleEnabled(moduleStates, requiredModule)) {
       return { found: false, content: null, siteTitle, localization };
     }
@@ -852,6 +873,24 @@ async function resolvePublicShellContent(
       ? await readShopSettings(prisma)
       : null;
     const menu = await resolvePublicMenu(renderer, route.locale, publicRenderContext);
+
+    if (route.type === "buyer-account") {
+      return {
+        found: true,
+        siteTitle,
+        localization,
+        content: {
+          head,
+          brand: renderPublicBrand(site),
+          menu,
+          body: renderPublic(() => renderer.renderBuyerAccountContent({
+            locale: route.locale,
+            defaultLocale: localization.defaultLocale
+          })),
+          footer: renderPublic(() => renderer.renderFooter({ title: siteTitle }, false))
+        }
+      };
+    }
 
     if (route.type === "post") {
       const post = await prisma.cmsPost.findFirst({
@@ -1272,7 +1311,7 @@ export async function createApp() {
         return;
       }
 
-      if (renderCustomStorefront) {
+      if (renderCustomStorefront && !isCmsOwnedPublicPath(req.path)) {
         await renderCustomStorefront(req, res, next);
         return;
       }
