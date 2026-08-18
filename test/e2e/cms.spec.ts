@@ -62,6 +62,16 @@ test("admin settings and builder controls complete their primary workflows", asy
   await page.getByRole("button", { name: "Add container" }).click();
   const containerDialog = page.getByRole("dialog", { name: "Choose container layout" });
   await expect(containerDialog).toBeVisible();
+  await expect(containerDialog.getByRole("tab")).toHaveCount(3);
+  await expect(containerDialog.getByRole("tab", { name: "Layout" })).toHaveAttribute("aria-selected", "true");
+  await containerDialog.getByRole("tab", { name: "Style" }).click();
+  await containerDialog.getByText("Background", { exact: true }).click();
+  await expect(containerDialog.getByLabel("Upload or replace image")).toHaveAttribute("type", "file");
+  await containerDialog.getByText("Surface", { exact: true }).click();
+  await expect(containerDialog.locator('select[name="borderWidth"]')).toBeVisible();
+  await containerDialog.getByRole("tab", { name: "Advanced" }).click();
+  await expect(containerDialog.getByLabel("Show on mobile")).toBeChecked();
+  await containerDialog.getByRole("tab", { name: "Layout" }).click();
   await containerDialog.getByRole("button", { name: "Add container" }).click();
   await expect(page.locator("[data-builder-section]")).toHaveCount(sectionCount + 1);
   await page.getByRole("button", { name: "Undo last canvas change" }).click();

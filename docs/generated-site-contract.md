@@ -93,7 +93,7 @@ gate.
 
 ## Builder Registry Contract
 
-The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-11.1` contains 33 elements, 32 editor-available elements, 31 generator-safe elements, and 20 qualified section patterns.
+The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-18.1` contains 37 elements, 36 editor-available elements, 35 generator-safe elements, and 20 qualified section patterns.
 
 Generated pages must use registered elements instead of anonymous JSON structures:
 
@@ -122,7 +122,11 @@ Generated pages must use registered elements instead of anonymous JSON structure
 - Prefer `builder.sectionPatterns` for common full-section layouts before assembling low-level elements manually. The qualified set covers hero proof, split hero, service showcase, media, process tabs, portfolio, pricing trust, FAQ contact, story timeline, benefits checklist, resources, quote story, locations contact, comparison pricing, team values, shop confidence, capability bento, guided navigation, transformation stories, and product spotlights.
 - Use `builder.stylePresets` for visual direction before falling back to custom colors.
 - Use the section preset list for layout intent instead of inventing unrelated container settings.
-- Use safe section settings for layout and styling: `layout`, `container`, `spacing`, `align`, `verticalAlign`, `minHeight`, `style`, and `decoration`.
+- Use safe section settings for layout and styling: `layout`, `container`, `spacing`, `gap`, `align`, `verticalAlign`, `minHeight`, `responsive`, `style`, `background`, `visibility`, and `decoration`.
+- Put controlled surface values in `settings.style`: `preset`, `backgroundColor`, `textColor`, `accentColor`, `radius` (0-48), `borderWidth` (0-8), `borderColor`, and `shadow` (`none`, `soft`, `strong`, or `glow`).
+- Put section background media in `settings.background`: `mode` (`none`, `color`, or `image`), `color`, `imageAssetId`, `imageUrl`, intrinsic `width` and `height`, `style` (`cover`, `contain`, or `tile`), `position`, `overlayColor`, and `overlayOpacity` (0-0.9). Prefer CMS media URLs with intrinsic dimensions. The CMS may persist its own `s3://` media references when no public storage base URL is configured, but generators must use CMS media IDs or relative/HTTP(S) URLs. Do not emit data URLs, JavaScript URLs, credentials, protocol-relative URLs, or raw CSS background declarations.
+- Use `settings.visibility.desktop`, `settings.visibility.tablet`, and `settings.visibility.mobile` only for intentional device-specific content. All three default to visible. Never hide essential navigation, legal, checkout, or accessibility content by device.
+- Use `settings.responsive.tablet` and `settings.responsive.mobile` for bounded layout and spacing overrides. The CMS reads both legacy `style.backgroundColor` and `background.color` values and writes them in sync, so earlier generated sites remain editable.
 - Use `settings.customCss` only as an advanced escape hatch when the registered controls cannot express the design.
 - Never generate the `custom-code` element or include it in WebsiteSpec. It is an explicit trusted-editor escape hatch for HTML, CSS, inline JavaScript, and HTTPS script libraries. The public renderer runs it in an opaque-origin iframe without `allow-same-origin`; the visual and backend editors keep it paused.
 

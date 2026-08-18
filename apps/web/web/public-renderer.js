@@ -25,6 +25,7 @@ import {
   sanitizeStylesheet
 } from "./custom-css.js";
 import { applyDesignSystem } from "./design-system.js";
+import { sectionDesignSettings } from "./section-design.js";
 import {
   applySeoDocument,
   createPageSeoDocument,
@@ -1397,7 +1398,10 @@ function safeNumber(value, min, max) {
 function sectionClassName(section, includeBuilderClasses = true) {
   const settings = section.settings || {};
   const websiteSpec = isRecord(settings.websiteSpec) ? settings.websiteSpec : null;
-  const style = settings.style || {};
+  const design = sectionDesignSettings(settings);
+  const style = design.style;
+  const background = design.background;
+  const visibility = design.visibility;
   const decoration = settings.decoration || {};
   const responsive = settings.responsive || {};
   const tablet = responsive.tablet || {};
@@ -1427,6 +1431,11 @@ function sectionClassName(section, includeBuilderClasses = true) {
     websiteSpec?.type === "hero" && settings.mediaMode === "background"
       ? "section-media-background has-background-media"
       : "",
+    background.mode === "image" && background.imageUrl ? "has-section-background-image" : "",
+    style.borderWidth > 0 ? "section-has-border" : "",
+    visibility.desktop ? "" : "section-hidden-desktop",
+    visibility.tablet ? "" : "section-hidden-tablet",
+    visibility.mobile ? "" : "section-hidden-mobile",
     websiteSpec ? `layout-${layout}` : "",
     websiteSpec ? `container-${container}` : "",
     websiteSpec ? `spacing-${spacing}` : "",
@@ -1458,12 +1467,20 @@ function sectionClassName(section, includeBuilderClasses = true) {
 
 function sectionStyleAttribute(section) {
   const settings = section.settings || {};
-  const style = settings.style || {};
+  const design = sectionDesignSettings(settings);
+  const style = design.style;
+  const sectionBackground = design.background;
   const decoration = settings.decoration || {};
-  const background = safeHex(style.backgroundColor ?? style.background);
+  const background = sectionBackground.mode === "none"
+    ? ""
+    : safeHex(sectionBackground.color || style.backgroundColor || style.background);
   const configuredText = safeHex(style.textColor ?? style.foreground);
   const preferredText = safeHex(state.config?.siteSettings?.design?.colors?.primary);
-  const text = configuredText || (background ? readableForeground(background, preferredText) : "");
+  const overlayColor = safeHex(sectionBackground.overlayColor) || "#000000";
+  const imageText = sectionBackground.mode === "image" && sectionBackground.overlayOpacity >= 0.2
+    ? readableForeground(overlayColor, preferredText)
+    : "";
+  const text = configuredText || imageText || (background ? readableForeground(background, preferredText) : "");
   const declarations = [
     background ? `--section-bg:${background}` : "",
     text ? `--section-text:${text}` : "",
@@ -1471,7 +1488,13 @@ function sectionStyleAttribute(section) {
       ? `--section-accent:${safeHex(style.accentColor ?? style.accent)}`
       : "",
     safeNumber(style.radius, 0, 48) ? `--section-radius:${safeNumber(style.radius, 0, 48)}px` : "",
+    style.borderWidth > 0 ? `--section-border-width:${safeNumber(style.borderWidth, 0, 8)}px` : "",
+    style.borderWidth > 0 && safeHex(style.borderColor) ? `--section-border-color:${safeHex(style.borderColor)}` : "",
     safeNumber(settings.minHeight, 0, 1200) ? `--section-min-height:${safeNumber(settings.minHeight, 0, 1200)}px` : "",
+    sectionBackground.mode === "image" ? `--section-background-fit:${sectionBackground.style === "contain" ? "contain" : "cover"}` : "",
+    sectionBackground.mode === "image" ? `--section-background-position:${safeMediaPosition(sectionBackground.position)}` : "",
+    sectionBackground.mode === "image" ? `--section-background-overlay-color:${overlayColor}` : "",
+    sectionBackground.mode === "image" ? `--section-background-overlay-opacity:${safeRatio(sectionBackground.overlayOpacity) || "0"}` : "",
     settings.mediaMode === "background" && safeHex(settings.overlayColor)
       ? `--section-overlay-color:${safeHex(settings.overlayColor)}`
       : "",
@@ -1540,6 +1563,34 @@ function renderSectionDecoration(section) {
   if (type === "none") return "";
 
   return `<span class="section-decoration-layer" aria-hidden="true"></span>`;
+}
+
+function renderSectionDesignBackground(section, renderContext) {
+  const design = sectionDesignSettings(section.settings || {});
+  const background = design.background;
+  if (background.mode !== "image") return "";
+  if (isRecord(section.settings?.websiteSpec) && section.settings?.mediaMode === "background") return "";
+
+  const src = safeMediaSrc(background.imageUrl);
+  if (!src) return "";
+
+  const overlay = background.overlayOpacity > 0
+    ? '<span class="section-design-overlay" aria-hidden="true"></span>'
+    : "";
+  const width = positiveImageDimension(background.width);
+  const height = positiveImageDimension(background.height);
+  if (background.style === "tile" || !width || !height) {
+    const declaration = `background-image:url(${JSON.stringify(src)})`;
+    const className = background.style === "tile"
+      ? "section-design-background section-design-background-tile"
+      : "section-design-background section-design-background-css";
+    return `<span class="${className}" aria-hidden="true" style="${escapeHtml(declaration)}"></span>${overlay}`;
+  }
+
+  const highPriority = design.visibility.desktop && renderContext.highPriorityImageUsed !== true;
+  if (highPriority) renderContext.highPriorityImageUsed = true;
+
+  return `<span class="section-design-background" aria-hidden="true"><img src="${escapeHtml(src)}" alt="" width="${width}" height="${height}" loading="${highPriority ? "eager" : "lazy"}" decoding="async"${highPriority ? ' fetchpriority="high"' : ""} /></span>${overlay}`;
 }
 
 function sanitizeRichHtml(value) {
@@ -2059,6 +2110,7 @@ export function renderSections(page, options = {}) {
           (section, sectionIndex, sections) => `
             <section class="${escapeHtml(sectionClassName(section, canEdit))}${isRecord(section.settings?.websiteSpec) && sectionIndex === 0 ? " is-first" : ""}${canEdit && state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? " visual-selected" : ""}" data-section-id="${escapeHtml(section.id)}" data-section-key="${escapeHtml(section.key || section.id)}"${canEdit ? ` data-visual-section tabindex="0" role="group" aria-label="${escapeHtml(section.label || section.key || `Section ${sectionIndex + 1}`)}" aria-selected="${state.visualEditorSelection?.type === "section" && state.visualEditorSelection.key === (section.key || section.id) ? "true" : "false"}"` : ""}${advancedIdAttribute(section.settings || {})}${sectionStyleAttribute(section)}>
               ${canEdit ? renderVisualSectionControls(section, sectionIndex, sections) : ""}
+              ${renderSectionDesignBackground(section, renderContext)}
               ${isRecord(section.settings?.websiteSpec) && !canEdit
                 ? renderWebsiteSpecBackgroundMedia(section, renderContext)
                 : ""}

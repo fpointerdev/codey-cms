@@ -860,6 +860,138 @@ test("section backgrounds receive the same accessible foreground used by generat
   );
 });
 
+test("premium section backgrounds, borders, and device visibility server-render safely", () => {
+  const html = renderPageContent({
+    title: "Designed page",
+    content: { hideTitle: true },
+    sections: [{
+      id: "premium-section",
+      key: "premium-section",
+      settings: {
+        style: {
+          backgroundColor: "#172145",
+          accentColor: "#ffcc66",
+          radius: 24,
+          borderWidth: 2,
+          borderColor: "#ffffff",
+          shadow: "soft"
+        },
+        background: {
+          mode: "image",
+          imageAssetId: "asset-1",
+          imageUrl: "/uploads/premium-background.webp",
+          width: 1800,
+          height: 1200,
+          style: "cover",
+          position: "top-right",
+          overlayColor: "#101820",
+          overlayOpacity: 0.45
+        },
+        visibility: { desktop: true, tablet: true, mobile: false }
+      },
+      blocks: [{
+        key: "copy",
+        type: "RICH_TEXT",
+        value: "<p>Readable premium content.</p>",
+        settings: {},
+        editable: true
+      }]
+    }]
+  });
+
+  assert.match(html, /has-section-background-image/);
+  assert.match(html, /section-has-border/);
+  assert.match(html, /section-hidden-mobile/);
+  assert.match(html, /--section-border-width:2px/);
+  assert.match(html, /--section-background-position:right top/);
+  assert.match(html, /--section-background-overlay-opacity:0\.45/);
+  assert.match(html, /class="section-design-background"/);
+  assert.match(html, /src="\/uploads\/premium-background\.webp"/);
+  assert.match(html, /width="1800" height="1200"/);
+  assert.match(html, /fetchpriority="high"/);
+  assert.match(html, /class="section-design-overlay"/);
+});
+
+test("unsafe section background URLs never reach public markup", () => {
+  const html = renderPageContent({
+    title: "Safe page",
+    content: { hideTitle: true },
+    sections: [{
+      id: "unsafe-background",
+      key: "unsafe-background",
+      settings: {
+        background: { mode: "image", imageUrl: "javascript:alert(1)" }
+      },
+      blocks: []
+    }]
+  });
+
+  assert.doesNotMatch(html, /section-design-background/);
+  assert.doesNotMatch(html, /javascript:/);
+});
+
+test("desktop-hidden section images do not take the high-priority image slot", () => {
+  const html = renderPageContent({
+    title: "Priority page",
+    content: { hideTitle: true },
+    sections: [
+      {
+        id: "mobile-background",
+        key: "mobile-background",
+        settings: {
+          background: {
+            mode: "image",
+            imageUrl: "/uploads/mobile-only.webp",
+            width: 1200,
+            height: 800
+          },
+          visibility: { desktop: false, tablet: true, mobile: true }
+        },
+        blocks: []
+      },
+      {
+        id: "desktop-background",
+        key: "desktop-background",
+        settings: {
+          background: {
+            mode: "image",
+            imageUrl: "/uploads/desktop.webp",
+            width: 1600,
+            height: 900
+          }
+        },
+        blocks: []
+      }
+    ]
+  });
+
+  assert.match(html, /src="\/uploads\/mobile-only\.webp"[^>]+loading="lazy"/);
+  assert.match(html, /src="\/uploads\/desktop\.webp"[^>]+loading="eager"[^>]+fetchpriority="high"/);
+});
+
+test("backgrounds without intrinsic dimensions use decorative CSS instead of layout-unstable images", () => {
+  const html = renderPageContent({
+    title: "Stable background",
+    content: { hideTitle: true },
+    sections: [{
+      id: "external-background",
+      key: "external-background",
+      settings: {
+        background: {
+          mode: "image",
+          imageUrl: "https://cdn.example.com/background.webp",
+          style: "contain"
+        }
+      },
+      blocks: []
+    }]
+  });
+
+  assert.match(html, /section-design-background-css/);
+  assert.match(html, /background-image:url\(&quot;https:\/\/cdn\.example\.com\/background\.webp&quot;\)/);
+  assert.doesNotMatch(html, /<img[^>]+background\.webp/);
+});
+
 test("server rendering uses the active locale without client hydration", () => {
   const html = withPublicRenderContext({
     locale: "sq",

@@ -250,7 +250,9 @@ export async function loadMediaImageAssets() {
       .map((asset) => ({
         id: asset.id,
         url: asset.url,
-        altText: asset.altText || asset.filename || "Media image"
+        altText: asset.altText || asset.filename || "Media image",
+        width: asset.width,
+        height: asset.height
       }));
   } catch {
     return [];
