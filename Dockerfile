@@ -15,7 +15,7 @@ RUN apk add --no-cache \
   "openssl=${CODEY_APK_OPENSSL_VERSION}" \
   "postgresql16-client=${CODEY_APK_POSTGRESQL16_CLIENT_VERSION}" \
   && corepack enable \
-  && corepack prepare pnpm@11.3.0 --activate
+  && corepack prepare pnpm@11.18.0 --activate
 
 FROM base AS development
 

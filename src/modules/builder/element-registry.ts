@@ -89,7 +89,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-08-12.1";
+export const builderRegistryVersion = "2026-08-18.1";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label

@@ -1,6 +1,6 @@
 {
   "name": "codey-cms",
-  "version": "0.9.14",
+  "version": "1.0.0",
   "author": "Fatlum Prekadini",
   "license": "GPL-2.0-or-later",
   "repository": {
@@ -9,7 +9,7 @@
   },
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.3.0",
+  "packageManager": "pnpm@11.18.0",
   "engines": {
     "node": ">=24 <25",
     "pnpm": ">=11 <12"
