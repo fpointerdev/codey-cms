@@ -80,7 +80,7 @@ export async function startPublicRuntime() {
   const loadSliderRuntime = () => sliderRuntimePromise ??= import("./slider-runtime.js");
   const loadTabsRuntime = () => tabsRuntimePromise ??= import("./structured-tabs.js");
 
-  if (document.querySelector("[data-commerce-root]")) {
+  if (document.querySelector("[data-commerce-root], [data-commerce-account-root]")) {
     const { enhanceCommerce } = await import("./public-commerce.js");
     await enhanceCommerce();
   }

@@ -75,6 +75,29 @@ const contentBlockTypeSchema = z.enum([
   "CUSTOM"
 ]);
 
+const sectionColorSchema = z
+  .string()
+  .trim()
+  .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+
+const sectionBackgroundUrlSchema = z
+  .string()
+  .trim()
+  .max(4096)
+  .refine((value) => {
+    if (value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")) return true;
+
+    try {
+      const url = new URL(value);
+      return ["http:", "https:", "s3:"].includes(url.protocol) &&
+        !url.username &&
+        !url.password &&
+        (url.protocol !== "s3:" || Boolean(url.hostname && url.pathname !== "/"));
+    } catch {
+      return false;
+    }
+  }, "Section background images must use a relative, HTTP(S), or CMS storage URL.");
+
 const sectionSettingsSchema = z.object({
   template: z
     .enum(["hero", "content", "gallery", "products", "contact", "custom", "section-pattern"])
@@ -84,12 +107,51 @@ const sectionSettingsSchema = z.object({
     .default("one-column"),
   container: z.enum(["narrow", "default", "wide", "full"]).default("default"),
   spacing: z.enum(["none", "sm", "md", "lg", "xl"]).default("md"),
+  gap: z.enum(["sm", "md", "lg", "xl"]).optional(),
+  align: z.enum(["start", "center", "end"]).optional(),
+  verticalAlign: z.enum(["start", "center", "end"]).optional(),
+  minHeight: z.number().int().min(0).max(1200).optional(),
+  style: z
+    .object({
+      preset: z.string().trim().max(80).optional(),
+      backgroundColor: sectionColorSchema.optional(),
+      textColor: sectionColorSchema.optional(),
+      accentColor: sectionColorSchema.optional(),
+      radius: z.number().int().min(0).max(48).optional(),
+      borderWidth: z.number().int().min(0).max(8).optional(),
+      borderColor: sectionColorSchema.optional(),
+      shadow: z.enum(["none", "soft", "strong", "glow"]).optional()
+    })
+    .passthrough()
+    .optional(),
   background: z
     .object({
-      color: z.string().trim().max(40).optional(),
+      mode: z.enum(["none", "color", "image"]).optional(),
+      color: sectionColorSchema.optional(),
       imageAssetId: z.string().trim().min(1).optional(),
-      style: z.enum(["cover", "contain", "tile"]).default("cover")
+      imageUrl: sectionBackgroundUrlSchema.optional(),
+      altText: z.string().trim().max(240).optional(),
+      width: z.number().int().positive().max(8000).optional(),
+      height: z.number().int().positive().max(8000).optional(),
+      style: z.enum(["cover", "contain", "tile"]).default("cover"),
+      position: z.enum(["center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"]).optional(),
+      overlayColor: sectionColorSchema.optional(),
+      overlayOpacity: z.number().min(0).max(0.9).optional()
     })
+    .passthrough()
+    .optional(),
+  responsive: z
+    .object({
+      tablet: z.object({
+        layout: z.enum(["inherit", "one-column", "two-column", "three-column"]).optional(),
+        spacing: z.enum(["inherit", "none", "sm", "md", "lg", "xl"]).optional()
+      }).passthrough().optional(),
+      mobile: z.object({
+        layout: z.enum(["inherit", "one-column", "two-column"]).optional(),
+        spacing: z.enum(["inherit", "none", "sm", "md", "lg", "xl"]).optional()
+      }).passthrough().optional()
+    })
+    .passthrough()
     .optional(),
   visibility: z
     .object({

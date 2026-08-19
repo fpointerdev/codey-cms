@@ -93,7 +93,7 @@ gate.
 
 ## Builder Registry Contract
 
-The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-11.1` contains 33 elements, 32 editor-available elements, 31 generator-safe elements, and 20 qualified section patterns.
+The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-18.1` contains 37 elements, 36 editor-available elements, 35 generator-safe elements, and 20 qualified section patterns.
 
 Generated pages must use registered elements instead of anonymous JSON structures:
 
@@ -122,7 +122,11 @@ Generated pages must use registered elements instead of anonymous JSON structure
 - Prefer `builder.sectionPatterns` for common full-section layouts before assembling low-level elements manually. The qualified set covers hero proof, split hero, service showcase, media, process tabs, portfolio, pricing trust, FAQ contact, story timeline, benefits checklist, resources, quote story, locations contact, comparison pricing, team values, shop confidence, capability bento, guided navigation, transformation stories, and product spotlights.
 - Use `builder.stylePresets` for visual direction before falling back to custom colors.
 - Use the section preset list for layout intent instead of inventing unrelated container settings.
-- Use safe section settings for layout and styling: `layout`, `container`, `spacing`, `align`, `verticalAlign`, `minHeight`, `style`, and `decoration`.
+- Use safe section settings for layout and styling: `layout`, `container`, `spacing`, `gap`, `align`, `verticalAlign`, `minHeight`, `responsive`, `style`, `background`, `visibility`, and `decoration`.
+- Put controlled surface values in `settings.style`: `preset`, `backgroundColor`, `textColor`, `accentColor`, `radius` (0-48), `borderWidth` (0-8), `borderColor`, and `shadow` (`none`, `soft`, `strong`, or `glow`).
+- Put section background media in `settings.background`: `mode` (`none`, `color`, or `image`), `color`, `imageAssetId`, `imageUrl`, intrinsic `width` and `height`, `style` (`cover`, `contain`, or `tile`), `position`, `overlayColor`, and `overlayOpacity` (0-0.9). Prefer CMS media URLs with intrinsic dimensions. The CMS may persist its own `s3://` media references when no public storage base URL is configured, but generators must use CMS media IDs or relative/HTTP(S) URLs. Do not emit data URLs, JavaScript URLs, credentials, protocol-relative URLs, or raw CSS background declarations.
+- Use `settings.visibility.desktop`, `settings.visibility.tablet`, and `settings.visibility.mobile` only for intentional device-specific content. All three default to visible. Never hide essential navigation, legal, checkout, or accessibility content by device.
+- Use `settings.responsive.tablet` and `settings.responsive.mobile` for bounded layout and spacing overrides. The CMS reads both legacy `style.backgroundColor` and `background.color` values and writes them in sync, so earlier generated sites remain editable.
 - Use `settings.customCss` only as an advanced escape hatch when the registered controls cannot express the design.
 - Never generate the `custom-code` element or include it in WebsiteSpec. It is an explicit trusted-editor escape hatch for HTML, CSS, inline JavaScript, and HTTPS script libraries. The public renderer runs it in an opaque-origin iframe without `allow-same-origin`; the visual and backend editors keep it paused.
 
@@ -210,6 +214,27 @@ Acceptance must prove add, reload persistence, quantity change, checkout
 validation, payment or manual-order confirmation, and the resulting admin order.
 Payment-owned `PAID` and `REFUNDED` states cannot be set through the generic
 merchant order-status endpoint.
+
+Buyer self-service is canonical at `/account/orders` and must remain a real CMS
+route in generated storefronts. It uses an HTTP-only buyer session scoped to
+orders proven by checkout or by the private lookup credential in the receipt;
+never list orders from an email address alone.
+
+- `GET /orders/buyer/orders` returns only orders claimed by the current buyer session.
+- `DELETE /orders/buyer/session` removes the current device-scoped session and clears its HTTP-only cookie.
+- `POST /orders/buyer/orders/claim` accepts `orderNumber` and `lookupToken`, then adds that order to the session.
+- `POST /orders/buyer/orders/:orderNumber/cancel` cancels an unpaid order only when no payment attempt exists; otherwise it creates an idempotent cancellation request for staff review.
+- `POST /orders/buyer/orders/:orderNumber/cases` creates a bounded complaint, return, or other support request.
+- `PATCH /orders/:id/tracking` and `PATCH /orders/cases/:caseId` are authenticated staff APIs. Tracking URLs must be HTTP(S).
+- `[data-commerce-account-root]`, `[data-buyer-orders]`, `[data-buyer-claim-form]`, and `[data-buyer-forget]` are the default storefront runtime hooks.
+
+Custom storefronts should link to `/account/orders` after checkout. The CMS owns
+that route even when `CUSTOM_STOREFRONT_DIR` is configured, so a generated theme
+cannot accidentally replace the private buyer portal with its generic SPA shell.
+Custom commerce clients may consume the same APIs elsewhere, but must preserve
+`credentials: "same-origin"` so the HTTP-only buyer session works. Do not copy
+lookup tokens into local storage, query strings, analytics, or generated page
+content.
 
 Site settings:
 

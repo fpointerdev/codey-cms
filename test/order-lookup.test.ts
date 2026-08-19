@@ -3,6 +3,7 @@ import test from "node:test";
 import type { Prisma } from "@prisma/client";
 import { encryptSecretEnvelope } from "../src/core/security/secret-envelope.js";
 import {
+  orderAccountUrl,
   orderNotificationMessage,
   queueOrderEmail
 } from "../src/modules/orders/order-email.service.js";
@@ -104,6 +105,7 @@ test("confirmation jobs store only an encrypted lookup token", async () => {
 
   await queueOrderEmail(tx, order as never, {
     eventType: "ORDER_RECEIVED",
+    accountUrl: "https://shop.example/account/orders",
     secretEnvelope
   });
 
@@ -116,5 +118,65 @@ test("confirmation jobs store only an encrypted lookup token", async () => {
   }, encryptionKey);
   assert.match(message.text, new RegExp(lookupToken));
   assert.match(message.html ?? "", new RegExp(lookupToken));
+  assert.match(message.text, /https:\/\/shop\.example\/account\/orders/);
+  assert.match(message.html ?? "", /href="https:\/\/shop\.example\/account\/orders"/);
   assert.doesNotMatch(message.text, /CODEY_ORDER_LOOKUP_TOKEN/);
+});
+
+test("order emails cover each buyer-facing state and account-link fallback", async () => {
+  const created: Array<Record<string, unknown>> = [];
+  const tx = {
+    orderNotification: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        created.push(data);
+        return data;
+      }
+    }
+  } as unknown as Prisma.TransactionClient;
+  const order = {
+    id: "order-1",
+    orderNumber: "ORD-200",
+    customerEmail: "customer@example.com",
+    status: "SHIPPED",
+    currency: "EUR",
+    totalCents: 2500,
+    items: [{
+      productName: "Example <limited>",
+      variantName: "Large & blue",
+      unitPriceCents: 2500,
+      quantity: 1
+    }]
+  };
+
+  await queueOrderEmail(tx, order as never, { eventType: "ORDER_PAID" });
+  await queueOrderEmail(tx, order as never, { eventType: "ORDER_REFUNDED" });
+  await queueOrderEmail(tx, order as never, {
+    eventType: "ORDER_STATUS_CHANGED",
+    previousStatus: "PAID"
+  });
+
+  assert.match(String(created[0]?.subject), /Payment received/);
+  assert.match(String(created[1]?.subject), /refunded/);
+  assert.match(String(created[2]?.body), /changed from paid to shipped/);
+  assert.match(String(created[0]?.body), /Open Your orders/);
+  assert.match(String(created[0]?.htmlBody), /Example &lt;limited&gt; - Large &amp; blue/);
+
+  const validContext = {
+    config: { app: { publicUrl: "https://shop.example/base" } }
+  } as unknown as ModuleContext;
+  const missingContext = {
+    config: { app: {} }
+  } as unknown as ModuleContext;
+  const invalidContext = {
+    config: { app: { publicUrl: "://invalid" } }
+  } as unknown as ModuleContext;
+  assert.equal(orderAccountUrl(validContext), "https://shop.example/account/orders");
+  assert.equal(orderAccountUrl(missingContext), undefined);
+  assert.equal(orderAccountUrl(invalidContext), undefined);
+
+  assert.deepEqual(orderNotificationMessage({
+    body: "Already safe",
+    htmlBody: null,
+    secretEnvelope: null
+  }, "unused"), { text: "Already safe", html: undefined });
 });

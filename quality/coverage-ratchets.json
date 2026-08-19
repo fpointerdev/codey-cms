@@ -78,6 +78,11 @@
       "branches": 94.12,
       "functions": 66.67
     },
+    "src/modules/orders/buyer-account.service.ts": {
+      "lines": 97.16,
+      "branches": 83.93,
+      "functions": 100
+    },
     "src/modules/orders/checkout.service.ts": {
       "lines": 54.61,
       "branches": 57.38,

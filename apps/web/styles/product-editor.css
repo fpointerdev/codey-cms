@@ -252,9 +252,83 @@
   padding-top: 8px;
 }
 
+.shop-order-management {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid #e1e7e5;
+  padding-top: 18px;
+}
+
+.shop-order-management h3,
+.shop-order-management p {
+  margin: 0;
+}
+
+.shop-order-management > form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.shop-order-management > form label {
+  display: grid;
+  gap: 6px;
+}
+
+.shop-order-management > form label > span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shop-order-management-wide,
+.shop-order-management > form .form-message,
+.shop-order-management > form button {
+  grid-column: 1 / -1;
+}
+
+.shop-order-management > form button {
+  justify-self: start;
+}
+
+.shop-order-case-list {
+  display: grid;
+  gap: 10px;
+}
+
+.shop-order-case-list article {
+  display: grid;
+  gap: 8px;
+  border-left: 3px solid var(--accent);
+  background: #f3f7f5;
+  padding: 12px;
+}
+
+.shop-order-case-list article > div:first-child,
+.shop-order-tracking-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shop-order-case-list article > div:first-child > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.shop-order-tracking-summary {
+  align-items: center;
+}
+
+.shop-order-case-list blockquote {
+  margin: 0;
+  border-left: 2px solid #a9b7b2;
+  padding-left: 10px;
+}
+
 @media (max-width: 760px) {
   .product-purchase-mode,
-  .shop-order-detail-summary {
+  .shop-order-detail-summary,
+  .shop-order-management > form {
     grid-template-columns: 1fr;
   }
 }

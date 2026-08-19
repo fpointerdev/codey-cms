@@ -17,6 +17,7 @@ type QueueOrderEmailOptions = {
   eventType: OrderNotificationEvent;
   previousStatus?: OrderStatus;
   secretEnvelope?: string;
+  accountUrl?: string;
 };
 
 type DeliverQueuedOrderEmailsOptions = {
@@ -67,6 +68,28 @@ function orderItemsHtml(order: OrderForEmail) {
     .join("");
 }
 
+export function orderAccountUrl(context: ModuleContext) {
+  if (!context.config.app.publicUrl) return undefined;
+
+  try {
+    return new URL("/account/orders", context.config.app.publicUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function accountEmailText(options: QueueOrderEmailOptions) {
+  return options.accountUrl
+    ? `View order history and delivery progress: ${options.accountUrl}`
+    : "Open Your orders in the shop to view history and delivery progress.";
+}
+
+function accountEmailHtml(options: QueueOrderEmailOptions) {
+  return options.accountUrl
+    ? `<p><a href="${escapeHtml(options.accountUrl)}">View order history and delivery progress</a></p>`
+    : "<p>Open <strong>Your orders</strong> in the shop to view history and delivery progress.</p>";
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -89,10 +112,12 @@ function buildOrderEmail(order: OrderForEmail, options: QueueOrderEmailOptions) 
         "",
         `Total: ${total}`,
         "",
+        accountEmailText(options),
+        "",
         "Items:",
         itemsText
       ].join("\n"),
-      htmlBody: `<p>Payment for order <strong>${escapeHtml(order.orderNumber)}</strong> was received.</p><p>Total: ${escapeHtml(total)}</p><ul>${itemsHtml}</ul>`
+      htmlBody: `<p>Payment for order <strong>${escapeHtml(order.orderNumber)}</strong> was received.</p><p>Total: ${escapeHtml(total)}</p>${accountEmailHtml(options)}<ul>${itemsHtml}</ul>`
     };
   }
 
@@ -104,10 +129,12 @@ function buildOrderEmail(order: OrderForEmail, options: QueueOrderEmailOptions) 
         "",
         `Total: ${total}`,
         "",
+        accountEmailText(options),
+        "",
         "Items:",
         itemsText
       ].join("\n"),
-      htmlBody: `<p>Order <strong>${escapeHtml(order.orderNumber)}</strong> was refunded.</p><p>Total: ${escapeHtml(total)}</p><ul>${itemsHtml}</ul>`
+      htmlBody: `<p>Order <strong>${escapeHtml(order.orderNumber)}</strong> was refunded.</p><p>Total: ${escapeHtml(total)}</p>${accountEmailHtml(options)}<ul>${itemsHtml}</ul>`
     };
   }
 
@@ -120,9 +147,11 @@ function buildOrderEmail(order: OrderForEmail, options: QueueOrderEmailOptions) 
       body: [
         `Order ${order.orderNumber} changed from ${previous} to ${current}.`,
         "",
-        `Total: ${total}`
+        `Total: ${total}`,
+        "",
+        accountEmailText(options)
       ].join("\n"),
-      htmlBody: `<p>Order <strong>${escapeHtml(order.orderNumber)}</strong> changed from ${escapeHtml(previous)} to ${escapeHtml(current)}.</p><p>Total: ${escapeHtml(total)}</p>`
+      htmlBody: `<p>Order <strong>${escapeHtml(order.orderNumber)}</strong> changed from ${escapeHtml(previous)} to ${escapeHtml(current)}.</p><p>Total: ${escapeHtml(total)}</p>${accountEmailHtml(options)}`
     };
   }
 
@@ -136,10 +165,12 @@ function buildOrderEmail(order: OrderForEmail, options: QueueOrderEmailOptions) 
         ? ["", "Order lookup token:", lookupTokenPlaceholder]
         : []),
       "",
+      accountEmailText(options),
+      "",
       "Items:",
       itemsText
     ].join("\n"),
-    htmlBody: `<p>Thank you. Your order <strong>${escapeHtml(order.orderNumber)}</strong> was received.</p><p>Total: ${escapeHtml(total)}</p>${options.secretEnvelope ? `<p>Order lookup token:<br><code>${lookupTokenPlaceholder}</code></p>` : ""}<ul>${itemsHtml}</ul>`
+    htmlBody: `<p>Thank you. Your order <strong>${escapeHtml(order.orderNumber)}</strong> was received.</p><p>Total: ${escapeHtml(total)}</p>${options.secretEnvelope ? `<p>Order lookup token:<br><code>${lookupTokenPlaceholder}</code></p>` : ""}${accountEmailHtml(options)}<ul>${itemsHtml}</ul>`
   };
 }
 
