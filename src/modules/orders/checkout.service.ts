@@ -8,7 +8,7 @@ import {
   expireInventoryReservations,
   releaseInventoryReservation
 } from "./inventory-reservation.service.js";
-import { queueOrderEmail } from "./order-email.service.js";
+import { orderAccountUrl, queueOrderEmail } from "./order-email.service.js";
 import {
   adminOrderDto,
   createOrderLookupCredential,
@@ -565,6 +565,7 @@ async function createOrderInTransaction(
 
   await queueOrderEmail(tx, order, {
     eventType: "ORDER_RECEIVED",
+    accountUrl: orderAccountUrl(context),
     secretEnvelope: encryptSecretEnvelope(
       context.config.security.credentialEncryptionKey,
       { lookupToken: lookupCredential.lookupToken }

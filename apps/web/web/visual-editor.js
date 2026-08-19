@@ -3,6 +3,11 @@ import { currentLocale } from "./routes.js";
 import { getModalFormHandler } from "./modal.js";
 import { renderPage } from "./public-renderer.js";
 import {
+  loadMediaImageAssets,
+  selectedFile,
+  uploadMediaFile
+} from "./content-actions.js";
+import {
   copyBuilderSections,
   duplicateBuilderBlockInSections,
   duplicateBuilderSectionInSections,
@@ -12,6 +17,11 @@ import {
   normalizeBuilderSectionsForSave,
   sectionToBuilderInput
 } from "./builder-operations.js";
+import {
+  sectionBackgroundAsset,
+  sectionControlFields,
+  sectionSettingsFromControls
+} from "./section-design.js";
 
 const visualHistoryLimit = 30;
 
@@ -138,72 +148,32 @@ export async function deleteVisualSection(sectionId) {
 export async function editVisualSection(sectionId) {
   const section = sectionById(sectionId);
   if (!section) return;
-  const settings = section.settings || {};
+  const mediaAssets = await loadMediaImageAssets();
   const values = await getModalFormHandler()({
     label: "Section settings",
     title: section.label || "Edit section",
-    fields: [
-      { name: "label", label: "Label", value: section.label || section.key },
-      {
-        name: "layout",
-        label: "Layout",
-        type: "select",
-        value: settings.layout || "one-column",
-        options: [
-          { value: "one-column", label: "1 column" },
-          { value: "two-column", label: "2 columns" },
-          { value: "three-column", label: "3 columns" },
-          { value: "four-column", label: "4 columns" },
-          { value: "asymmetric", label: "Asymmetric" },
-          { value: "full-bleed", label: "Full width" }
-        ]
-      },
-      {
-        name: "container",
-        label: "Content width",
-        type: "select",
-        value: settings.container || "default",
-        options: [
-          { value: "narrow", label: "Narrow" },
-          { value: "default", label: "Default" },
-          { value: "wide", label: "Wide" },
-          { value: "full", label: "Edge to edge" }
-        ]
-      },
-      {
-        name: "spacing",
-        label: "Spacing",
-        type: "select",
-        value: settings.spacing || "md",
-        options: [
-          { value: "none", label: "None" },
-          { value: "sm", label: "Small" },
-          { value: "md", label: "Medium" },
-          { value: "lg", label: "Large" },
-          { value: "xl", label: "Extra large" }
-        ]
-      },
-      { name: "backgroundColor", label: "Background color", type: "color", value: settings.background?.color || "#ffffff", required: false }
-    ],
+    description: "Use the same layout and appearance controls available in the dashboard builder.",
+    fields: sectionControlFields(section, mediaAssets),
     submitLabel: "Save section"
   });
   if (!values) return;
+
+  const imageFile = selectedFile(values.backgroundImageFile);
+  if (imageFile) values.backgroundMode = "image";
+  const uploadedAsset = imageFile
+    ? await uploadMediaFile(imageFile, section.label || section.key || "Section background")
+    : null;
+  const backgroundAsset = sectionBackgroundAsset(values, section.settings || {}, mediaAssets, uploadedAsset);
+  if (values.backgroundMode === "image" && !backgroundAsset.url) {
+    setStatus("Choose or upload a background image.", true);
+    return;
+  }
 
   const sections = (state.page.sections || []).map((item) => item.id === sectionId
     ? {
         ...item,
         label: values.label,
-        settings: {
-          ...(item.settings || {}),
-          layout: values.layout,
-          container: values.container,
-          spacing: values.spacing,
-          background: {
-            ...(item.settings?.background || {}),
-            color: values.backgroundColor,
-            style: item.settings?.background?.style || "cover"
-          }
-        }
+        settings: sectionSettingsFromControls(values, item.settings || {}, backgroundAsset)
       }
     : item);
 

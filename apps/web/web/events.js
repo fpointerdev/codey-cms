@@ -99,6 +99,7 @@ import {
   removeRepeaterRow,
   savePaymentProvider,
   saveCommerceRule,
+  saveOrderTracking,
   saveProductEditor,
   saveShopSettings,
   testPaymentProvider,
@@ -106,6 +107,7 @@ import {
   updateShopSettingsPreview,
   updateManualPayment,
   updateOrderStatus,
+  updateOrderSupportCase,
   retryOrderEmail
 } from "./shop-actions.js";
 import {
@@ -338,6 +340,13 @@ function bindSubmitEvents() {
     if (paymentProviderForm) {
       event.preventDefault();
       void savePaymentProvider(paymentProviderForm);
+      return;
+    }
+
+    const orderTrackingForm = event.target.closest("[data-order-tracking-form]");
+    if (orderTrackingForm) {
+      event.preventDefault();
+      void saveOrderTracking(orderTrackingForm);
       return;
     }
 
@@ -895,6 +904,12 @@ function bindAdminClick(event) {
   const orderStatusButton = event.target.closest("[data-order-status-action]");
   if (orderStatusButton) {
     void updateOrderStatus(orderStatusButton);
+    return true;
+  }
+
+  const orderCaseButton = event.target.closest("[data-order-case-update]");
+  if (orderCaseButton) {
+    void updateOrderSupportCase(orderCaseButton);
     return true;
   }
 

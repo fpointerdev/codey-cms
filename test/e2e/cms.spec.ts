@@ -62,6 +62,16 @@ test("admin settings and builder controls complete their primary workflows", asy
   await page.getByRole("button", { name: "Add container" }).click();
   const containerDialog = page.getByRole("dialog", { name: "Choose container layout" });
   await expect(containerDialog).toBeVisible();
+  await expect(containerDialog.getByRole("tab")).toHaveCount(3);
+  await expect(containerDialog.getByRole("tab", { name: "Layout" })).toHaveAttribute("aria-selected", "true");
+  await containerDialog.getByRole("tab", { name: "Style" }).click();
+  await containerDialog.getByText("Background", { exact: true }).click();
+  await expect(containerDialog.getByLabel("Upload or replace image")).toHaveAttribute("type", "file");
+  await containerDialog.getByText("Surface", { exact: true }).click();
+  await expect(containerDialog.locator('select[name="borderWidth"]')).toBeVisible();
+  await containerDialog.getByRole("tab", { name: "Advanced" }).click();
+  await expect(containerDialog.getByLabel("Show on mobile")).toBeChecked();
+  await containerDialog.getByRole("tab", { name: "Layout" }).click();
   await containerDialog.getByRole("button", { name: "Add container" }).click();
   await expect(page.locator("[data-builder-section]")).toHaveCount(sectionCount + 1);
   await page.getByRole("button", { name: "Undo last canvas change" }).click();
@@ -108,6 +118,7 @@ test("account protection stays discoverable without interrupting normal login", 
 });
 
 test("customers can complete the real storefront journey", async ({ page }) => {
+  const buyerEmail = `browser-commerce-${Date.now()}@example.com`;
   const apiLogin = await page.request.post("/api/v1/auth/login", {
     data: { email: adminEmail, password: adminPassword }
   });
@@ -141,7 +152,7 @@ test("customers can complete the real storefront journey", async ({ page }) => {
 
   await cartDialog.getByRole("button", { name: "Checkout" }).click();
   await cartDialog.getByLabel("Name", { exact: true }).fill("Commerce Customer");
-  await cartDialog.getByLabel("Email", { exact: true }).fill(`browser-commerce-${Date.now()}@example.com`);
+  await cartDialog.getByLabel("Email", { exact: true }).fill(buyerEmail);
   await cartDialog.getByLabel("Delivery country", { exact: true }).selectOption("US");
   await expect(cartDialog.getByText("Standard shipping", { exact: true })).toBeVisible();
   await cartDialog.getByLabel("Address", { exact: true }).fill("1 Browser Way");
@@ -155,6 +166,52 @@ test("customers can complete the real storefront journey", async ({ page }) => {
   await expect(cartDialog.getByRole("heading", { name: "Order received" })).toBeVisible();
   await expect(cartDialog.getByText(/Use the order number/)).toBeVisible();
   await expect(page.locator("[data-commerce-cart-count]")).toHaveText("0");
+
+  const orderResponse = await page.request.get("/api/v1/orders", {
+    headers: { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` }
+  });
+  const orderBody = await orderResponse.json();
+  const order = orderBody.data.orders.find((item: { customerEmail: string }) => item.customerEmail === buyerEmail);
+  expect(order).toBeTruthy();
+  const trackingResponse = await page.request.patch(`/api/v1/orders/${order.id}/tracking`, {
+    headers: { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` },
+    data: {
+      status: "IN_TRANSIT",
+      carrier: "Browser Parcel",
+      trackingNumber: "BROWSER-TRACK-1",
+      trackingUrl: "https://tracking.example/browser"
+    }
+  });
+  expect(trackingResponse.ok()).toBeTruthy();
+
+  await cartDialog.getByRole("link", { name: "View your order" }).click();
+  await expect(page).toHaveURL(/\/account\/orders$/);
+  await expect(page.getByRole("heading", { name: "Your orders", exact: true })).toBeVisible();
+  await expect(page.getByText("Starter Product", { exact: true })).toBeVisible();
+  await expect(page.getByText("Browser Parcel", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Track parcel" })).toHaveAttribute("href", "https://tracking.example/browser");
+
+  await page.getByRole("button", { name: "Get help" }).click();
+  let buyerDialog = page.locator("[data-commerce-dialog]");
+  await buyerDialog.getByLabel("Subject").fill("Product question");
+  await buyerDialog.getByLabel("What happened?").fill("Please confirm the delivery instructions for this order.");
+  await buyerDialog.getByRole("button", { name: "Send request" }).click();
+  await expect(page.getByText("Your request was sent to the shop.")).toBeVisible();
+  await expect(page.getByText("Product question", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Cancel order" }).click();
+  buyerDialog = page.locator("[data-commerce-dialog]");
+  await buyerDialog.getByLabel("Reason").fill("I no longer need this order.");
+  await buyerDialog.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText("Cancellation request sent to the shop.")).toBeVisible();
+  await expect(page.getByText("Cancellation request", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Forget this device" }).click();
+  buyerDialog = page.locator("[data-commerce-dialog]");
+  await expect(buyerDialog.getByRole("heading", { name: "Forget orders on this device?" })).toBeVisible();
+  await buyerDialog.getByRole("button", { name: "Forget this device" }).click();
+  await expect(page.getByText("This device no longer has access to saved orders.")).toBeVisible();
+  await expect(page.getByText("No orders on this device", { exact: true })).toBeVisible();
   expect(browserErrors).toEqual([]);
 });
 
@@ -809,6 +866,12 @@ test("public pages are useful without JavaScript and missing routes return 404",
     const product = await page.goto(`${baseURL}/product/starter-product`);
     expect(product?.status()).toBe(200);
     await expect(page.getByRole("heading", { name: "Starter Product" })).toBeVisible();
+
+    const buyerAccount = await page.goto(`${baseURL}/account/orders`);
+    expect(buyerAccount?.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: "Your orders", exact: true })).toBeVisible();
+    await expect(page.getByText("Purchases on this device", { exact: true })).toBeVisible();
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow");
 
     const missing = await page.goto(`${baseURL}/browser-test-missing-page`);
     expect(missing?.status()).toBe(404);
