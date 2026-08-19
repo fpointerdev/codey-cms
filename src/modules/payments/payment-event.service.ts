@@ -6,7 +6,7 @@ import {
   consumeInventoryReservation,
   releaseInventoryReservation
 } from "../orders/inventory-reservation.service.js";
-import { deliverQueuedOrderEmails, queueOrderEmail } from "../orders/order-email.service.js";
+import { deliverQueuedOrderEmails, orderAccountUrl, queueOrderEmail } from "../orders/order-email.service.js";
 
 export type NormalizedPaymentEvent = {
   provider: PaymentProvider;
@@ -166,7 +166,10 @@ export async function processPaymentEvent(
             where: { id: order.id },
             include: { items: true }
           });
-          await queueOrderEmail(tx, paidOrder, { eventType: "ORDER_PAID" });
+          await queueOrderEmail(tx, paidOrder, {
+            eventType: "ORDER_PAID",
+            accountUrl: orderAccountUrl(context)
+          });
           orderId = paidOrder.id;
         }
       } else if (nextStatus === "FAILED") {
@@ -241,7 +244,10 @@ export async function processPaymentEvent(
               data: { status: "REFUNDED" },
               include: { items: true }
             });
-            await queueOrderEmail(tx, refundedOrder, { eventType: "ORDER_REFUNDED" });
+            await queueOrderEmail(tx, refundedOrder, {
+              eventType: "ORDER_REFUNDED",
+              accountUrl: orderAccountUrl(context)
+            });
             orderId = refundedOrder.id;
           }
         }

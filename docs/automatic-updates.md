@@ -36,6 +36,14 @@ Every hardening release also publishes `codey-cms-<version>.sbom.cdx.json`. Its 
 
 Before publication, the release workflow installs the previous stable ZIP, applies the candidate through the real supervisor, and verifies preserved server-rendered content. A second isolated installation receives an ephemeral-key-signed failure fixture and must restore both the previous runtime and its database backup. The qualification report is generated from the extracted artifacts; the failure fixture and its key are never published.
 
+If a package revision recorded by the previous ZIP is no longer present in the
+Alpine index, the qualifier may refresh only that declared build dependency to
+the candidate's recorded revision. The previous metadata and Dockerfile shape
+must match the approved compatibility contract, and every refresh is written to
+the qualification report. Any missing package, extra package, or unexpected
+build shape fails the release. Application code, data, and runtime identity are
+not changed by this build-only compatibility step.
+
 ## Updater bootstrap
 
 Packages through `v0.9.6` placed Corepack's cache outside the writable runtime volume. Those installations must download the latest self-host ZIP and run `start-codey.sh --no-open` (or `start-codey.cmd --no-open`) once. The fixed launcher reuses the existing named database, media, backup, and secret volumes; it does not require setup or a version choice. Releases declare `requirements.automaticUpdatesFrom` in their signed runtime metadata. Automatic supervisor updates are qualified from that bootstrap version onward.

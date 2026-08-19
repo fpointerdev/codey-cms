@@ -10,10 +10,12 @@ import { createSharedCommerceLimiter } from "./commerce-rate-limit.middleware.js
 import {
   cartItemParams,
   cartTokenParams,
+  cancelBuyerOrderSchema,
   checkoutCartSchema,
   checkoutLimitSchemas,
   commerceResourceParams,
   createCartSchema,
+  createBuyerSupportCaseSchema,
   createCouponSchema,
   customerDataAnonymizeSchema,
   customerDataExportSchema,
@@ -21,11 +23,15 @@ import {
   createShippingZoneSchema,
   createTaxRuleSchema,
   lookupOrderSchema,
+  orderNumberParams,
   orderNotificationIdParams,
   orderIdParams,
   shippingZoneIdParams,
+  supportCaseIdParams,
   updateCheckoutStatusSchema,
-  updateOrderStatusSchema
+  updateOrderStatusSchema,
+  updateOrderSupportCaseSchema,
+  updateOrderTrackingSchema
 } from "./orders.schemas.js";
 import {
   addCartItem,
@@ -46,8 +52,17 @@ import {
   auditCustomerDataExport,
   exportCustomerData
 } from "./customer-data.service.js";
-import { deliverQueuedOrderEmails, queueOrderEmail, requeueOrderEmail } from "./order-email.service.js";
+import { deliverQueuedOrderEmails, orderAccountUrl, queueOrderEmail, requeueOrderEmail } from "./order-email.service.js";
 import { adminOrderDto } from "./order-lookup.js";
+import {
+  attachOrderToBuyerSession,
+  cancelBuyerOrder,
+  claimBuyerOrder,
+  createBuyerSupportCase,
+  deleteExpiredBuyerSessions,
+  forgetBuyerSession,
+  listBuyerOrders
+} from "./buyer-account.service.js";
 
 function createCheckoutLimiter(context: ModuleContext) {
   return rateLimit({
@@ -82,6 +97,12 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     });
   }, 60_000);
   cleanupTimer.unref();
+  const buyerSessionCleanupTimer = setInterval(() => {
+    void deleteExpiredBuyerSessions(context).catch((error) => {
+      context.logger.error({ err: error }, "Unable to remove expired buyer sessions");
+    });
+  }, 60 * 60_000);
+  buyerSessionCleanupTimer.unref();
   const emailDeliveryTimer = setInterval(() => {
     void deliverQueuedOrderEmails(context).catch((error) => {
       context.logger.error({ err: error }, "Unable to process queued order emails");
@@ -98,6 +119,8 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
         orderBy: { createdAt: "desc" },
         include: {
           items: true,
+          tracking: true,
+          supportCases: { orderBy: { createdAt: "desc" } },
           notifications: { orderBy: { createdAt: "asc" } }
         },
         take: 100
@@ -128,6 +151,62 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
       const order = await lookupOrder(context, req.body);
 
       return sendSuccess(res, { order });
+    })
+  );
+
+  router.get(
+    "/buyer/orders",
+    asyncHandler(async (req, res) => {
+      const orders = await listBuyerOrders(context, req);
+      return sendSuccess(res, { orders });
+    })
+  );
+
+  router.delete(
+    "/buyer/session",
+    asyncHandler(async (req, res) => {
+      const session = await forgetBuyerSession(context, req, res);
+      return sendSuccess(res, { session });
+    })
+  );
+
+  router.post(
+    "/buyer/orders/claim",
+    lookupOrderLimiter,
+    validateRequest({ body: lookupOrderSchema }),
+    asyncHandler(async (req, res) => {
+      const orders = await claimBuyerOrder(context, req, res, req.body);
+      return sendSuccess(res, { orders });
+    })
+  );
+
+  router.post(
+    "/buyer/orders/:orderNumber/cancel",
+    lookupOrderLimiter,
+    validateRequest({ params: orderNumberParams, body: cancelBuyerOrderSchema }),
+    asyncHandler(async (req, res) => {
+      const cancellation = await cancelBuyerOrder(
+        context,
+        req,
+        req.params.orderNumber,
+        req.body.reason
+      );
+      return sendSuccess(res, { cancellation });
+    })
+  );
+
+  router.post(
+    "/buyer/orders/:orderNumber/cases",
+    lookupOrderLimiter,
+    validateRequest({ params: orderNumberParams, body: createBuyerSupportCaseSchema }),
+    asyncHandler(async (req, res) => {
+      const supportCase = await createBuyerSupportCase(
+        context,
+        req,
+        req.params.orderNumber,
+        req.body
+      );
+      return sendCreated(res, { supportCase });
     })
   );
 
@@ -198,6 +277,14 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     validateRequest({ params: cartTokenParams, body: checkoutCartSchema }),
     asyncHandler(async (req, res) => {
       const order = await checkoutCart(context, req.params.token, req.body, { ipAddress: req.ip });
+      try {
+        await attachOrderToBuyerSession(context, req, res, order.id);
+      } catch (error) {
+        context.logger.error(
+          { err: error, orderId: order.id },
+          "Checkout completed without attaching the buyer session"
+        );
+      }
       await deliverQueuedOrderEmails(context, { orderId: order.id });
 
       return sendCreated(res, { order: adminOrderDto(order) });
@@ -330,6 +417,45 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     asyncHandler(async (req, res) => {
       await context.prisma.shippingZone.delete({ where: { id: req.params.id } });
       return sendSuccess(res, { deleted: true });
+    })
+  );
+
+  router.patch(
+    "/cases/:caseId",
+    requirePermission(context, "update", "orders"),
+    validateRequest({ params: supportCaseIdParams, body: updateOrderSupportCaseSchema }),
+    asyncHandler(async (req, res) => {
+      const supportCase = await context.prisma.orderSupportCase.update({
+        where: { id: req.params.caseId },
+        data: {
+          status: req.body.status,
+          merchantResponse: req.body.merchantResponse,
+          resolvedAt: ["RESOLVED", "CLOSED"].includes(req.body.status) ? new Date() : null
+        }
+      });
+      return sendSuccess(res, { supportCase });
+    })
+  );
+
+  router.patch(
+    "/:id/tracking",
+    requirePermission(context, "update", "orders"),
+    validateRequest({ params: orderIdParams, body: updateOrderTrackingSchema }),
+    asyncHandler(async (req, res) => {
+      const timestamps = {
+        ...(req.body.status === "SHIPPED" && req.body.shippedAt === undefined
+          ? { shippedAt: new Date() }
+          : {}),
+        ...(req.body.status === "DELIVERED" && req.body.deliveredAt === undefined
+          ? { deliveredAt: new Date() }
+          : {})
+      };
+      const tracking = await context.prisma.orderTracking.upsert({
+        where: { orderId: req.params.id },
+        update: { ...req.body, ...timestamps },
+        create: { orderId: req.params.id, ...req.body, ...timestamps }
+      });
+      return sendSuccess(res, { tracking });
     })
   );
 
@@ -477,7 +603,8 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
         if (currentOrder.status !== updatedOrder.status) {
           await queueOrderEmail(tx, updatedOrder, {
             eventType: "ORDER_STATUS_CHANGED",
-            previousStatus: currentOrder.status
+            previousStatus: currentOrder.status,
+            accountUrl: orderAccountUrl(context)
           });
         }
 

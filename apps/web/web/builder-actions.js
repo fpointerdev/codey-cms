@@ -33,11 +33,6 @@ import {
   sliderValueFromModal
 } from "./slider-config.js";
 import {
-  advancedSettingsFromValues,
-  animationEffectOptions,
-  sanitizeAnimationSettings
-} from "./custom-css.js";
-import {
   copyBuilderSections,
   createBuilderClipboardPayload,
   duplicateBuilderBlockInSections,
@@ -49,101 +44,14 @@ import {
   pasteBuilderClipboardInSections,
   sectionToBuilderInput
 } from "./builder-operations.js";
+import {
+  sectionBackgroundAsset,
+  sectionControlFields,
+  sectionSettingsFromControls
+} from "./section-design.js";
 
 const builderHistoryLimit = 30;
 const builderClipboardStorageKey = "codey_builder_clipboard";
-
-const containerLayoutOptions = [
-  { value: "one-column", label: "1 column", description: "Stacked content and long-form sections." },
-  { value: "two-column", label: "2 columns", description: "Image/text, forms, FAQs, and balanced content." },
-  { value: "three-column", label: "3 columns", description: "Service cards, proof points, and compact grids." },
-  { value: "four-column", label: "4 columns", description: "Dense cards, stats, logos, and team sections." },
-  { value: "asymmetric", label: "Asymmetric", description: "Editorial split with one dominant side." },
-  { value: "full-bleed", label: "Full width", description: "Wide media, hero, or immersive sections." }
-];
-
-const sectionContainerOptions = [
-  { value: "default", label: "Default" },
-  { value: "narrow", label: "Narrow" },
-  { value: "wide", label: "Wide" },
-  { value: "full", label: "Edge to edge" }
-];
-
-const sectionSpacingOptions = [
-  { value: "none", label: "None" },
-  { value: "sm", label: "Small" },
-  { value: "md", label: "Medium" },
-  { value: "lg", label: "Large" },
-  { value: "xl", label: "Extra large" }
-];
-
-const sectionGapOptions = [
-  { value: "sm", label: "Tight", description: "Compact editorial rhythm." },
-  { value: "md", label: "Standard", description: "Balanced default spacing." },
-  { value: "lg", label: "Wide", description: "Premium section breathing room." },
-  { value: "xl", label: "Extra wide", description: "Hero and gallery scale." }
-];
-
-const inheritedSectionSpacingOptions = [
-  { value: "inherit", label: "Inherit desktop spacing" },
-  ...sectionSpacingOptions
-];
-
-const tabletLayoutOptions = [
-  { value: "inherit", label: "Inherit", description: "Use the desktop grid." },
-  { value: "one-column", label: "1 column", description: "Stack for readability." },
-  { value: "two-column", label: "2 columns", description: "Keep paired content together." },
-  { value: "three-column", label: "3 columns", description: "Useful for card grids." }
-];
-
-const mobileLayoutOptions = [
-  { value: "inherit", label: "Inherit", description: "Use tablet/default behavior." },
-  { value: "one-column", label: "1 column", description: "Best for content and forms." },
-  { value: "two-column", label: "2 columns", description: "Use only for short cards." }
-];
-
-const sectionAlignOptions = [
-  { value: "start", label: "Left" },
-  { value: "center", label: "Center" },
-  { value: "end", label: "Right" }
-];
-
-const sectionVerticalAlignOptions = [
-  { value: "start", label: "Top" },
-  { value: "center", label: "Center" },
-  { value: "end", label: "Bottom" }
-];
-
-const sectionStylePresetOptions = [
-  { value: "default", label: "Default" },
-  { value: "editorial-light", label: "Editorial light" },
-  { value: "quiet", label: "Quiet" },
-  { value: "carded", label: "Carded" },
-  { value: "framed-card", label: "Framed card" },
-  { value: "contrast", label: "Contrast" },
-  { value: "industrial-grid", label: "Industrial grid" },
-  { value: "premium-dark", label: "Premium dark" }
-];
-
-const sectionDecorationOptions = [
-  { value: "none", label: "None" },
-  { value: "spotlight", label: "Soft spotlight" },
-  { value: "grid", label: "Grid layer" },
-  { value: "frame", label: "Frame" },
-  { value: "texture", label: "Texture" },
-  { value: "split", label: "Split background" },
-  { value: "glow", label: "Glow" },
-  { value: "pattern", label: "Pattern" }
-];
-
-const sectionDecorationPositionOptions = [
-  { value: "top-left", label: "Top left" },
-  { value: "top-right", label: "Top right" },
-  { value: "center-left", label: "Center left" },
-  { value: "center-right", label: "Center right" },
-  { value: "bottom-left", label: "Bottom left" },
-  { value: "bottom-right", label: "Bottom right" }
-];
 
 function activeRouteLocale() {
   const activeQueryLocale = new URLSearchParams(window.location.search || "").get("locale");
@@ -389,297 +297,6 @@ export function linkExistingPageTranslation(sourceSlug, sourceLocale, sourceTitl
 
 export function linkExistingPostTranslation(sourceSlug, sourceLocale, sourceTitle, translationGroupId) {
   return linkExistingContentTranslation("post", sourceSlug, sourceLocale, sourceTitle, translationGroupId);
-}
-
-function sectionControlFields(section = {}) {
-  const settings = section.settings || {};
-  const style = settings.style || {};
-  const decoration = settings.decoration || {};
-  const responsive = settings.responsive || {};
-  const tablet = responsive.tablet || {};
-  const mobile = responsive.mobile || {};
-  const animation = sanitizeAnimationSettings(settings.animation || {});
-
-  return [
-    { name: "label", label: "Container label", value: section.label || section.key || "", group: "Layout" },
-    {
-      name: "layout",
-      label: "Grid",
-      type: "choice",
-      value: settings.layout || "one-column",
-      options: containerLayoutOptions,
-      help: "Choose the desktop structure. Tablet and mobile can override it.",
-      group: "Layout"
-    },
-    {
-      name: "container",
-      label: "Width",
-      type: "select",
-      value: settings.container || "default",
-      options: sectionContainerOptions,
-      group: "Layout"
-    },
-    {
-      name: "spacing",
-      label: "Vertical spacing",
-      type: "select",
-      value: settings.spacing || "md",
-      options: sectionSpacingOptions,
-      group: "Layout"
-    },
-    {
-      name: "gap",
-      label: "Column gap",
-      type: "choice",
-      value: settings.gap || "md",
-      options: sectionGapOptions,
-      compact: true,
-      group: "Layout"
-    },
-    {
-      name: "align",
-      label: "Content alignment",
-      type: "select",
-      value: settings.align || "start",
-      options: sectionAlignOptions,
-      group: "Layout"
-    },
-    {
-      name: "verticalAlign",
-      label: "Vertical alignment",
-      type: "select",
-      value: settings.verticalAlign || "start",
-      options: sectionVerticalAlignOptions,
-      group: "Layout"
-    },
-    {
-      name: "minHeight",
-      label: "Minimum height",
-      type: "number",
-      value: settings.minHeight ?? "",
-      min: 0,
-      max: 1200,
-      step: 20,
-      required: false,
-      group: "Layout"
-    },
-    {
-      name: "tabletLayout",
-      label: "Tablet grid",
-      type: "choice",
-      value: tablet.layout || "inherit",
-      options: tabletLayoutOptions,
-      compact: true,
-      group: "Tablet"
-    },
-    {
-      name: "tabletSpacing",
-      label: "Tablet spacing",
-      type: "select",
-      value: tablet.spacing || "inherit",
-      options: inheritedSectionSpacingOptions,
-      group: "Tablet"
-    },
-    {
-      name: "mobileLayout",
-      label: "Mobile grid",
-      type: "choice",
-      value: mobile.layout || "one-column",
-      options: mobileLayoutOptions,
-      compact: true,
-      group: "Mobile"
-    },
-    {
-      name: "mobileSpacing",
-      label: "Mobile spacing",
-      type: "select",
-      value: mobile.spacing || "sm",
-      options: inheritedSectionSpacingOptions,
-      group: "Mobile"
-    },
-    {
-      name: "stylePreset",
-      label: "Style preset",
-      type: "select",
-      value: style.preset || "default",
-      options: sectionStylePresetOptions,
-      group: "Style"
-    },
-    { name: "backgroundColor", label: "Background", type: "color", value: style.backgroundColor || "", required: false, group: "Style" },
-    { name: "textColor", label: "Text color", type: "color", value: style.textColor || "", required: false, group: "Style" },
-    { name: "accentColor", label: "Accent color", type: "color", value: style.accentColor || "", required: false, group: "Style" },
-    {
-      name: "radius",
-      label: "Corner radius",
-      type: "number",
-      value: style.radius ?? "",
-      min: 0,
-      max: 48,
-      step: 1,
-      required: false,
-      group: "Style"
-    },
-    {
-      name: "shadow",
-      label: "Shadow",
-      type: "select",
-      value: style.shadow || "none",
-      options: [
-        { value: "none", label: "None" },
-        { value: "soft", label: "Soft" },
-        { value: "strong", label: "Strong" },
-        { value: "glow", label: "Glow" }
-      ],
-      group: "Style"
-    },
-    {
-      name: "decorationType",
-      label: "Decoration",
-      type: "select",
-      value: decoration.type || "none",
-      options: sectionDecorationOptions,
-      group: "Decoration"
-    },
-    {
-      name: "decorationPosition",
-      label: "Decoration position",
-      type: "select",
-      value: decoration.position || "bottom-right",
-      options: sectionDecorationPositionOptions,
-      group: "Decoration"
-    },
-    { name: "decorationColor", label: "Decoration color", type: "color", value: decoration.color || "#5b5cff", required: false, group: "Decoration" },
-    {
-      name: "decorationOpacity",
-      label: "Decoration opacity",
-      type: "range",
-      value: decoration.opacity ?? 0.35,
-      min: 0,
-      max: 0.9,
-      step: 0.05,
-      required: false,
-      group: "Decoration"
-    },
-    {
-      name: "htmlId",
-      label: "HTML ID",
-      value: settings.htmlId || "",
-      required: false,
-      help: "Optional anchor ID, for example services or contact-cta.",
-      group: "Advanced"
-    },
-    {
-      name: "cssClasses",
-      label: "CSS classes",
-      value: settings.cssClasses || "",
-      required: false,
-      help: "Optional safe class names separated by spaces.",
-      group: "Advanced"
-    },
-    {
-      name: "animationEffect",
-      label: "Animation",
-      type: "select",
-      value: animation.effect,
-      options: animationEffectOptions,
-      required: false,
-      group: "Motion"
-    },
-    {
-      name: "animationDuration",
-      label: "Duration ms",
-      type: "number",
-      value: animation.durationMs,
-      min: 120,
-      max: 3000,
-      step: 10,
-      required: false,
-      group: "Motion"
-    },
-    {
-      name: "animationDelay",
-      label: "Delay ms",
-      type: "number",
-      value: animation.delayMs,
-      min: 0,
-      max: 5000,
-      step: 50,
-      required: false,
-      group: "Motion"
-    },
-    {
-      name: "customCss",
-      label: "Advanced CSS",
-      type: "textarea",
-      rows: 3,
-      value: settings.customCss || "",
-      required: false,
-      help: "Optional CSS declarations for this section. Use only when controls are not enough.",
-      group: "Advanced"
-    }
-  ];
-}
-
-function optionalNumber(value, min, max) {
-  if (value === "" || value === null || value === undefined) return undefined;
-
-  const number = Number(value);
-  if (!Number.isFinite(number)) return undefined;
-
-  return Math.min(max, Math.max(min, Math.round(number)));
-}
-
-function optionalColor(value) {
-  const color = String(value || "").trim();
-  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color) ? color : undefined;
-}
-
-function responsiveSettings(values, currentSettings = {}) {
-  return {
-    ...(currentSettings.responsive || {}),
-    tablet: {
-      ...(currentSettings.responsive?.tablet || {}),
-      layout: values.tabletLayout || "inherit",
-      spacing: values.tabletSpacing || "inherit"
-    },
-    mobile: {
-      ...(currentSettings.responsive?.mobile || {}),
-      layout: values.mobileLayout || "one-column",
-      spacing: values.mobileSpacing || "sm"
-    }
-  };
-}
-
-function settingsFromSectionControls(values, currentSettings = {}) {
-  return {
-    ...currentSettings,
-    ...advancedSettingsFromValues(values, currentSettings),
-    layout: values.layout || "one-column",
-    container: values.container || "default",
-    spacing: values.spacing || "md",
-    gap: values.gap || "md",
-    align: values.align || "start",
-    verticalAlign: values.verticalAlign || "start",
-    minHeight: optionalNumber(values.minHeight, 0, 1200),
-    responsive: responsiveSettings(values, currentSettings),
-    style: {
-      ...(currentSettings.style || {}),
-      preset: values.stylePreset || "default",
-      backgroundColor: optionalColor(values.backgroundColor),
-      textColor: optionalColor(values.textColor),
-      accentColor: optionalColor(values.accentColor),
-      radius: optionalNumber(values.radius, 0, 48),
-      shadow: values.shadow || "none"
-    },
-    decoration: {
-      ...(currentSettings.decoration || {}),
-      type: values.decorationType || "none",
-      position: values.decorationPosition || "bottom-right",
-      color: optionalColor(values.decorationColor) || "#5b5cff",
-      opacity: Number.isFinite(Number(values.decorationOpacity)) ? Math.min(0.9, Math.max(0, Number(values.decorationOpacity))) : 0.35
-    },
-    customCss: String(values.customCss || "").trim()
-  };
 }
 
 export async function createPageFromDashboard() {
@@ -997,7 +614,7 @@ export async function savePageBuilderSettings(form) {
   }
 }
 
-async function createBuilderContainer(input = {}) {
+async function createBuilderContainer(input = {}, backgroundAsset = null) {
   if (!state.builderPage) return null;
 
   const key = `container-${Date.now()}`;
@@ -1007,7 +624,7 @@ async function createBuilderContainer(input = {}) {
     sortOrder: state.builderPage.sections?.length || 0,
     settings: {
       template: "content",
-      ...settingsFromSectionControls(input)
+      ...sectionSettingsFromControls(input, {}, backgroundAsset)
     },
     blocks: []
   };
@@ -1024,17 +641,29 @@ export async function addBuilderContainer() {
   if (!state.builderPage) return;
 
   try {
+    const mediaAssets = await loadMediaImageAssets();
     const values = await getModalFormHandler()({
       label: "Page builder",
       title: "Choose container layout",
-      description: "Pick the grid, width, style, and optional decorative layer. After it appears on the canvas, add elements into it.",
-      fields: sectionControlFields({ label: `Section ${(state.builderPage.sections?.length || 0) + 1}` }),
+      description: "Choose a layout and appearance, then add elements into the container.",
+      fields: sectionControlFields({ label: `Section ${(state.builderPage.sections?.length || 0) + 1}` }, mediaAssets),
       submitLabel: "Add container"
     });
     if (!values) return;
 
+    const imageFile = selectedFile(values.backgroundImageFile);
+    if (imageFile) values.backgroundMode = "image";
+    const uploadedAsset = imageFile
+      ? await uploadMediaFile(imageFile, values.label || "Section background")
+      : null;
+    const backgroundAsset = sectionBackgroundAsset(values, {}, mediaAssets, uploadedAsset);
+    if (values.backgroundMode === "image" && !backgroundAsset.url) {
+      setStatus("Choose or upload a background image.", true);
+      return;
+    }
+
     setStatus("Adding container...");
-    await createBuilderContainer(values);
+    await createBuilderContainer(values, backgroundAsset);
   } catch (error) {
     setStatus(error.message || "Unable to add container.", true);
   }
@@ -1446,14 +1075,26 @@ export async function editBuilderSection(sectionId) {
   const section = (state.builderPage.sections || []).find((item) => item.id === sectionId);
   if (!section) return;
 
+  const mediaAssets = await loadMediaImageAssets();
   const values = await getModalFormHandler()({
     label: "Container settings",
     title: section.label || "Edit container",
-    description: "Adjust layout, visual style, and decorative layer without touching CSS.",
-    fields: sectionControlFields(section),
+    description: "Adjust layout and appearance with the same controls used by the visual editor.",
+    fields: sectionControlFields(section, mediaAssets),
     submitLabel: "Save container"
   });
   if (!values) return;
+
+  const imageFile = selectedFile(values.backgroundImageFile);
+  if (imageFile) values.backgroundMode = "image";
+  const uploadedAsset = imageFile
+    ? await uploadMediaFile(imageFile, section.label || section.key || "Section background")
+    : null;
+  const backgroundAsset = sectionBackgroundAsset(values, section.settings || {}, mediaAssets, uploadedAsset);
+  if (values.backgroundMode === "image" && !backgroundAsset.url) {
+    setStatus("Choose or upload a background image.", true);
+    return;
+  }
 
   try {
     const sections = (state.builderPage.sections || []).map((item) => {
@@ -1462,7 +1103,7 @@ export async function editBuilderSection(sectionId) {
       return sectionToBuilderInput({
         ...item,
         label: values.label,
-        settings: settingsFromSectionControls(values, item.settings || {})
+        settings: sectionSettingsFromControls(values, item.settings || {}, backgroundAsset)
       });
     });
 

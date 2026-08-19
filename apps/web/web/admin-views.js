@@ -624,7 +624,9 @@ export function renderShopShell(activeView, content) {
 }
 
 function orderNeedsAttention(order = {}) {
-  return ["PENDING", "CONFIRMED", "PAID"].includes(order.status) || order.checkoutStatus === "PAYMENT_PENDING";
+  return ["PENDING", "CONFIRMED", "PAID"].includes(order.status)
+    || order.checkoutStatus === "PAYMENT_PENDING"
+    || order.supportCases?.some((supportCase) => ["OPEN", "IN_REVIEW"].includes(supportCase.status));
 }
 
 function productPurchaseMode(product = {}) {
@@ -993,6 +995,63 @@ function merchantOrderAction(order) {
   return "";
 }
 
+function trackingDateValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 16);
+}
+
+function trackingStatusOptions(value = "PREPARING") {
+  return ["PREPARING", "SHIPPED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED", "DELAYED"]
+    .map((status) => `<option value="${status}"${status === value ? " selected" : ""}>${escapeHtml(status.replaceAll("_", " ").toLowerCase())}</option>`)
+    .join("");
+}
+
+function orderTrackingManagement(order) {
+  const tracking = order.tracking || {};
+  if (!hasPermission("update", "orders")) {
+    return tracking.status
+      ? `<div class="shop-order-tracking-summary"><strong>${escapeHtml(tracking.status.replaceAll("_", " "))}</strong><span>${escapeHtml([tracking.carrier, tracking.trackingNumber].filter(Boolean).join(" · ") || "No carrier details")}</span></div>`
+      : "";
+  }
+
+  return `
+    <section class="shop-order-management">
+      <div><p class="section-label">Buyer tracking</p><h3>Delivery progress</h3></div>
+      <form data-order-tracking-form data-order-id="${escapeHtml(order.id)}">
+        <label><span>Status</span><select name="status">${trackingStatusOptions(tracking.status)}</select></label>
+        <label><span>Carrier</span><input name="carrier" maxlength="120" value="${escapeHtml(tracking.carrier || "")}" /></label>
+        <label><span>Tracking number</span><input name="trackingNumber" maxlength="160" value="${escapeHtml(tracking.trackingNumber || "")}" /></label>
+        <label class="shop-order-management-wide"><span>Tracking link</span><input name="trackingUrl" type="url" maxlength="2048" value="${escapeHtml(tracking.trackingUrl || "")}" placeholder="https://carrier.example/track/..." /></label>
+        <label><span>Estimated delivery</span><input name="estimatedDeliveryAt" type="datetime-local" value="${escapeHtml(trackingDateValue(tracking.estimatedDeliveryAt))}" /></label>
+        <label class="shop-order-management-wide"><span>Buyer note</span><textarea name="note" rows="2" maxlength="1000">${escapeHtml(tracking.note || "")}</textarea></label>
+        <p class="form-message" data-form-message></p>
+        <button type="submit">Save tracking</button>
+      </form>
+    </section>
+  `;
+}
+
+function orderSupportCases(order) {
+  if (!order.supportCases?.length) return "";
+
+  return `
+    <section class="shop-order-management">
+      <div><p class="section-label">Buyer support</p><h3>Requests</h3></div>
+      <div class="shop-order-case-list">
+        ${order.supportCases.map((supportCase) => `
+          <article>
+            <div><span><strong>${escapeHtml(supportCase.subject)}</strong><small>${escapeHtml(supportCase.type.replaceAll("_", " "))} · ${escapeHtml(formatDate(supportCase.createdAt))}</small></span><span class="status-pill">${escapeHtml(supportCase.status)}</span></div>
+            <p>${escapeHtml(supportCase.message)}</p>
+            ${supportCase.merchantResponse ? `<blockquote><strong>Response</strong><p>${escapeHtml(supportCase.merchantResponse)}</p></blockquote>` : ""}
+            ${hasPermission("update", "orders") ? `<button type="button" class="link-button" data-order-case-update="${escapeHtml(supportCase.id)}" data-order-case-status="${escapeHtml(supportCase.status)}" data-order-case-response="${escapeHtml(supportCase.merchantResponse || "")}">Update request</button>` : ""}
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function orderDetailRow(order) {
   const notification = order.notifications?.at?.(-1);
   const metadata = order.metadata && typeof order.metadata === "object" ? order.metadata : {};
@@ -1021,6 +1080,8 @@ function orderDetailRow(order) {
               ? `<button type="button" class="link-button" data-order-email-retry="${escapeHtml(notification.id)}">Retry email</button>`
               : ""}
           ` : ""}
+          ${orderTrackingManagement(order)}
+          ${orderSupportCases(order)}
         </div>
       </td>
     </tr>
@@ -1028,12 +1089,14 @@ function orderDetailRow(order) {
 }
 
 export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
+  const openCaseCount = orders.reduce((count, order) => count + (order.supportCases || [])
+    .filter((supportCase) => ["OPEN", "IN_REVIEW"].includes(supportCase.status)).length, 0);
   renderShopShell(
     "shop-orders",
     `
       <section class="admin-section">
         <div class="section-heading-row">
-          <div><p class="section-label">Fulfillment</p><h2>Orders</h2></div>
+          <div><p class="section-label">Fulfillment</p><h2>Orders</h2><p class="dashboard-copy">${escapeHtml(openCaseCount)} open buyer request${openCaseCount === 1 ? "" : "s"}</p></div>
           <div class="table-action-row">
             ${hasPermission("read", "orders") ? '<button type="button" class="secondary-button" data-customer-data-action="export">Export customer data</button>' : ""}
             ${hasPermission("update", "orders") ? '<button type="button" class="secondary-button danger" data-customer-data-action="anonymize">Anonymize customer</button>' : ""}
@@ -1054,7 +1117,7 @@ export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
                           <tr>
                             <td><strong>${escapeHtml(order.orderNumber || order.id)}</strong></td>
                             <td>${escapeHtml(order.customerName || order.customerEmail)}</td>
-                            <td><span class="status-pill">${escapeHtml(order.status)}</span></td>
+                            <td><span class="status-pill">${escapeHtml(order.status)}</span>${order.supportCases?.some((supportCase) => ["OPEN", "IN_REVIEW"].includes(supportCase.status)) ? '<small class="payment-order-status">Buyer request</small>' : ""}</td>
                             <td>${payment
                               ? `<strong>${escapeHtml(payment.provider)}</strong><small class="payment-order-status">${escapeHtml(payment.status)}</small>`
                               : escapeHtml(order.checkoutStatus)}</td>

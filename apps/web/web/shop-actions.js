@@ -703,6 +703,89 @@ export async function updateOrderStatus(button) {
   }
 }
 
+function optionalDateTime(value) {
+  const date = value ? new Date(String(value)) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
+}
+
+export async function saveOrderTracking(form) {
+  const orderId = form?.dataset?.orderId;
+  if (!orderId) return;
+
+  const data = new FormData(form);
+  setFormDisabled(form, true);
+  setFormMessage(form, "Saving tracking...");
+  try {
+    await api(`/orders/${encodeURIComponent(orderId)}/tracking`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: String(data.get("status") || "PREPARING"),
+        carrier: optionalFormValue(data, "carrier") || null,
+        trackingNumber: optionalFormValue(data, "trackingNumber") || null,
+        trackingUrl: optionalFormValue(data, "trackingUrl") || null,
+        estimatedDeliveryAt: optionalDateTime(data.get("estimatedDeliveryAt")),
+        note: optionalFormValue(data, "note") || null
+      })
+    });
+    await loadAdminRoute({ view: "shop-orders" });
+    setStatus("Buyer tracking updated.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to save tracking.", true);
+    setFormDisabled(form, false);
+  }
+}
+
+export async function updateOrderSupportCase(button) {
+  const caseId = button?.dataset?.orderCaseUpdate;
+  if (!caseId) return;
+
+  const values = await getModalFormHandler()({
+    label: "Buyer request",
+    title: "Update support request",
+    description: "The response and status are visible in the buyer's order dashboard.",
+    fields: [
+      {
+        name: "status",
+        label: "Status",
+        type: "select",
+        value: button.dataset.orderCaseStatus || "OPEN",
+        options: [
+          { value: "OPEN", label: "Open" },
+          { value: "IN_REVIEW", label: "In review" },
+          { value: "RESOLVED", label: "Resolved" },
+          { value: "CLOSED", label: "Closed" }
+        ]
+      },
+      {
+        name: "merchantResponse",
+        label: "Response to buyer",
+        type: "textarea",
+        value: button.dataset.orderCaseResponse || "",
+        rows: 6,
+        maxLength: 4000
+      }
+    ],
+    submitLabel: "Save response"
+  });
+  if (!values) return;
+
+  button.disabled = true;
+  try {
+    await api(`/orders/cases/${encodeURIComponent(caseId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: String(values.status || "OPEN"),
+        merchantResponse: String(values.merchantResponse || "").trim() || null
+      })
+    });
+    await loadAdminRoute({ view: "shop-orders" });
+    setStatus("Buyer request updated.");
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to update the buyer request.", true);
+  }
+}
+
 export async function retryOrderEmail(button) {
   const notificationId = button?.dataset?.orderEmailRetry;
   if (!notificationId) return;
