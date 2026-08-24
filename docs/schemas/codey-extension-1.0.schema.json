@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fpointerdev/codey-cms/main/docs/schemas/codey-extension-1.0.schema.json",
+  "title": "CodeY extension manifest 1.0",
+  "description": "A declarative CodeY CMS content-model extension without executable code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "version",
+    "description",
+    "license",
+    "author",
+    "requires",
+    "contentModels"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 120,
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "author": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "url": {
+          "$ref": "#/$defs/httpUrl"
+        }
+      }
+    },
+    "homepage": {
+      "$ref": "#/$defs/httpUrl"
+    },
+    "repository": {
+      "$ref": "#/$defs/httpUrl"
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cms"],
+      "properties": {
+        "cms": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    "contentModels": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/contentModel"
+      }
+    }
+  },
+  "$defs": {
+    "httpUrl": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 1000,
+      "pattern": "^https?://"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "slug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "contentModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "slug", "titleField", "fields"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "titleField": {
+          "$ref": "#/$defs/identifier"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/contentField"
+          }
+        },
+        "publicRead": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "contentField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "type"],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/identifier"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "type": {
+          "enum": [
+            "text",
+            "textarea",
+            "richText",
+            "email",
+            "url",
+            "number",
+            "boolean",
+            "date",
+            "dateTime",
+            "image",
+            "file",
+            "select",
+            "relation"
+          ]
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "multiple": {
+          "type": "boolean",
+          "default": false
+        },
+        "helpText": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "placeholder": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "options": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "value"],
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            }
+          }
+        },
+        "relationCollection": {
+          "$ref": "#/$defs/slug"
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "multiple": {
+                "const": true
+              }
+            },
+            "required": ["multiple"]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "enum": ["image", "file", "select", "relation"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "select"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["options"],
+            "properties": {
+              "options": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "relation"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["relationCollection"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "email"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {
+              "minLength": {
+                "maximum": 320
+              },
+              "maxLength": {
+                "maximum": 320
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "url"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {
+              "minLength": {
+                "maximum": 2048
+              },
+              "maxLength": {
+                "maximum": 2048
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

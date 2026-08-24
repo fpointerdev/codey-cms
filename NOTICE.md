@@ -1,6 +1,6 @@
 # CodeY CMS Legal Notice
 
-Copyright (C) 2026 Fatlum Prekadini and CodeY CMS contributors.
+Copyright (C) 2026 CodeY CMS contributors.
 
 ## Software License
 

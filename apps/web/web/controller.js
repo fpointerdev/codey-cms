@@ -24,6 +24,10 @@ async function publicShopViews() {
   return import("./public-shop.js");
 }
 
+async function contentModelViews() {
+  return import("./content-model-views.js");
+}
+
 function activeAdminLocale() {
   const activeQueryLocale = new URLSearchParams(window.location.search || "").get("locale");
   if (activeQueryLocale) return currentLocale();
@@ -350,6 +354,69 @@ export async function loadAdminRoute(route) {
     return;
   }
 
+  if (route.view === "collections") {
+    const { renderCollectionsPage } = await contentModelViews();
+    try {
+      const [{ collections }, extensionResponse] = await Promise.all([
+        api("/cms/collections"),
+        api("/cms/extensions").catch(() => ({ extensions: [], failures: [] }))
+      ]);
+      state.contentCollections = collections || [];
+      renderCollectionsPage(collections || [], extensionResponse);
+    } catch (error) {
+      renderCollectionsPage([], { extensions: [], failures: [] }, error.message || "Unable to load collections.");
+    }
+    return;
+  }
+
+  if (route.view === "collection-create") {
+    const { renderCollectionEditorPage } = await contentModelViews();
+    const { collections } = await api("/cms/collections");
+    state.contentCollections = collections || [];
+    renderCollectionEditorPage(null, collections || []);
+    return;
+  }
+
+  if (route.view === "collection-editor" && route.collectionSlug) {
+    const { renderCollectionEditorPage } = await contentModelViews();
+    try {
+      const [{ collection }, entriesResponse, collectionsResponse] = await Promise.all([
+        api(`/cms/collections/${encodeURIComponent(route.collectionSlug)}`),
+        api(`/cms/collections/${encodeURIComponent(route.collectionSlug)}/entries?includeDrafts=true&limit=100`),
+        api("/cms/collections")
+      ]);
+      state.contentCollections = collectionsResponse.collections || [];
+      renderCollectionEditorPage(collection, collectionsResponse.collections || [], entriesResponse.entries || []);
+    } catch (error) {
+      const { renderCollectionsPage } = await contentModelViews();
+      renderCollectionsPage([], { extensions: [], failures: [] }, error.message || "Unable to load collection.");
+    }
+    return;
+  }
+
+  if (["collection-entry-create", "collection-entry-editor"].includes(route.view) && route.collectionSlug) {
+    const { renderCollectionEntryPage } = await contentModelViews();
+    try {
+      const { collection } = await api(`/cms/collections/${encodeURIComponent(route.collectionSlug)}`);
+      const locale = activeAdminLocale();
+      const entryResponse = route.entrySlug
+        ? await api(`/cms/collections/${encodeURIComponent(route.collectionSlug)}/entries/${encodeURIComponent(route.entrySlug)}?locale=${encodeURIComponent(locale)}&includeDrafts=true`)
+        : { entry: null };
+      const relationSlugs = [...new Set((collection.fields || [])
+        .filter((field) => field.type === "relation" && field.relationCollection)
+        .map((field) => field.relationCollection))];
+      const relationEntries = Object.fromEntries(await Promise.all(relationSlugs.map(async (slug) => {
+        const response = await api(`/cms/collections/${encodeURIComponent(slug)}/entries?locale=${encodeURIComponent(locale)}&includeDrafts=true&limit=100`);
+        return [slug, response.entries || []];
+      })));
+      renderCollectionEntryPage(collection, entryResponse.entry, relationEntries);
+    } catch (error) {
+      const { renderCollectionsPage } = await contentModelViews();
+      renderCollectionsPage([], { extensions: [], failures: [] }, error.message || "Unable to load entry editor.");
+    }
+    return;
+  }
+
   if (route.view === "users") {
     const { renderUsersPage } = await adminViews();
     const filters = new URLSearchParams();
@@ -518,6 +585,11 @@ function routeModulesEnabled(route) {
     posts: ["cms"],
     "post-create": ["cms"],
     "post-builder": ["cms"],
+    collections: ["cms"],
+    "collection-create": ["cms"],
+    "collection-editor": ["cms"],
+    "collection-entry-create": ["cms"],
+    "collection-entry-editor": ["cms"],
     "post-categories": ["cms"],
     users: ["users", "roles"],
     user: ["users", "roles"],
@@ -545,6 +617,11 @@ export function adminRoutePermissions(route) {
     posts: [["read", "cms"]],
     "post-create": [["create", "cms"]],
     "post-builder": [["update", "cms"]],
+    collections: [["read", "cms"]],
+    "collection-create": [["create", "cms"]],
+    "collection-editor": [["read", "cms"]],
+    "collection-entry-create": [["create", "cms"]],
+    "collection-entry-editor": [["update", "cms"]],
     "post-categories": [["read", "cms"]],
     users: [["read", "users"]],
     user: [["read", "users"]],

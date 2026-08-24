@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  builderRegistryVersion,
   builderElementRegistry,
+  builderStylePresetRegistry,
   sectionPresetRegistry,
   builderSectionPatternRegistry,
   validateCustomCodeValue,
@@ -46,6 +48,12 @@ test("frontend builder templates match the registered editor elements", () => {
     ["heading", "rich-text", "image", "button"].filter((elementId) => !frontendIds.includes(elementId)),
     []
   );
+});
+
+test("builder registry advertises the additive liquid style contract", () => {
+  assert.equal(builderRegistryVersion, "2026-08-24.1");
+  assert.equal(builderStylePresetRegistry.length, 5);
+  assert.equal(builderStylePresetRegistry.find((preset) => preset.id === "liquid")?.settings.style?.preset, "liquid");
 });
 
 test("custom code accepts bounded sandbox content and rejects unsafe libraries", () => {
@@ -169,6 +177,9 @@ test("expanded structured elements expose focused collection and quote fields", 
   assert.ok(bentoEditor?.fields.some((field) => field.type === "section" && field.open === true));
   assert.ok(bentoEditor?.fields.some((field) => field.name === "structuredPresentation" && field.group === "Settings"));
   assert.ok(bentoEditor?.fields.some((field) => field.name === "structuredSurface" && field.group === "Style"));
+  assert.ok(bentoEditor?.fields.find((field) => field.name === "structuredSurface")?.options?.some((option) => option.value === "liquid"));
+  assert.ok(bentoEditor?.fields.some((field) => field.name === "structuredShape" && field.group === "Style"));
+  assert.ok(bentoEditor?.fields.some((field) => field.name === "structuredInteraction" && field.group === "Style"));
   assert.equal(quoteEditor?.valueFrom({
     structuredTitle: "Customer perspective",
     structuredBody: "The result stayed simple.",
@@ -307,7 +318,9 @@ test("v1 structured elements expose simple settings and preserve comparison cont
     structuredItem1SecondValue: "Priority",
     structuredAlignment: "center",
     structuredDensity: "compact",
-    structuredSurface: "soft",
+    structuredSurface: "liquid",
+    structuredShape: "rounded",
+    structuredInteraction: "glow",
     structuredStripedRows: true
   });
 
@@ -317,7 +330,9 @@ test("v1 structured elements expose simple settings and preserve comparison cont
   assert.deepEqual(value.display, {
     alignment: "center",
     density: "compact",
-    surface: "soft",
+    surface: "liquid",
+    shape: "rounded",
+    interaction: "glow",
     striped: true
   });
 });

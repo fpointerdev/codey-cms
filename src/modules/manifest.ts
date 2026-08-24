@@ -388,7 +388,7 @@ export const deploymentProfiles = {
 
 export const themeManifest = {
   id: "code-epsylon-base",
-  label: "Code Epsylon Base Theme",
+  label: "CodeY Base Theme",
   version: baseVersion,
   admin: {
     entry: "/cy-admin",
@@ -396,6 +396,7 @@ export const themeManifest = {
       "/dashboard",
       "/dashboard/pages",
       "/dashboard/posts",
+      "/dashboard/collections",
       "/dashboard/shop",
       "/dashboard/shop/products",
       "/dashboard/shop/categories",
@@ -414,6 +415,7 @@ export const themeManifest = {
       { label: "Shop", route: "/dashboard/shop", view: "shop", modules: ["products", "orders"] },
       { label: "Pages", route: "/dashboard/pages", view: "pages", modules: ["cms"] },
       { label: "Posts", route: "/dashboard/posts", view: "posts", modules: ["cms"] },
+      { label: "Collections", route: "/dashboard/collections", view: "collections", modules: ["cms"] },
       { label: "Users", route: "/dashboard/users", view: "users", modules: ["users", "roles"] },
       { label: "Profile", route: "/dashboard/profile", view: "profile", modules: ["auth"] },
       { label: "Settings", route: "/dashboard/settings", view: "settings", modules: ["config"] }
@@ -449,14 +451,22 @@ export const themeManifest = {
         routePattern: "/:slug"
       },
       posts: {
-        publicRenderer: false,
+        publicRenderer: true,
+        routePattern: "/posts/:slug",
         adminRoute: "/dashboard/posts",
         apiRoute: "/api/v1/cms/posts"
+      },
+      collections: {
+        publicRenderer: false,
+        publicApi: true,
+        adminRoute: "/dashboard/collections",
+        apiRoute: "/api/v1/cms/collections"
       }
     },
     apiRoutes: {
       pages: "/api/v1/cms/pages",
       posts: "/api/v1/cms/posts",
+      collections: "/api/v1/cms/collections",
       menus: "/api/v1/cms/menus",
       media: "/api/v1/cms/media",
       contactForm: "/api/v1/cms/forms/contact"
@@ -496,7 +506,7 @@ export const themeManifest = {
     editorAvailable: element.editorAvailable !== false
   })),
   generatorRules: [
-    "Keep client themes inside the copied project; do not modify the upstream Code Epsylon base for one client.",
+    "Keep client themes inside the copied project; do not modify the upstream CodeY base for one client.",
     "Use CMS pages, sections, and content blocks for editable public content.",
     "Use /cy-admin for login and /dashboard routes for administration.",
     "Use clean public page URLs such as /about while keeping ?slug=about as a compatibility fallback.",

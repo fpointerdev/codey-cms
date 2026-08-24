@@ -148,6 +148,18 @@ import {
   startVisualInlineEdit,
   undoVisualEditorChange
 } from "./visual-editor.js";
+import {
+  addContentField,
+  clearContentAsset,
+  deleteContentCollection,
+  deleteContentEntry,
+  installContentExtension,
+  moveContentField,
+  removeContentField,
+  saveContentCollection,
+  saveContentEntry
+} from "./content-model-actions.js";
+import { syncContentFieldRows } from "./content-model-views.js";
 
 const builderDragType = "application/x-codey-builder";
 
@@ -291,6 +303,20 @@ function bindSubmitEvents() {
     if (postEditorForm) {
       event.preventDefault();
       void savePostEditor(postEditorForm);
+      return;
+    }
+
+    const contentModelForm = event.target.closest("[data-content-model-form]");
+    if (contentModelForm) {
+      event.preventDefault();
+      void saveContentCollection(contentModelForm);
+      return;
+    }
+
+    const contentEntryForm = event.target.closest("[data-content-entry-form]");
+    if (contentEntryForm) {
+      event.preventDefault();
+      void saveContentEntry(contentEntryForm);
       return;
     }
 
@@ -843,6 +869,48 @@ function bindBuilderClick(event) {
 }
 
 function bindAdminClick(event) {
+  const addContentFieldButton = event.target.closest("[data-add-content-field]");
+  if (addContentFieldButton) {
+    addContentField(addContentFieldButton);
+    return true;
+  }
+
+  const removeContentFieldButton = event.target.closest("[data-remove-content-field]");
+  if (removeContentFieldButton) {
+    removeContentField(removeContentFieldButton);
+    return true;
+  }
+
+  const moveContentFieldButton = event.target.closest("[data-move-content-field]");
+  if (moveContentFieldButton) {
+    moveContentField(moveContentFieldButton);
+    return true;
+  }
+
+  const clearContentAssetButton = event.target.closest("[data-clear-content-asset]");
+  if (clearContentAssetButton) {
+    clearContentAsset(clearContentAssetButton);
+    return true;
+  }
+
+  const deleteCollectionButton = event.target.closest("[data-delete-content-collection]");
+  if (deleteCollectionButton) {
+    void deleteContentCollection(deleteCollectionButton);
+    return true;
+  }
+
+  const deleteEntryButton = event.target.closest("[data-delete-content-entry]");
+  if (deleteEntryButton) {
+    void deleteContentEntry(deleteEntryButton);
+    return true;
+  }
+
+  const installExtensionButton = event.target.closest("[data-install-content-extension]");
+  if (installExtensionButton) {
+    void installContentExtension(installExtensionButton);
+    return true;
+  }
+
   const settingsTabButton = event.target.closest("[data-open-settings-tab]");
   if (settingsTabButton) {
     const tab = settingsTabButton.dataset.openSettingsTab;
@@ -1365,6 +1433,23 @@ function bindSlugEvents() {
   });
 }
 
+function bindContentModelEvents() {
+  elements.page.addEventListener("change", (event) => {
+    if (event.target.closest("[data-content-field-type]")) syncContentFieldRows();
+  });
+  elements.page.addEventListener("input", (event) => {
+    const label = event.target.closest("[data-content-field-label]");
+    const keyInput = event.target.closest('[data-content-field-row] [name="fieldKey"]');
+    if (!label && !keyInput) return;
+    const row = (label || keyInput).closest("[data-content-field-row]");
+    const key = row?.querySelector('[name="fieldKey"]');
+    const heading = row?.querySelector(".content-field-row-heading strong");
+    if (label && heading) heading.textContent = label.value || "New field";
+    if (label && key && !key.value) key.value = slugFromTitle(label.value).replaceAll("-", "_");
+    syncContentFieldRows();
+  });
+}
+
 function filePreviewHtml(files = []) {
   const canPreviewImages = typeof URL !== "undefined" && typeof URL.createObjectURL === "function";
 
@@ -1796,6 +1881,7 @@ export function bindEvents() {
   bindClickEvents();
   bindRichTextEvents();
   bindSlugEvents();
+  bindContentModelEvents();
   bindFilePreviewEvents();
   bindStructuredTabEvents();
   bindBuilderControlEvents();

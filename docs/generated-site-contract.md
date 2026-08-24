@@ -13,7 +13,7 @@ Codey is the runtime base. The later selling/deployment platform can copy this r
 - Admin dashboard path: `/dashboard`.
 - Auth uses JWT access tokens plus rotating refresh tokens.
 - Modules are stored in the database through `InstalledModule` and `ModuleSetting`.
-- CMS content is structured as pages, sections, blocks, posts, menus, redirects, revisions, forms, and media assets.
+- CMS content is structured as pages, sections, blocks, posts, custom collections, menus, redirects, revisions, forms, and media assets.
 - Optional localization is controlled by the `localization` module and `ModuleSetting`, not by `.env`.
 - Media is stored through the storage adapter and referenced by `MediaAsset`.
 - Shop checkout uses server-side products, variants, shipping, coupons, tax, and order totals.
@@ -93,7 +93,7 @@ gate.
 
 ## Builder Registry Contract
 
-The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-18.1` contains 37 elements, 36 editor-available elements, 35 generator-safe elements, and 20 qualified section patterns.
+The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-24.1` contains 37 elements, 36 editor-available elements, 35 generator-safe elements, 5 section style presets, and 20 qualified section patterns.
 
 Generated pages must use registered elements instead of anonymous JSON structures:
 
@@ -102,6 +102,9 @@ Generated pages must use registered elements instead of anonymous JSON structure
 - Treat `structured-content` as a fallback for unsupported generated content, not as the normal path.
 - Prefer the reusable visual elements for common sections: `hero-creative`, `stats-grid`, `feature-cards`, `team-section`, `logo-grid`, `testimonials`, `pricing-cards`, `faq-accordion`, `tabs`, `accordion`, `process-steps`, `comparison-table`, `video`, `image-hotspots`, `image-comparison`, `timeline`, `checklist`, `resource-list`, `location-cards`, `quote-highlight`, `bento-grid`, `navigation-cards`, `product-list`, and `product-showcase`.
 - Populate visual element collections with meaningful item objects. Tabs, accordions, FAQs, testimonials, and feature cards need item titles plus body text; stats need labels plus values; pricing cards need titles plus prices or metrics.
+- Visual collection elements may set `display.surface` to `plain`, `outline`, `soft`, `elevated`, or `liquid`; `display.shape` to `site`, `square`, `soft`, or `rounded`; and `display.interaction` to `none`, `lift`, or `glow`. Use these bounded options instead of generated CSS for ordinary card styling.
+- Sections may use `sidebar-left` and `sidebar-right` layouts. The `liquid` style preset is additive and keeps blur, borders, and contrast within the CMS renderer; do not simulate it with decorative background objects.
+- Element and section `settings.animation.effect` may use the animation options advertised by the editor. Motion is CSS-only, bounded by the CMS duration and delay limits, and disabled when a visitor prefers reduced motion.
 - Use `process-steps` items with `title`, `body`, and optional `label` and `url` values. The public renderer emits a semantic ordered list.
 - Use `comparison-table` with `firstColumnTitle`, `secondColumnTitle`, and item rows containing `title`, `firstValue`, and `secondValue`. The public renderer emits an accessible table.
 - Use `video` only with a CMS-managed MP4 or WebM `url`, a descriptive `title`, optional `posterUrl`, and optional rich `body`. Set `display.presentation` to `inline` or `hero`, and `display.playback` to `controls` or `hover-focus`; hover/focus playback is muted, keeps native controls for touch, and is disabled for reduced-motion visitors. The CMS never turns arbitrary embed HTML into an iframe.
@@ -148,6 +151,15 @@ Posts:
 - Use posts for news, articles, project stories, and updates.
 - Keep post body as sanitized rich content.
 - Attach categories and tags when useful.
+
+Collections:
+
+- Use custom collections for repeated structured records such as people, locations, events, testimonials, resources, and directories.
+- Discover models with `GET /api/v1/cms/collections`; authenticated editors may manage models and drafts, while anonymous requests only receive published entries from collections with public access enabled.
+- Collection fields are bounded and typed. Supported types are short text, long text, rich text, email, URL, number, boolean, date, date-time, image, file, choice, and relation.
+- Use `GET /api/v1/cms/collections/:collectionSlug/entries` for public collection data. Pass `locale`, `page`, and `limit`; never request `includeDrafts` from public generated code.
+- Do not rename or remove fields that still contain data. The CMS rejects incompatible model changes instead of truncating entries.
+- Declarative extension packs may install collections through the extension contract, but generated sites must not add executable server extensions or bypass the signed runtime update boundary.
 
 Menus:
 

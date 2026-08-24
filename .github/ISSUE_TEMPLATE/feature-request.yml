@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose a focused CMS or extension improvement.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Describe who is blocked and what they are trying to complete.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Preferred workflow
+      description: Explain the simplest admin or developer experience that would solve it.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Content and collections
+        - Builder and design
+        - Commerce
+        - Extensions
+        - Installation and updates
+        - Security and operations
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility considerations
+      description: Note API, migration, WebsiteSpec, or generated-site impact.

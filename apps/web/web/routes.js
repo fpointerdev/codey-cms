@@ -105,6 +105,29 @@ export function currentAdminRoute() {
   if (path === "/dashboard/posts/new") return { view: "post-create" };
   if (path === "/dashboard/posts/categories") return { view: "post-categories" };
 
+  if (path === "/dashboard/collections") return { view: "collections" };
+  if (path === "/dashboard/collections/new") return { view: "collection-create" };
+  if (path.startsWith("/dashboard/collections/") && path.endsWith("/entries/new")) {
+    return {
+      view: "collection-entry-create",
+      collectionSlug: decodeURIComponent(path.slice("/dashboard/collections/".length, -"/entries/new".length))
+    };
+  }
+  if (path.startsWith("/dashboard/collections/") && path.includes("/entries/")) {
+    const [collectionSlug, entrySlug] = path.slice("/dashboard/collections/".length).split("/entries/");
+    return {
+      view: "collection-entry-editor",
+      collectionSlug: decodeURIComponent(collectionSlug),
+      entrySlug: decodeURIComponent(entrySlug)
+    };
+  }
+  if (path.startsWith("/dashboard/collections/")) {
+    return {
+      view: "collection-editor",
+      collectionSlug: decodeURIComponent(path.slice("/dashboard/collections/".length))
+    };
+  }
+
   if (path.startsWith("/dashboard/posts/") && path.endsWith("/builder")) {
     return {
       view: "post-builder",
@@ -203,6 +226,9 @@ export function adminHref(view, userId = "") {
   if (view === "posts") return "/dashboard/posts";
   if (view === "post-create") return "/dashboard/posts/new";
   if (view === "post-categories") return "/dashboard/posts/categories";
+  if (view === "collections") return "/dashboard/collections";
+  if (view === "collection-create") return "/dashboard/collections/new";
+  if (view === "collection-editor" && userId) return `/dashboard/collections/${encodeURIComponent(userId)}`;
   if (view === "post-builder" && userId) return `/dashboard/posts/${encodeURIComponent(userId)}/builder`;
   if (view === "profile") return "/dashboard/profile";
   if (view === "settings") return "/dashboard/settings";

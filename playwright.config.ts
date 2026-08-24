@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const externalBaseUrl = process.env.E2E_BASE_URL?.replace(/\/$/, "");
-const baseURL = externalBaseUrl || "http://127.0.0.1:4173";
+const e2ePort = process.env.E2E_PORT || "4173";
+const baseURL = externalBaseUrl || `http://127.0.0.1:${e2ePort}`;
 const inheritedEnvironment = Object.fromEntries(
   Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
 );
@@ -41,7 +42,7 @@ export default defineConfig({
     env: {
       ...inheritedEnvironment,
       DATABASE_URL: process.env.TEST_DATABASE_URL || "",
-      PORT: "4173",
+      PORT: e2ePort,
       NODE_ENV: "test",
       APP_ENV: "development",
       APP_PUBLIC_URL: baseURL,

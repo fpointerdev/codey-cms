@@ -554,7 +554,7 @@ test("v1 builder elements server-render semantic process, comparison, and video 
   assert.match(html, /aria-label="Product tour"/);
   assert.match(html, /data-video-playback="hover-focus"/);
   assert.match(html, /poster="\/uploads\/product-tour\.webp" muted/);
-  assert.match(html, /structured-block-video structured-align-left structured-density-comfortable structured-surface-outline structured-presentation-hero/);
+  assert.match(html, /structured-block-video structured-align-left structured-density-comfortable structured-surface-outline structured-presentation-hero structured-shape-site structured-interaction-lift/);
   assert.doesNotMatch(html, /<iframe/);
 });
 
@@ -910,6 +910,28 @@ test("premium section backgrounds, borders, and device visibility server-render 
   assert.match(html, /width="1800" height="1200"/);
   assert.match(html, /fetchpriority="high"/);
   assert.match(html, /class="section-design-overlay"/);
+});
+
+test("sidebar, liquid, and motion section choices survive public rendering", () => {
+  const html = renderPageContent({
+    title: "Designed layout",
+    content: { hideTitle: true },
+    sections: [{
+      id: "liquid-sidebar",
+      key: "liquid-sidebar",
+      settings: {
+        layout: "sidebar-right",
+        style: { preset: "liquid", backgroundColor: "#edf4f3" },
+        animation: { effect: "reveal-up", durationMs: 640, delayMs: 80 }
+      },
+      blocks: []
+    }]
+  });
+
+  assert.match(html, /section-layout-sidebar-right/);
+  assert.match(html, /section-style-liquid/);
+  assert.match(html, /codey-animation-reveal-up/);
+  assert.match(html, /--codey-animation-duration: 640ms/);
 });
 
 test("unsafe section background URLs never reach public markup", () => {

@@ -1879,7 +1879,7 @@ function renderDesignRange(name, label, value, min, max, step, unit) {
 function renderDesignSystemEditor(settings) {
   const design = normalizeDesignSystem(settings.design);
   const fonts = ["Inter", "Arial", "Georgia", "Verdana", "Trebuchet MS"].map((font) => [font, font]);
-  const presetLabels = { clean: "Clean", editorial: "Editorial", bold: "Bold", soft: "Soft" };
+  const presetLabels = { clean: "Clean", editorial: "Editorial", bold: "Bold", soft: "Soft", liquid: "Liquid" };
   const customCssStatus = String(settings.customCss || "").trim() ? "Custom styles" : "Not set";
 
   return `
@@ -1937,6 +1937,7 @@ function renderDesignSystemEditor(settings) {
             ${renderDesignRange("design.layout.radius", "Surface radius", design.layout.radius, 0, 24, 1, "px")}
             <div class="builder-form-grid">
               <label><span>Surface shadow</span><select name="design.layout.shadow">${designSelectOptions([["none", "None"], ["soft", "Soft"], ["strong", "Strong"]], design.layout.shadow)}</select></label>
+              <label><span>Surface style</span><select name="design.layout.surfaceStyle">${designSelectOptions([["solid", "Solid"], ["liquid", "Liquid glass"]], design.layout.surfaceStyle)}</select></label>
               <label><span>Button style</span><select name="design.buttons.style">${designSelectOptions([["solid", "Solid"], ["outline", "Outline"]], design.buttons.style)}</select></label>
             </div>
             ${renderDesignRange("design.buttons.radius", "Button radius", design.buttons.radius, 0, 32, 1, "px")}
@@ -1973,7 +1974,7 @@ function renderDesignSystemEditor(settings) {
 
       <aside class="design-preview-panel" aria-label="Live design preview">
         <div class="design-preview-heading"><span>Live preview</span><strong>Public site</strong></div>
-        <div class="design-preview" data-design-preview data-button-style="${escapeHtml(design.buttons.style)}" style="${escapeHtml(designSystemDeclarations(design))}">
+        <div class="design-preview" data-design-preview data-button-style="${escapeHtml(design.buttons.style)}" data-surface-style="${escapeHtml(design.layout.surfaceStyle)}" style="${escapeHtml(designSystemDeclarations(design))}">
           <header><strong>Northstar</strong><nav><span>Work</span><span>About</span><span>Contact</span></nav></header>
           <main>
             <p>Independent studio</p>
@@ -2154,7 +2155,7 @@ export function renderSettingsPage(config) {
           </section>
           <section class="settings-tab-panel settings-tab-panel-general" data-settings-panel="general">
             <form class="admin-card settings-form" data-site-settings-form>
-              <label><span>Site title</span><input name="title" value="${escapeHtml(settings.title || config.app?.name || "Code Epsylon")}" required /></label>
+              <label><span>Site title</span><input name="title" value="${escapeHtml(settings.title || config.app?.name || "CodeY CMS")}" required /></label>
               <label><span>Site description</span><textarea name="description" rows="3">${escapeHtml(settings.description || "")}</textarea></label>
               <div class="settings-form-section">
                 <div>
@@ -2227,7 +2228,7 @@ export function renderSettingsPage(config) {
             </form>
           </section>
           <section class="settings-tab-panel settings-tab-panel-style" data-settings-panel="style">
-            ${renderDesignSystemEditor({ ...settings, title: settings.title || config.app?.name || "Code Epsylon" })}
+            ${renderDesignSystemEditor({ ...settings, title: settings.title || config.app?.name || "CodeY CMS" })}
           </section>
           <section class="settings-tab-panel settings-tab-panel-storage" data-settings-panel="storage">
             <form class="admin-card settings-form storage-settings-form" data-storage-settings-form>

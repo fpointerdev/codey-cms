@@ -45,6 +45,7 @@ export const state = {
   builderCanvasView: "edit",
   builderPreviewDevice: "desktop",
   cmsTemplates: [],
+  contentCollections: [],
   visualEditorActive: false,
   visualEditorSelection: null,
   visualEditorEditingBlockKey: "",
@@ -95,6 +96,13 @@ export const adminNavItems = [
     label: "Posts",
     href: "/dashboard/posts",
     view: "posts",
+    modules: ["cms"],
+    permissions: [["read", "cms"]]
+  },
+  {
+    label: "Collections",
+    href: "/dashboard/collections",
+    view: "collections",
     modules: ["cms"],
     permissions: [["read", "cms"]]
   },
@@ -1352,14 +1360,14 @@ export const pageLayoutOptions = [
 ];
 
 export const defaultPage = {
-  title: "Code Epsylon",
+  title: "CodeY CMS",
   slug: "home",
   status: "STATIC",
   excerpt: "A modular base project ready for CMS, shop, presentation, and custom client websites.",
-  metaTitle: "Code Epsylon",
+  metaTitle: "CodeY CMS",
   metaDescription: "Modular project foundation.",
   content: {
-    footerText: `© ${new Date().getFullYear()} Code Epsylon.`
+    footerText: `© ${new Date().getFullYear()} CodeY CMS.`
   },
   sections: [
     {

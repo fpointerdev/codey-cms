@@ -56,6 +56,8 @@ import {
 import { MediaService } from "./media.service.js";
 import { readLocalizationSettings, resolveLocale } from "../localization/localization.service.js";
 import { enrichProductListContent } from "../products/product-list-content.js";
+import { registerContentModelRoutes } from "./content-models.routes.js";
+import { ContentModelsService } from "./content-models.service.js";
 
 function canReadDrafts(user: Express.Request["user"]) {
   return hasPermission(user, "read", "cms");
@@ -149,11 +151,14 @@ function createContactFormLimiter() {
 
 export function registerCmsRoutes(router: Router, context: ModuleContext) {
   const cmsService = new CmsService(context.prisma);
+  const contentModelsService = new ContentModelsService(context.prisma);
   const mediaService = new MediaService(
     context.prisma,
     context.config,
     context.storageSettings?.adapter
   );
+
+  registerContentModelRoutes(router, context, contentModelsService);
 
   router.get(
     "/sitemap.xml",
@@ -440,9 +445,12 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
     "/publishing/scheduled",
     requirePermission(context, "read", "cms"),
     asyncHandler(async (_req, res) => {
-      const scheduled = await cmsService.listScheduledContent();
+      const [scheduled, collections] = await Promise.all([
+        cmsService.listScheduledContent(),
+        contentModelsService.listScheduledEntries()
+      ]);
 
-      return sendSuccess(res, { scheduled });
+      return sendSuccess(res, { scheduled: { ...scheduled, collections } });
     })
   );
 
@@ -450,9 +458,12 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
     "/publishing/run",
     requirePermission(context, "update", "cms"),
     asyncHandler(async (_req, res) => {
-      const published = await cmsService.publishScheduledContent();
+      const [published, collections] = await Promise.all([
+        cmsService.publishScheduledContent(),
+        contentModelsService.publishScheduledEntries()
+      ]);
 
-      return sendSuccess(res, { published });
+      return sendSuccess(res, { published: { ...published, collections } });
     })
   );
 

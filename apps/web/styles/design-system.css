@@ -90,6 +90,10 @@
 .design-preset-soft { background: #f2f5f3; }
 .design-preset-soft i:first-child { background: #ffffff; }
 .design-preset-soft i:nth-child(3) { background: #b13f6c; }
+.design-preset-liquid { background: #edf4f3; }
+.design-preset-liquid i:first-child { background: #172426; }
+.design-preset-liquid i:nth-child(2) { background: rgba(255, 255, 255, 0.72); }
+.design-preset-liquid i:nth-child(3) { background: #087f76; }
 
 .design-color-grid {
   display: grid;
@@ -337,6 +341,19 @@
   background: var(--surface);
   padding: 8px;
   box-shadow: var(--site-shadow);
+}
+
+.design-preview[data-surface-style="liquid"] > header,
+.design-preview[data-surface-style="liquid"] .design-preview-cards article {
+  border-color: color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--text) 12%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  backdrop-filter: blur(14px) saturate(135%);
+}
+
+.design-preview[data-surface-style="liquid"] > header {
+  background: color-mix(in srgb, var(--site-header-bg) 76%, transparent);
 }
 
 .design-preview-cards i {

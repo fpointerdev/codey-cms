@@ -68,12 +68,26 @@ AI agents should use this repository as the CMS reference when building client w
 Useful docs:
 
 - `docs/generated-site-contract.md`
+- `docs/content-modeling.md`
+- `docs/extensions.md`
 - `docs/module-system.md`
 - `docs/api-contract.md`
 - `docs/runtime-env-contract.md`
 - `docs/self-host-installation.md`
 - `docs/automatic-updates.md`
 - `docs/release-channels.md`
+
+## Extend CodeY
+
+Custom collections let administrators model reusable content such as people, locations, events, and resources from the dashboard. Declarative extension packs can ship reusable collection models without executing third-party server code.
+
+```bash
+pnpm extension:create yourname.extension-name
+pnpm extension:validate
+pnpm extension:validate -- --json extensions/yourname-extension-name
+```
+
+See `CONTRIBUTING.md` for the contribution workflow and `docs/extensions.md` for the stable manifest contract.
 
 ## Safety Boundary
 

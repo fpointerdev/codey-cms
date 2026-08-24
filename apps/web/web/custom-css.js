@@ -3,7 +3,20 @@ import { escapeHtml } from "./core.js";
 const dangerousCssPattern =
   /(@import|expression\s*\(|javascript:|vbscript:|data:text\/html|behavior\s*:|-moz-binding|<\/?style)/i;
 const dangerousPropertyPattern = /^(?:@import|expression|javascript|vbscript|behavior|-moz-binding)$/i;
-const animationEffects = new Set(["none", "fade-in", "fade-up", "fade-down", "slide-left", "slide-right", "zoom-in", "blur-in"]);
+const animationEffects = new Set([
+  "none",
+  "fade-in",
+  "fade-up",
+  "fade-down",
+  "slide-left",
+  "slide-right",
+  "zoom-in",
+  "blur-in",
+  "reveal-up",
+  "bounce-in",
+  "swing-in",
+  "flip-in"
+]);
 const reservedClassPatterns = [
   /^page-section$/,
   /^content-block$/,
@@ -25,7 +38,11 @@ export const animationEffectOptions = [
   { value: "slide-left", label: "Slide left" },
   { value: "slide-right", label: "Slide right" },
   { value: "zoom-in", label: "Zoom in" },
-  { value: "blur-in", label: "Soft blur" }
+  { value: "blur-in", label: "Soft blur" },
+  { value: "reveal-up", label: "Reveal up" },
+  { value: "bounce-in", label: "Gentle bounce" },
+  { value: "swing-in", label: "Swing in" },
+  { value: "flip-in", label: "Flip in" }
 ];
 
 export function sanitizeInlineCss(value = "") {

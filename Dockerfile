@@ -42,7 +42,7 @@ ENV NODE_ENV=production
 ENV PORT=4000
 
 LABEL org.opencontainers.image.title="CodeY CMS" \
-  org.opencontainers.image.authors="Fatlum Prekadini and CodeY CMS contributors" \
+  org.opencontainers.image.authors="CodeY CMS contributors" \
   org.opencontainers.image.source="https://github.com/fpointerdev/codey-cms" \
   org.opencontainers.image.licenses="GPL-2.0-or-later"
 

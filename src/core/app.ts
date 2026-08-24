@@ -617,8 +617,8 @@ async function resolveSeoMeta(
 ): Promise<SeoDocument> {
   if (isAdminShellPath(req.path)) {
     return renderer.createGenericSeoDocument({
-      title: "Code Epsylon Admin",
-      description: "Code Epsylon administration console.",
+      title: "CodeY CMS Admin",
+      description: "CodeY CMS administration console.",
       htmlLang: "en",
       noindex: true
     });

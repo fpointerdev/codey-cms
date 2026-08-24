@@ -283,7 +283,7 @@ function cssSettingsPayload(block, values) {
 }
 
 function withCustomCssField(block, fields, options = {}) {
-  const animationGroup = options.animationGroup || "Settings";
+  const animationGroup = options.animationGroup || "Style";
   const animation = sanitizeAnimationSettings(block.settings?.animation || {});
 
   return [
@@ -295,6 +295,12 @@ function withCustomCssField(block, fields, options = {}) {
       required: false,
       group: "Style",
       help: "Optional anchor ID for this element."
+    },
+    {
+      type: "section",
+      label: "Motion",
+      help: "Optional entrance effect. Reduced-motion preferences are always respected.",
+      group: animationGroup
     },
     {
       name: "cssClasses",
@@ -533,7 +539,7 @@ export async function editContentBlock(page, blockKey) {
       label: "Slider media",
       title: block.label || "Edit slider",
       description: "Choose images, visible count, overlay, caption, and loop behavior.",
-      fields: withCustomCssField(block, sliderModalFields(block.value, { mediaAssets }), { animationGroup: "Settings" }),
+      fields: withCustomCssField(block, sliderModalFields(block.value, { mediaAssets })),
       submitLabel: "Save slider"
     });
     if (!values) return null;

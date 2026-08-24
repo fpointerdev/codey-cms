@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fpointerdev/codey-cms/main/docs/schemas/codey-extension-1.0.schema.json",
+  "schemaVersion": "1.0",
+  "id": "codey.team-directory",
+  "name": "Team directory",
+  "version": "1.0.0",
+  "description": "A simple team collection with roles, biographies, portraits, and profile links.",
+  "license": "GPL-2.0-or-later",
+  "author": {
+    "name": "CodeY"
+  },
+  "requires": {
+    "cms": ">=1.1.0 <2.0.0"
+  },
+  "contentModels": [
+    {
+      "name": "Team members",
+      "slug": "team-members",
+      "description": "People shown across team and leadership pages.",
+      "titleField": "name",
+      "publicRead": true,
+      "fields": [
+        {
+          "key": "name",
+          "label": "Name",
+          "type": "text",
+          "required": true,
+          "multiple": false,
+          "maxLength": 120
+        },
+        {
+          "key": "role",
+          "label": "Role",
+          "type": "text",
+          "required": true,
+          "multiple": false,
+          "maxLength": 160
+        },
+        {
+          "key": "bio",
+          "label": "Biography",
+          "type": "richText",
+          "required": false,
+          "multiple": false,
+          "maxLength": 10000
+        },
+        {
+          "key": "portrait",
+          "label": "Portrait",
+          "type": "image",
+          "required": false,
+          "multiple": false
+        },
+        {
+          "key": "profile_url",
+          "label": "Profile URL",
+          "type": "url",
+          "required": false,
+          "multiple": false,
+          "maxLength": 1000
+        }
+      ]
+    }
+  ]
+}
