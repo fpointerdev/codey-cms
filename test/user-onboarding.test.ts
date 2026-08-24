@@ -375,7 +375,7 @@ test("admin navigation hides user and settings pages from content editors", asyn
 
   assert.deepEqual(
     availableAdminNavItems().map((item) => item.view),
-    ["dashboard", "pages", "posts", "profile"]
+    ["dashboard", "pages", "posts", "collections", "profile"]
   );
 
   state.user.permissions = [{ action: "read", subject: "products" }];

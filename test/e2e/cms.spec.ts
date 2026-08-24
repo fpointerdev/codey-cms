@@ -69,6 +69,10 @@ test("admin settings and builder controls complete their primary workflows", asy
   await expect(containerDialog.getByLabel("Upload or replace image")).toHaveAttribute("type", "file");
   await containerDialog.getByText("Surface", { exact: true }).click();
   await expect(containerDialog.locator('select[name="borderWidth"]')).toBeVisible();
+  await containerDialog.getByText("Motion", { exact: true }).click();
+  const sectionEffect = containerDialog.locator('select[name="animationEffect"]');
+  await expect(sectionEffect).toBeVisible();
+  await expect(sectionEffect.locator("option[value='reveal-up']")).toHaveCount(1);
   await containerDialog.getByRole("tab", { name: "Advanced" }).click();
   await expect(containerDialog.getByLabel("Show on mobile")).toBeChecked();
   await containerDialog.getByRole("tab", { name: "Layout" }).click();
@@ -115,6 +119,80 @@ test("account protection stays discoverable without interrupting normal login", 
   await expect(page.locator("[data-mfa-panel]")).toBeVisible();
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
+test("editors can model and publish a custom collection without code", async ({ page }) => {
+  const runId = Date.now();
+  const collectionName = `Browser resources ${runId}`;
+  const collectionSlug = `browser-resources-${runId}`;
+  const entrySlug = `first-resource-${runId}`;
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+
+  await login(page);
+  await page.getByRole("link", { name: "Collections", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/collections$/);
+  await page.getByRole("link", { name: "New collection" }).click();
+  await page.getByLabel("Name", { exact: true }).fill(collectionName);
+  await expect(page.getByLabel("URL name", { exact: true })).toHaveValue(collectionSlug);
+  await page.getByRole("button", { name: "Add field" }).click();
+  const summaryField = page.locator("[data-content-field-row]").nth(1);
+  await summaryField.locator('input[name="fieldLabel"]').fill("Summary");
+  await expect(summaryField.locator('input[name="fieldKey"]')).toHaveValue("summary");
+  await summaryField.locator('select[name="fieldType"]').selectOption("textarea");
+  await summaryField.getByText("Guidance and validation", { exact: true }).click();
+  await summaryField.locator('input[name="fieldMaxLength"]').fill("500");
+  await summaryField.getByRole("button", { name: "Move Summary up" }).click();
+  await expect(page.locator("[data-content-field-row]").first().locator(".content-field-row-heading strong")).toHaveText("Summary");
+  await page.locator("[data-content-field-row]").first().getByRole("button", { name: "Move Summary down" }).click();
+  await page.getByRole("button", { name: "Create collection" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/dashboard/collections/${collectionSlug}$`));
+  await expect(page.getByRole("heading", { name: collectionName })).toBeVisible();
+  await page.getByRole("link", { name: "Add entry" }).click();
+  await expect(page).toHaveURL(new RegExp(`/dashboard/collections/${collectionSlug}/entries/new$`));
+  await page.getByLabel("Title", { exact: true }).fill(`First resource ${runId}`);
+  await expect(page.getByLabel("URL name", { exact: true })).toHaveValue(entrySlug);
+  await expect(page.getByLabel("Summary")).toHaveAttribute("maxlength", "500");
+  await page.getByLabel("Summary").fill("A structured resource created through the dashboard.");
+  await page.locator('select[name="status"]').selectOption("PUBLISHED");
+  await page.getByRole("button", { name: "Create entry" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/dashboard/collections/${collectionSlug}/entries/${entrySlug}`));
+  await page.getByLabel("Summary").fill("Updated through the generated editor form.");
+  const savedEntry = page.waitForResponse((response) => (
+    response.request().method() === "PATCH" &&
+    response.url().includes(`/api/v1/cms/collections/${collectionSlug}/entries/${entrySlug}`) &&
+    response.ok()
+  ));
+  await page.getByRole("button", { name: "Save entry" }).click();
+  await savedEntry;
+  await expect(page.getByLabel("Summary")).toHaveValue("Updated through the generated editor form.");
+
+  const publicResponse = await page.request.get(
+    `/api/v1/cms/collections/${collectionSlug}/entries/${entrySlug}?locale=en`
+  );
+  expect(publicResponse.ok()).toBeTruthy();
+  const publicBody = await publicResponse.json();
+  expect(publicBody.data.entry.data.summary).toBe("Updated through the generated editor form.");
+
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const entryDialog = page.getByRole("dialog", { name: "Delete entry" });
+  await entryDialog.getByLabel(`Type ${entrySlug}`).fill(entrySlug);
+  await entryDialog.getByRole("button", { name: "Delete" }).click();
+  await expect(page).toHaveURL(new RegExp(`/dashboard/collections/${collectionSlug}$`));
+  await expect(page.getByRole("heading", { name: collectionName })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const collectionDialog = page.getByRole("dialog", { name: "Delete collection" });
+  await collectionDialog.getByLabel(`Type ${collectionSlug}`).fill(collectionSlug);
+  await collectionDialog.getByRole("button", { name: "Delete" }).click();
+  await expect(page).toHaveURL(/\/dashboard\/collections$/);
+  await expect(page.getByText(collectionName, { exact: true })).toHaveCount(0);
+  expect(browserErrors).toEqual([]);
 });
 
 test("customers can complete the real storefront journey", async ({ page }) => {
@@ -331,6 +409,11 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await editorDialog.getByRole("tab", { name: "Style" }).click();
   await expect(editorDialog.locator('select[name="structuredAlignment"]')).toBeVisible();
   await expect(editorDialog.getByLabel("Item style")).toBeVisible();
+  await expect(editorDialog.getByLabel("Item style").locator("option[value='liquid']")).toHaveCount(1);
+  await expect(editorDialog.getByLabel("Corner style")).toBeVisible();
+  await expect(editorDialog.getByLabel("Hover effect")).toBeVisible();
+  await editorDialog.getByText("Motion", { exact: true }).click();
+  await expect(editorDialog.locator('select[name="animationEffect"]')).toBeVisible();
   await editorDialog.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Undo last canvas change" }).click();
   await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
@@ -435,6 +518,9 @@ test("visual editing, design tokens, and reusable sections work without hover", 
   const designPreview = page.locator("[data-design-preview]");
   await expect(designForm).toBeVisible();
   await expect(designPreview).toBeVisible();
+  await designForm.locator("[data-design-preset='liquid']").click();
+  await expect(designPreview).toHaveAttribute("data-surface-style", "liquid");
+  await expect(designForm.getByLabel("Surface style")).toHaveValue("liquid");
   await designForm.locator("[data-design-preset='editorial']").click();
   await expect(designForm.locator("[data-design-preset='editorial']")).toHaveAttribute("aria-pressed", "true");
   const typographyDisclosure = designForm.locator("[data-design-summary='typography']");

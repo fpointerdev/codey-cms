@@ -293,15 +293,26 @@ const structuredPresentationOptions = {
   "feature-cards": [
     { value: "cards", label: "Cards" },
     { value: "bento", label: "Bento" },
-    { value: "editorial", label: "Editorial list" }
+    { value: "editorial", label: "Editorial list" },
+    { value: "showcase", label: "Showcase" }
   ],
   testimonials: [
     { value: "cards", label: "Cards" },
-    { value: "spotlight", label: "Spotlight" }
+    { value: "spotlight", label: "Spotlight" },
+    { value: "quote-wall", label: "Quote wall" }
   ],
   "pricing-cards": [
     { value: "cards", label: "Cards" },
-    { value: "comparison", label: "Comparison" }
+    { value: "comparison", label: "Comparison" },
+    { value: "focus", label: "Featured plan" }
+  ],
+  "team-section": [
+    { value: "portrait", label: "Portrait cards" },
+    { value: "compact", label: "Compact profiles" }
+  ],
+  "logo-grid": [
+    { value: "grid", label: "Logo grid" },
+    { value: "ribbon", label: "Logo ribbon" }
   ],
   timeline: [
     { value: "line", label: "Simple line" },
@@ -324,7 +335,13 @@ const structuredPresentationOptions = {
   "navigation-cards": [
     { value: "cards", label: "Cards" },
     { value: "compact", label: "Compact" },
-    { value: "editorial", label: "Editorial" }
+    { value: "editorial", label: "Editorial" },
+    { value: "showcase", label: "Showcase" }
+  ],
+  "location-cards": [
+    { value: "cards", label: "Cards" },
+    { value: "compact", label: "Compact list" },
+    { value: "split", label: "Split details" }
   ],
   "image-comparison": [
     { value: "split", label: "Side by side" },
@@ -428,11 +445,38 @@ function structuredDisplayEditor(variant, value) {
         name: "structuredSurface",
         label: "Item style",
         type: "select",
-        value: selectedValue(display.surface, ["plain", "outline", "soft"], "outline"),
+        value: selectedValue(display.surface, ["plain", "outline", "soft", "elevated", "liquid"], "outline"),
         options: [
           { value: "plain", label: "Plain" },
           { value: "outline", label: "Outlined" },
-          { value: "soft", label: "Soft background" }
+          { value: "soft", label: "Soft background" },
+          { value: "elevated", label: "Elevated" },
+          { value: "liquid", label: "Liquid glass" }
+        ],
+        group: "Style"
+      },
+      {
+        name: "structuredShape",
+        label: "Corner style",
+        type: "select",
+        value: selectedValue(display.shape, ["site", "square", "soft", "rounded"], "site"),
+        options: [
+          { value: "site", label: "Site default" },
+          { value: "square", label: "Square" },
+          { value: "soft", label: "Soft" },
+          { value: "rounded", label: "Rounded" }
+        ],
+        group: "Style"
+      },
+      {
+        name: "structuredInteraction",
+        label: "Hover effect",
+        type: "select",
+        value: selectedValue(display.interaction, ["none", "lift", "glow"], "lift"),
+        options: [
+          { value: "none", label: "None" },
+          { value: "lift", label: "Lift" },
+          { value: "glow", label: "Accent glow" }
         ],
         group: "Style"
       }
@@ -513,7 +557,9 @@ function structuredDisplayEditor(variant, value) {
         next.playback = selectedValue(values.structuredVideoPlayback, ["controls", "hover-focus"], "controls");
       } else {
         next.density = selectedValue(values.structuredDensity, ["comfortable", "compact"], "comfortable");
-        next.surface = selectedValue(values.structuredSurface, ["plain", "outline", "soft"], "outline");
+        next.surface = selectedValue(values.structuredSurface, ["plain", "outline", "soft", "elevated", "liquid"], "outline");
+        next.shape = selectedValue(values.structuredShape, ["site", "square", "soft", "rounded"], "site");
+        next.interaction = selectedValue(values.structuredInteraction, ["none", "lift", "glow"], "lift");
         if (variant === "image-hotspots") {
           next.ratio = selectedValue(values.structuredSceneRatio, ["16 / 10", "16 / 9", "4 / 3", "1 / 1"], "16 / 10");
         }

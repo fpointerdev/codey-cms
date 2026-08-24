@@ -57,6 +57,10 @@ test("section editor exposes one consistent three-tab control model", () => {
   assert.equal(fields.find((field) => field.name === "backgroundImageFile")?.previewUrl, "/uploads/hero.jpg");
   assert.equal(fields.find((field) => field.name === "borderWidth")?.value, "0");
   assert.equal(fields.find((field) => field.name === "visibilityMobile")?.checked, true);
+  assert.equal(fields.find((field) => field.name === "animationEffect")?.group, "Style");
+  assert.ok(fields.find((field) => field.name === "animationEffect")?.options?.some((option) => option.value === "reveal-up"));
+  assert.ok(fields.find((field) => field.name === "layout")?.options?.some((option) => option.value === "sidebar-left"));
+  assert.ok(fields.find((field) => field.name === "stylePreset")?.options?.some((option) => option.value === "liquid"));
 
   const newSectionFields = sectionControlFields({ key: "new-section", settings: {} });
   assert.equal(newSectionFields.find((field) => field.name === "backgroundColor")?.value, "#ffffff");

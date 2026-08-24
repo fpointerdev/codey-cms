@@ -172,7 +172,7 @@ const designColorsSchema = z.object({
 }).default(defaultDesignSystemSettings.colors);
 
 export const designSystemSettingsSchema = z.object({
-  preset: z.enum(["clean", "editorial", "bold", "soft", "custom"]).default(defaultDesignSystemSettings.preset),
+  preset: z.enum(["clean", "editorial", "bold", "soft", "liquid", "custom"]).default(defaultDesignSystemSettings.preset),
   colors: designColorsSchema,
   typography: z.object({
     headingFont: z.enum(["Inter", "Arial", "Georgia", "Verdana", "Trebuchet MS"]).default(defaultDesignSystemSettings.typography.headingFont),
@@ -185,7 +185,8 @@ export const designSystemSettingsSchema = z.object({
     contentWidth: z.number().int().min(880).max(1440).default(defaultDesignSystemSettings.layout.contentWidth),
     sectionSpacing: z.number().int().min(24).max(128).default(defaultDesignSystemSettings.layout.sectionSpacing),
     radius: z.number().int().min(0).max(24).default(defaultDesignSystemSettings.layout.radius),
-    shadow: z.enum(["none", "soft", "strong"]).default(defaultDesignSystemSettings.layout.shadow)
+    shadow: z.enum(["none", "soft", "strong"]).default(defaultDesignSystemSettings.layout.shadow),
+    surfaceStyle: z.enum(["solid", "liquid"]).default(defaultDesignSystemSettings.layout.surfaceStyle)
   }).default(defaultDesignSystemSettings.layout),
   buttons: z.object({
     radius: z.number().int().min(0).max(32).default(defaultDesignSystemSettings.buttons.radius),

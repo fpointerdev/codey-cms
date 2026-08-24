@@ -51,8 +51,8 @@ export function setShellMode(mode) {
 
 export function renderAuthShell(content) {
   removePublicCustomStyles();
-  document.title = "Code Epsylon Admin";
-  elements.brand.textContent = "Code Epsylon";
+  document.title = "CodeY CMS Admin";
+  elements.brand.textContent = "CodeY CMS";
   elements.brand.href = "/cy-admin";
   elements.menu.innerHTML = "";
   elements.footer.innerHTML = "";
@@ -75,8 +75,8 @@ export function renderAdminShell(route, content) {
 
   const sidebarCollapsed = state.adminSidebarCollapsed;
 
-  document.title = "Code Epsylon Admin";
-  elements.brand.textContent = "Code Epsylon";
+  document.title = "CodeY CMS Admin";
+  elements.brand.textContent = "CodeY CMS";
   elements.brand.href = "/cy-admin";
   elements.menu.innerHTML = "";
   elements.footer.innerHTML = "";
@@ -87,7 +87,7 @@ export function renderAdminShell(route, content) {
           <a class="admin-sidebar-brand" href="/dashboard" data-dashboard-link>
             <span class="admin-brand-mark">CE</span>
             <span class="admin-sidebar-brand-text">
-              <strong>Code Epsylon</strong>
+              <strong>CodeY CMS</strong>
               <small>Project console</small>
             </span>
           </a>
@@ -154,7 +154,7 @@ export function renderAdminLogin(statusMessage = "Use the admin account created 
       <section class="dashboard-auth">
         <div>
           <p class="section-label">Admin</p>
-          <h1 class="dashboard-title">Welcome to Code Epsylon</h1>
+          <h1 class="dashboard-title">Welcome to CodeY CMS</h1>
           <p class="dashboard-copy">
             Sign in to manage pages, users, profile settings, modules, and project configuration.
           </p>

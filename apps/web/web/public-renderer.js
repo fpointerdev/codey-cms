@@ -727,8 +727,11 @@ function structuredDisplay(value, fallbackVariant = "") {
   const columns = [2, 3, 4].includes(Number(display.columns)) ? Number(display.columns) : 3;
   const variant = cssToken(firstText(value, ["variant", "type"]) || fallbackVariant);
   const defaultPresentation = {
+    "team-section": "portrait",
+    "logo-grid": "grid",
     timeline: "line",
     "resource-list": "rows",
+    "location-cards": "cards",
     "quote-highlight": "editorial",
     "bento-grid": "spotlight",
     "navigation-cards": "cards",
@@ -738,8 +741,10 @@ function structuredDisplay(value, fallbackVariant = "") {
   return {
     alignment: oneOf(display.alignment, ["left", "center"], "left"),
     density: oneOf(display.density, ["comfortable", "compact"], "comfortable"),
-    surface: oneOf(display.surface, ["plain", "outline", "soft"], "outline"),
-    presentation: oneOf(display.presentation, ["cards", "bento", "editorial", "spotlight", "comparison", "line", "alternating", "rows", "centered", "boxed", "balanced", "mosaic", "compact", "inline", "hero", "split", "stacked"], defaultPresentation),
+    surface: oneOf(display.surface, ["plain", "outline", "soft", "elevated", "liquid"], "outline"),
+    shape: oneOf(display.shape, ["site", "square", "soft", "rounded"], "site"),
+    interaction: oneOf(display.interaction, ["none", "lift", "glow"], "lift"),
+    presentation: oneOf(display.presentation, ["cards", "bento", "editorial", "spotlight", "comparison", "line", "alternating", "rows", "centered", "boxed", "balanced", "mosaic", "compact", "inline", "hero", "split", "stacked", "showcase", "quote-wall", "focus", "portrait", "grid", "ribbon"], defaultPresentation),
     columns,
     showNumbers: display.showNumbers !== false,
     striped: display.striped !== false,
@@ -755,7 +760,9 @@ function structuredDisplayClasses(display) {
     `structured-align-${display.alignment}`,
     `structured-density-${display.density}`,
     `structured-surface-${display.surface}`,
-    `structured-presentation-${display.presentation}`
+    `structured-presentation-${display.presentation}`,
+    `structured-shape-${display.shape}`,
+    `structured-interaction-${display.interaction}`
   ].join(" ");
 }
 
@@ -1412,7 +1419,7 @@ function sectionClassName(section, includeBuilderClasses = true) {
   const gap = oneOf(settings.gap, ["sm", "md", "lg", "xl"], "md");
   const align = oneOf(settings.align, ["start", "center", "end"], "start");
   const verticalAlign = oneOf(settings.verticalAlign, ["start", "center", "end"], "start");
-  const preset = oneOf(style.preset, ["default", "quiet", "carded", "contrast", "premium-dark", "editorial-light", "industrial-grid", "framed-card"], "default");
+  const preset = oneOf(style.preset, ["default", "quiet", "carded", "contrast", "premium-dark", "editorial-light", "industrial-grid", "framed-card", "liquid"], "default");
   const shadow = oneOf(style.shadow, ["none", "soft", "strong", "glow"], "none");
   const decorationType = oneOf(decoration.type, ["none", "glow", "orb", "pattern", "spotlight", "grid", "frame", "texture", "split"], "none");
   const websiteSpecPreset = websiteSpec ? cssToken(style.preset, preset) : preset;

@@ -20,10 +20,10 @@ test("distribution keeps the CodeY CMS GPL notices intact", async () => {
   };
 
   assert.equal(createHash("sha256").update(license).digest("hex"), canonicalGplV2Sha256);
-  assert.equal(packageJson.author, "Fatlum Prekadini");
+  assert.equal(packageJson.author, "CodeY CMS contributors");
   assert.equal(packageJson.license, "GPL-2.0-or-later");
   assert.equal(packageJson.repository?.url, "git+https://github.com/fpointerdev/codey-cms.git");
-  assert.match(notice, /Copyright \(C\) 2026 Fatlum Prekadini and CodeY CMS contributors\./);
+  assert.match(notice, /Copyright \(C\) 2026 CodeY CMS contributors\./);
   assert.match(notice, /does not modify the GPL or add restrictions/);
 
   for (const file of ["LICENSE", "NOTICE.md"]) {

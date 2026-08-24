@@ -20,7 +20,8 @@ export const defaultDesignSystem = {
     contentWidth: 1120,
     sectionSpacing: 48,
     radius: 8,
-    shadow: "soft"
+    shadow: "soft",
+    surfaceStyle: "solid"
   },
   buttons: {
     radius: 7,
@@ -51,7 +52,7 @@ export const designSystemPresets = {
       border: "#d9d1c7"
     },
     typography: { headingFont: "Georgia", bodyFont: "Inter", headingWeight: "700", baseSize: 17, scale: "expressive" },
-    layout: { contentWidth: 1040, sectionSpacing: 72, radius: 2, shadow: "none" },
+    layout: { contentWidth: 1040, sectionSpacing: 72, radius: 2, shadow: "none", surfaceStyle: "solid" },
     buttons: { radius: 2, style: "outline" },
     header: { background: "#24211f", text: "#ffffff", sticky: true },
     footer: { background: "#24211f", text: "#f4f1ea" }
@@ -68,7 +69,7 @@ export const designSystemPresets = {
       border: "#c9ced6"
     },
     typography: { headingFont: "Arial", bodyFont: "Inter", headingWeight: "800", baseSize: 16, scale: "expressive" },
-    layout: { contentWidth: 1240, sectionSpacing: 64, radius: 0, shadow: "strong" },
+    layout: { contentWidth: 1240, sectionSpacing: 64, radius: 0, shadow: "strong", surfaceStyle: "solid" },
     buttons: { radius: 0, style: "solid" },
     header: { background: "#111111", text: "#ffffff", sticky: true },
     footer: { background: "#ffd43b", text: "#111111" }
@@ -85,10 +86,27 @@ export const designSystemPresets = {
       border: "#d8e0dc"
     },
     typography: { headingFont: "Trebuchet MS", bodyFont: "Verdana", headingWeight: "600", baseSize: 15, scale: "standard" },
-    layout: { contentWidth: 1080, sectionSpacing: 56, radius: 16, shadow: "soft" },
+    layout: { contentWidth: 1080, sectionSpacing: 56, radius: 16, shadow: "soft", surfaceStyle: "solid" },
     buttons: { radius: 24, style: "solid" },
     header: { background: "#ffffff", text: "#26302c", sticky: true },
     footer: { background: "#26302c", text: "#f2f5f3" }
+  },
+  liquid: {
+    preset: "liquid",
+    colors: {
+      background: "#edf4f3",
+      surface: "#ffffff",
+      text: "#172426",
+      muted: "#5f6f72",
+      primary: "#087f76",
+      primaryContrast: "#ffffff",
+      border: "#c8d8d6"
+    },
+    typography: { headingFont: "Inter", bodyFont: "Inter", headingWeight: "700", baseSize: 16, scale: "standard" },
+    layout: { contentWidth: 1160, sectionSpacing: 64, radius: 16, shadow: "soft", surfaceStyle: "liquid" },
+    buttons: { radius: 12, style: "solid" },
+    header: { background: "#edf4f3", text: "#172426", sticky: true },
+    footer: { background: "#172426", text: "#edf4f3" }
   }
 };
 
@@ -132,7 +150,7 @@ export function normalizeDesignSystem(value = {}) {
   const defaults = defaultDesignSystem;
 
   return {
-    preset: option(input.preset, ["clean", "editorial", "bold", "soft", "custom"], defaults.preset),
+    preset: option(input.preset, ["clean", "editorial", "bold", "soft", "liquid", "custom"], defaults.preset),
     colors: {
       background: color(colors.background, defaults.colors.background),
       surface: color(colors.surface, defaults.colors.surface),
@@ -153,7 +171,8 @@ export function normalizeDesignSystem(value = {}) {
       contentWidth: number(layout.contentWidth, defaults.layout.contentWidth, 880, 1440),
       sectionSpacing: number(layout.sectionSpacing, defaults.layout.sectionSpacing, 24, 128),
       radius: number(layout.radius, defaults.layout.radius, 0, 24),
-      shadow: option(layout.shadow, ["none", "soft", "strong"], defaults.layout.shadow)
+      shadow: option(layout.shadow, ["none", "soft", "strong"], defaults.layout.shadow),
+      surfaceStyle: option(layout.surfaceStyle, ["solid", "liquid"], defaults.layout.surfaceStyle)
     },
     buttons: {
       radius: number(buttons.radius, defaults.buttons.radius, 0, 32),
@@ -227,6 +246,22 @@ export function designSystemCss(value = {}) {
   const design = normalizeDesignSystem(value);
   const declarations = designSystemDeclarations(design);
   const typeSizes = typeScaleSizes[design.typography.scale];
+  const liquidCss = design.layout.surfaceStyle === "liquid"
+    ? `
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-header {
+  border-bottom-color: color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--site-header-bg) 76%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-card, .shop-product-card) {
+  border-color: color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--text) 12%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}`
+    : "";
 
   return `
 body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) {
@@ -263,6 +298,7 @@ body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) 
   border-radius: var(--site-radius);
   box-shadow: var(--site-shadow);
 }
+${liquidCss}
 @media (max-width: 680px) {
   body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-title { font-size: ${typeSizes.pageMobile}px; }
   body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {
@@ -340,7 +376,8 @@ export function designSystemFromForm(form, current = {}) {
       contentWidth: formValue(form, "design.layout.contentWidth", design.layout.contentWidth),
       sectionSpacing: formValue(form, "design.layout.sectionSpacing", design.layout.sectionSpacing),
       radius: formValue(form, "design.layout.radius", design.layout.radius),
-      shadow: formValue(form, "design.layout.shadow", design.layout.shadow)
+      shadow: formValue(form, "design.layout.shadow", design.layout.shadow),
+      surfaceStyle: formValue(form, "design.layout.surfaceStyle", design.layout.surfaceStyle)
     },
     buttons: {
       radius: formValue(form, "design.buttons.radius", design.buttons.radius),
@@ -387,6 +424,7 @@ export function updateDesignSystemPreview(form, current = {}, options = {}) {
   if (preview) {
     preview.setAttribute("style", designSystemDeclarations(design));
     preview.dataset.buttonStyle = design.buttons.style;
+    preview.dataset.surfaceStyle = design.layout.surfaceStyle;
   }
 
   form.querySelectorAll?.("[data-design-value-for]").forEach((output) => {

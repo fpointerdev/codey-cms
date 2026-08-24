@@ -95,6 +95,8 @@ body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-gap-xl
 body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-two-column,
 body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-three-column,
 body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-four-column,
+body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-sidebar-left,
+body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-sidebar-right,
 body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-asymmetric {
   display: block;
 }
@@ -109,6 +111,14 @@ body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout
 
 body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-four-column > .section-inner {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-sidebar-left > .section-inner {
+  grid-template-columns: minmax(220px, 0.36fr) minmax(0, 1fr);
+}
+
+body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-sidebar-right > .section-inner {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.36fr);
 }
 
 body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-asymmetric > .section-inner {
@@ -371,6 +381,14 @@ body:not([data-codey-runtime-theme="true"]) .website-spec-page .section-style-in
   --section-text: #ffffff;
 }
 
+body:not([data-codey-runtime-theme="true"]) .website-spec-page :is(.section-style-liquid, .preset-liquid) {
+  border: 1px solid color-mix(in srgb, var(--section-text, var(--text)) 12%, transparent);
+  background: color-mix(in srgb, var(--section-bg, var(--surface)) 72%, transparent);
+  box-shadow: 0 22px 64px color-mix(in srgb, var(--section-text, var(--text)) 12%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  backdrop-filter: blur(20px) saturate(135%);
+}
+
 body:not([data-codey-runtime-theme="true"]) .website-spec-page .section-style-contrast .website-spec-body,
 body:not([data-codey-runtime-theme="true"]) .website-spec-page .section-style-premium-dark .website-spec-body {
   color: rgba(255, 255, 255, 0.72);
@@ -385,6 +403,8 @@ body:not([data-codey-runtime-theme="true"]) .website-spec-page .section-cta > .s
   body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-two-column > .section-inner,
   body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-three-column > .section-inner,
   body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-four-column > .section-inner,
+  body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-sidebar-left > .section-inner,
+  body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-sidebar-right > .section-inner,
   body:not([data-codey-runtime-theme="true"]) .website-spec-section.section-layout-asymmetric > .section-inner,
   body:not([data-codey-runtime-theme="true"]) .website-spec-page :where(.section-hero, .section-image).section-layout-two-column > .section-inner,
   body:not([data-codey-runtime-theme="true"]) .website-spec-page .structured-block {

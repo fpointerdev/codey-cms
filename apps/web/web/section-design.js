@@ -9,6 +9,8 @@ const containerLayoutOptions = [
   { value: "two-column", label: "2 columns", description: "Image/text, forms, FAQs, and balanced content." },
   { value: "three-column", label: "3 columns", description: "Service cards, proof points, and compact grids." },
   { value: "four-column", label: "4 columns", description: "Dense cards, stats, logos, and team sections." },
+  { value: "sidebar-left", label: "Left sidebar", description: "Narrow supporting content beside a wider main area." },
+  { value: "sidebar-right", label: "Right sidebar", description: "Wide main content followed by a narrow supporting area." },
   { value: "asymmetric", label: "Asymmetric", description: "Editorial split with one dominant side." },
   { value: "full-bleed", label: "Full width", description: "Wide media, hero, or immersive sections." }
 ];
@@ -59,6 +61,7 @@ const sectionStylePresetOptions = [
   { value: "quiet", label: "Quiet" },
   { value: "carded", label: "Carded" },
   { value: "framed-card", label: "Framed card" },
+  { value: "liquid", label: "Liquid glass" },
   { value: "contrast", label: "Contrast" },
   { value: "industrial-grid", label: "Industrial grid" },
   { value: "premium-dark", label: "Premium dark" }
@@ -344,14 +347,15 @@ export function sectionControlFields(section = {}, mediaAssets = []) {
     { name: "decorationColor", label: "Decoration color", type: "color", value: decoration.color || "#5b5cff", required: false, group: "Style" },
     { name: "decorationOpacity", label: "Decoration opacity", type: "range", value: decoration.opacity ?? 0.35, min: 0, max: 0.9, step: 0.05, required: false, group: "Style" },
 
+    { type: "section", label: "Motion", help: "Optional entrance effect. Reduced-motion preferences are always respected.", group: "Style" },
+    { name: "animationEffect", label: "Effect", type: "select", value: animation.effect, options: animationEffectOptions, required: false, group: "Style" },
+    { name: "animationDuration", label: "Duration ms", type: "number", value: animation.durationMs, min: 120, max: 3000, step: 10, required: false, group: "Style" },
+    { name: "animationDelay", label: "Delay ms", type: "number", value: animation.delayMs, min: 0, max: 5000, step: 50, required: false, group: "Style" },
+
     { type: "section", label: "Device visibility", help: "Keep content available only on the screens where it belongs.", open: true, group: "Advanced" },
     { name: "visibilityDesktop", label: "Show on desktop", type: "checkbox", checked: design.visibility.desktop, group: "Advanced" },
     { name: "visibilityTablet", label: "Show on tablet", type: "checkbox", checked: design.visibility.tablet, group: "Advanced" },
     { name: "visibilityMobile", label: "Show on mobile", type: "checkbox", checked: design.visibility.mobile, group: "Advanced" },
-    { type: "section", label: "Motion", help: "Motion respects reduced-motion preferences.", group: "Advanced" },
-    { name: "animationEffect", label: "Animation", type: "select", value: animation.effect, options: animationEffectOptions, required: false, group: "Advanced" },
-    { name: "animationDuration", label: "Duration ms", type: "number", value: animation.durationMs, min: 120, max: 3000, step: 10, required: false, group: "Advanced" },
-    { name: "animationDelay", label: "Delay ms", type: "number", value: animation.delayMs, min: 0, max: 5000, step: 50, required: false, group: "Advanced" },
     { type: "section", label: "Developer options", help: "Use these only when the visual controls are not enough.", group: "Advanced" },
     { name: "htmlId", label: "HTML ID", value: settings.htmlId || "", required: false, help: "Optional anchor ID, for example services or contact-cta.", group: "Advanced" },
     { name: "cssClasses", label: "CSS classes", value: settings.cssClasses || "", required: false, help: "Optional safe class names separated by spaces.", group: "Advanced" },

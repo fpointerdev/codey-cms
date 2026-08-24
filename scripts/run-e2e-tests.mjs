@@ -4,4 +4,5 @@ const env = process.env.E2E_BASE_URL
   ? process.env
   : await prepareTestRuntime();
 
-await runCommand("pnpm", ["exec", "playwright", "test"], env);
+const playwrightArgs = process.argv.slice(2).filter((argument) => argument !== "--");
+await runCommand("pnpm", ["exec", "playwright", "test", ...playwrightArgs], env);

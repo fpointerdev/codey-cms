@@ -11,7 +11,7 @@ type DesignColors = {
 type DesignFont = "Inter" | "Arial" | "Georgia" | "Verdana" | "Trebuchet MS";
 
 export type DesignSystemSettings = {
-  preset: "clean" | "editorial" | "bold" | "soft" | "custom";
+  preset: "clean" | "editorial" | "bold" | "soft" | "liquid" | "custom";
   colors: DesignColors;
   typography: {
     headingFont: DesignFont;
@@ -25,6 +25,7 @@ export type DesignSystemSettings = {
     sectionSpacing: number;
     radius: number;
     shadow: "none" | "soft" | "strong";
+    surfaceStyle: "solid" | "liquid";
   };
   buttons: {
     radius: number;
@@ -63,7 +64,8 @@ export const defaultDesignSystemSettings: DesignSystemSettings = {
     contentWidth: 1120,
     sectionSpacing: 48,
     radius: 8,
-    shadow: "soft"
+    shadow: "soft",
+    surfaceStyle: "solid"
   },
   buttons: {
     radius: 7,
@@ -122,7 +124,7 @@ export function normalizeDesignSystemSettings(value: unknown): DesignSystemSetti
   const defaults = defaultDesignSystemSettings;
 
   return {
-    preset: option(input.preset, ["clean", "editorial", "bold", "soft", "custom"] as const, defaults.preset),
+    preset: option(input.preset, ["clean", "editorial", "bold", "soft", "liquid", "custom"] as const, defaults.preset),
     colors: {
       background: color(colors.background, defaults.colors.background),
       surface: color(colors.surface, defaults.colors.surface),
@@ -143,7 +145,8 @@ export function normalizeDesignSystemSettings(value: unknown): DesignSystemSetti
       contentWidth: integer(layout.contentWidth, defaults.layout.contentWidth, 880, 1440),
       sectionSpacing: integer(layout.sectionSpacing, defaults.layout.sectionSpacing, 24, 128),
       radius: integer(layout.radius, defaults.layout.radius, 0, 24),
-      shadow: option(layout.shadow, ["none", "soft", "strong"] as const, defaults.layout.shadow)
+      shadow: option(layout.shadow, ["none", "soft", "strong"] as const, defaults.layout.shadow),
+      surfaceStyle: option(layout.surfaceStyle, ["solid", "liquid"] as const, defaults.layout.surfaceStyle)
     },
     buttons: {
       radius: integer(buttons.radius, defaults.buttons.radius, 0, 32),
@@ -188,6 +191,22 @@ export function designSystemCss(value: unknown) {
   };
   const buttonBackground = design.buttons.style === "outline" ? "transparent" : design.colors.primary;
   const buttonText = design.buttons.style === "outline" ? design.colors.primary : design.colors.primaryContrast;
+  const liquidCss = design.layout.surfaceStyle === "liquid"
+    ? `
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .site-header {
+  border-bottom-color: color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, ${design.header.background} 76%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-card, .shop-product-card) {
+  border-color: color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--text) 12%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}`
+    : "";
 
   return `
 body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) {
@@ -242,6 +261,7 @@ body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) 
   border-radius: var(--site-radius);
   box-shadow: var(--site-shadow);
 }
+${liquidCss}
 @media (max-width: 680px) {
   body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) .page-title { font-size: ${typeSizes.pageMobile}px; }
   body:not(.auth-enabled):not(.dashboard-enabled):not([data-codey-preview="cms"]) :where(.structured-block h3, .slider-caption h1, .slider-caption h2, .slider-caption h3) {

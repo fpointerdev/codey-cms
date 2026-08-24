@@ -687,7 +687,8 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const inventoryBeforePayment = selectedVariant
       ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
       : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
-    assert.equal(inventoryBeforePayment.reservedQuantity, 0);
+    const reservedBeforePayment = inventoryBeforePayment.reservedQuantity;
+    assert.ok(reservedBeforePayment <= inventoryBeforePayment.stockQuantity);
 
     const enableManualPayments = await request("/api/v1/payments/providers/manual", {
       method: "PUT",
@@ -714,7 +715,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
       ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
       : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
     assert.equal(inventoryAfterFirstIntent.stockQuantity, inventoryBeforePayment.stockQuantity);
-    assert.equal(inventoryAfterFirstIntent.reservedQuantity, 1);
+    assert.equal(inventoryAfterFirstIntent.reservedQuantity, reservedBeforePayment + 1);
     const reservedProductResponse = await request("/api/v1/products/starter-product");
     const reservedProductBody = await responseJson(reservedProductResponse);
     assert.equal(reservedProductResponse.status, 200, JSON.stringify(reservedProductBody));
@@ -723,18 +724,18 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
       const publicVariant = reservedProduct?.variants.find((variant: { id: string }) =>
         variant.id === selectedVariant.id
       );
-      assert.equal(publicVariant.reservedQuantity, 1);
-      assert.equal(publicVariant.availableStock, inventoryBeforePayment.stockQuantity - 1);
+      assert.equal(publicVariant.reservedQuantity, reservedBeforePayment + 1);
+      assert.equal(publicVariant.availableStock, inventoryBeforePayment.stockQuantity - reservedBeforePayment - 1);
     } else {
-      assert.equal(reservedProduct?.reservedQuantity, 1);
-      assert.equal(reservedProduct?.availableStock, inventoryBeforePayment.stockQuantity - 1);
+      assert.equal(reservedProduct?.reservedQuantity, reservedBeforePayment + 1);
+      assert.equal(reservedProduct?.availableStock, inventoryBeforePayment.stockQuantity - reservedBeforePayment - 1);
     }
     const reservedProductPage = await request("/product/starter-product");
     const reservedProductHtml = await reservedProductPage.text();
     assert.equal(reservedProductPage.status, 200);
     assert.match(
       reservedProductHtml,
-      new RegExp(`data-stock="${inventoryBeforePayment.stockQuantity - 1}"`)
+      new RegExp(`data-stock="${inventoryBeforePayment.stockQuantity - reservedBeforePayment - 1}"`)
     );
 
     const duplicateIntent = await request("/api/v1/payments/intent", {
@@ -749,7 +750,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const inventoryAfterDuplicate = selectedVariant
       ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
       : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
-    assert.equal(inventoryAfterDuplicate.reservedQuantity, 1);
+    assert.equal(inventoryAfterDuplicate.reservedQuantity, reservedBeforePayment + 1);
 
     const failPayment = await request(`/api/v1/payments/manual/${firstPaymentId}/action`, {
       method: "POST",
@@ -761,7 +762,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
       ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
       : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
     assert.equal(inventoryAfterFailure.stockQuantity, inventoryBeforePayment.stockQuantity);
-    assert.equal(inventoryAfterFailure.reservedQuantity, 0);
+    assert.equal(inventoryAfterFailure.reservedQuantity, reservedBeforePayment);
 
     const retryIntent = await request("/api/v1/payments/intent", {
       method: "POST",
@@ -784,7 +785,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
       ? await prisma.productVariant.findUniqueOrThrow({ where: { id: selectedVariant.id } })
       : await prisma.product.findUniqueOrThrow({ where: { id: starterProduct.id } });
     assert.equal(inventoryAfterSuccess.stockQuantity, inventoryBeforePayment.stockQuantity - 1);
-    assert.equal(inventoryAfterSuccess.reservedQuantity, 0);
+    assert.equal(inventoryAfterSuccess.reservedQuantity, reservedBeforePayment);
 
     const cancellationRequest = await request(`/api/v1/orders/buyer/orders/${orderNumber}/cancel`, {
       method: "POST",

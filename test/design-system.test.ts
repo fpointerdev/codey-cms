@@ -12,6 +12,7 @@ import {
   normalizeDesignSystemSettings,
   publicSiteStyleTag
 } from "../src/modules/config/site-design.js";
+import { designSystemSettingsSchema } from "../src/modules/config/config.schemas.js";
 
 test("design settings normalize invalid saved values to a complete safe theme", () => {
   const design = normalizeDesignSystem({
@@ -42,6 +43,21 @@ test("browser and server design renderers emit the same core public tokens", () 
   }
   assert.match(browserCss, /font-family: var\(--site-body-font\)/);
   assert.doesNotMatch(browserCss, /undefined|javascript:/);
+});
+
+test("liquid surfaces remain an explicit safe design choice across browser and server", () => {
+  const design = normalizeDesignSystem(designSystemPresets.liquid);
+  const serverDesign = normalizeDesignSystemSettings(design);
+
+  assert.equal(design.preset, "liquid");
+  assert.equal(design.layout.surfaceStyle, "liquid");
+  assert.equal(serverDesign.layout.surfaceStyle, "liquid");
+  assert.equal(designSystemSettingsSchema.safeParse(design).success, true);
+
+  for (const css of [designSystemCss(design), serverDesignSystemCss(serverDesign)]) {
+    assert.match(css, /backdrop-filter:\s*blur\(18px\) saturate\(135%\)/);
+    assert.match(css, /color-mix\(in srgb, var\(--surface\) 74%, transparent\)/);
+  }
 });
 
 test("type scale affects public headings on desktop and mobile", () => {

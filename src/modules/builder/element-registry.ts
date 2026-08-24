@@ -89,7 +89,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-08-18.1";
+export const builderRegistryVersion = "2026-08-24.1";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label
@@ -989,6 +989,15 @@ export const builderStylePresetRegistry = [
     settings: {
       style: { preset: "carded", backgroundColor: "#ffffff", textColor: "#1e2329", accentColor: "#0d7c68", radius: 18, shadow: "soft" },
       decoration: { type: "frame", position: "bottom-right", color: "#0d7c68", opacity: 0.22 }
+    }
+  },
+  {
+    id: "liquid",
+    label: "Liquid glass",
+    description: "Translucent surface with restrained blur, a light border, and readable contrast.",
+    settings: {
+      style: { preset: "liquid", backgroundColor: "#edf4f3", textColor: "#172426", accentColor: "#087f76", radius: 20, shadow: "soft" },
+      decoration: { type: "none", position: "bottom-right", color: "#087f76", opacity: 0.16 }
     }
   }
 ] satisfies BuilderStylePresetDefinition[];

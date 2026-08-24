@@ -233,6 +233,7 @@ function releaseFiles() {
     "docker-compose.public.yml",
     "docker-compose.selfhost.yml",
     "docs",
+    "extensions",
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
