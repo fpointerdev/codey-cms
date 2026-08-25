@@ -51,7 +51,7 @@ test("frontend builder templates match the registered editor elements", () => {
 });
 
 test("builder registry advertises the additive liquid style contract", () => {
-  assert.equal(builderRegistryVersion, "2026-08-24.1");
+  assert.equal(builderRegistryVersion, "2026-08-25.1");
   assert.equal(builderStylePresetRegistry.length, 5);
   assert.equal(builderStylePresetRegistry.find((preset) => preset.id === "liquid")?.settings.style?.preset, "liquid");
 });
@@ -103,7 +103,7 @@ test("section patterns preserve block ownership and satisfy the builder contract
   const registeredPatternIds = builderSectionPatternRegistry.map((pattern) => pattern.id).sort();
   const frontendPatternIds = sectionPatternTemplates.map((pattern) => pattern.id).sort();
   assert.deepEqual(frontendPatternIds, registeredPatternIds);
-  assert.equal(registeredPatternIds.length, 20);
+  assert.equal(registeredPatternIds.length, 23);
 
   for (const pattern of sectionPatternTemplates) {
     const registeredPattern = builderSectionPatternRegistry.find((item) => item.id === pattern.id);
@@ -135,6 +135,29 @@ test("section patterns preserve block ownership and satisfy the builder contract
     const { patternId, ...fallbackSettings } = pattern.settings;
     assert.equal(patternId, pattern.id);
     assert.deepEqual(fallbackSettings, registeredPattern.defaultSettings);
+  }
+});
+
+test("modern banner patterns compose editable hero copy and uploaded media", () => {
+  const variants = new Map([
+    ["glass-interface-banner", "glass-interface"],
+    ["kinetic-product-banner", "kinetic-product"],
+    ["floating-product-banner", "floating-product"]
+  ]);
+
+  for (const [patternId, bannerVariant] of variants) {
+    const section = buildSectionPattern(patternId, { sections: [] });
+
+    assert.equal(section.settings.bannerVariant, bannerVariant);
+    assert.equal(section.settings.minHeight, 680);
+    assert.deepEqual(
+      section.blocks.map((block) => block.settings?.elementId),
+      ["hero-creative", "image"]
+    );
+    assert.deepEqual(
+      section.blocks.map((block) => block.type),
+      ["CUSTOM", "IMAGE"]
+    );
   }
 });
 

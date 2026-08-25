@@ -93,7 +93,7 @@ gate.
 
 ## Builder Registry Contract
 
-The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-24.1` contains 37 elements, 36 editor-available elements, 35 generator-safe elements, 5 section style presets, and 20 qualified section patterns.
+The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-25.1` contains 37 elements, 36 editor-available elements, 35 generator-safe elements, 5 section style presets, and 23 qualified section patterns.
 
 Generated pages must use registered elements instead of anonymous JSON structures:
 
@@ -122,10 +122,11 @@ Generated pages must use registered elements instead of anonymous JSON structure
 - Structured elements may include a bounded `display` object. Supported options are `alignment` (`left` or `center`), `density` (`comfortable` or `compact`), `surface` (`plain`, `outline`, or `soft`), and `columns` (`2`, `3`, or `4`). Registered visual elements may also expose a bounded `presentation` choice through the CMS Layout control. Process steps accept `showNumbers`; comparisons accept `striped`; videos accept `ratio` (`16 / 9`, `4 / 3`, or `1 / 1`), `preload` (`metadata` or `none`), `loop`, and `playback`; interactive images accept `ratio` (`16 / 10`, `16 / 9`, `4 / 3`, or `1 / 1`).
 - Published `faq-accordion` content automatically contributes matching `FAQPage` structured data. Keep every question and answer truthful and visible on the page.
 - Keep static gallery/portfolio pages on the `gallery` element and rotating media on `slider` or `carousel`.
-- Prefer `builder.sectionPatterns` for common full-section layouts before assembling low-level elements manually. The qualified set covers hero proof, split hero, service showcase, media, process tabs, portfolio, pricing trust, FAQ contact, story timeline, benefits checklist, resources, quote story, locations contact, comparison pricing, team values, shop confidence, capability bento, guided navigation, transformation stories, and product spotlights.
+- Prefer `builder.sectionPatterns` for common full-section layouts before assembling low-level elements manually. The qualified set covers hero proof, split hero, glass interface, kinetic product, floating product, service showcase, media, process tabs, portfolio, pricing trust, FAQ contact, story timeline, benefits checklist, resources, quote story, locations contact, comparison pricing, team values, shop confidence, capability bento, guided navigation, transformation stories, and product spotlights.
+- Modern banner patterns set `settings.bannerVariant` to `glass-interface`, `kinetic-product`, or `floating-product` and compose `hero-creative` plus `image`. Keep both blocks editable, upload media with alt text and intrinsic dimensions, and use the registered variant instead of generated presentation CSS.
 - Use `builder.stylePresets` for visual direction before falling back to custom colors.
 - Use the section preset list for layout intent instead of inventing unrelated container settings.
-- Use safe section settings for layout and styling: `layout`, `container`, `spacing`, `gap`, `align`, `verticalAlign`, `minHeight`, `responsive`, `style`, `background`, `visibility`, and `decoration`.
+- Use safe section settings for layout and styling: `layout`, `container`, `spacing`, `gap`, `align`, `verticalAlign`, `minHeight`, `responsive`, `style`, `background`, `visibility`, `decoration`, and the registered `bannerVariant` values.
 - Put controlled surface values in `settings.style`: `preset`, `backgroundColor`, `textColor`, `accentColor`, `radius` (0-48), `borderWidth` (0-8), `borderColor`, and `shadow` (`none`, `soft`, `strong`, or `glow`).
 - Put section background media in `settings.background`: `mode` (`none`, `color`, or `image`), `color`, `imageAssetId`, `imageUrl`, intrinsic `width` and `height`, `style` (`cover`, `contain`, or `tile`), `position`, `overlayColor`, and `overlayOpacity` (0-0.9). Prefer CMS media URLs with intrinsic dimensions. The CMS may persist its own `s3://` media references when no public storage base URL is configured, but generators must use CMS media IDs or relative/HTTP(S) URLs. Do not emit data URLs, JavaScript URLs, credentials, protocol-relative URLs, or raw CSS background declarations.
 - Use `settings.visibility.desktop`, `settings.visibility.tablet`, and `settings.visibility.mobile` only for intentional device-specific content. All three default to visible. Never hide essential navigation, legal, checkout, or accessibility content by device.
@@ -157,9 +158,10 @@ Collections:
 - Use custom collections for repeated structured records such as people, locations, events, testimonials, resources, and directories.
 - Discover models with `GET /api/v1/cms/collections`; authenticated editors may manage models and drafts, while anonymous requests only receive published entries from collections with public access enabled.
 - Collection fields are bounded and typed. Supported types are short text, long text, rich text, email, URL, number, boolean, date, date-time, image, file, choice, and relation.
-- Use `GET /api/v1/cms/collections/:collectionSlug/entries` for public collection data. Pass `locale`, `page`, and `limit`; never request `includeDrafts` from public generated code.
+- Use `GET /api/v1/cms/collections/:collectionSlug/entries` for public collection data. Pass `locale`, `page`, `limit`, bounded `filter=field=value`, `sortBy`, and `sortOrder`; never request `includeDrafts` from public generated code.
 - Do not rename or remove fields that still contain data. The CMS rejects incompatible model changes instead of truncating entries.
-- Declarative extension packs may install collections through the extension contract, but generated sites must not add executable server extensions or bypass the signed runtime update boundary.
+- Declarative extension packs may install collections through manifest contract `1.0`. Lifecycle contract `1.0` exposes catalog trust, installed and available versions, update plans, customization conflicts, and non-destructive disconnect. Generated sites must not add executable server extensions or bypass the signed runtime update boundary.
+- Content bundle contract `1.0` provides bounded atomic collection import/export. Collection query contract `1.0` provides typed exact filters and deterministic sorting without changing WebsiteSpec.
 
 Menus:
 

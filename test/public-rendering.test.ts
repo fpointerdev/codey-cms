@@ -172,6 +172,111 @@ test("generated public pages preserve section keys and avoid duplicate hero titl
   assert.match(html, /<h1>Precision without compromise<\/h1>/);
 });
 
+test("modern banners render semantic copy, intrinsic media, and bounded design hooks", () => {
+  const variants = ["glass-interface", "kinetic-product", "floating-product"];
+
+  for (const bannerVariant of variants) {
+    const html = renderPageContent({
+      title: "Studio",
+      content: {},
+      sections: [{
+        id: `${bannerVariant}-section`,
+        key: `${bannerVariant}-section`,
+        label: "Modern banner",
+        settings: {
+          bannerVariant,
+          layout: "asymmetric",
+          animation: { effect: "fade-up", durationMs: 700, delayMs: 0 }
+        },
+        blocks: [{
+          key: `${bannerVariant}-copy`,
+          type: "CUSTOM",
+          label: "Hero content",
+          value: {
+            variant: "hero-creative",
+            eyebrow: "New collection",
+            title: "Objects with presence",
+            body: "A clear offer supported by expressive product media.",
+            cta: { label: "Explore", url: "/shop" }
+          },
+          settings: { elementId: "hero-creative" },
+          editable: true
+        }, {
+          key: `${bannerVariant}-image`,
+          type: "IMAGE",
+          label: "Product image",
+          value: {
+            url: "/uploads/product.webp",
+            alt: "Sculptural product on display",
+            width: 1200,
+            height: 900
+          },
+          settings: { elementId: "image" },
+          editable: true
+        }]
+      }]
+    });
+
+    assert.match(html, new RegExp(`section-banner-${bannerVariant}`));
+    assert.match(html, /<h2>Objects with presence<\/h2>/);
+    assert.match(html, /width="1200" height="900"/);
+    assert.match(html, /alt="Sculptural product on display"/);
+    assert.doesNotMatch(html, /<h2 class="section-label">Modern banner<\/h2>/);
+  }
+
+  const invalid = renderPageContent({
+    title: "Studio",
+    content: {},
+    sections: [{
+      id: "invalid-banner",
+      key: "invalid-banner",
+      settings: { bannerVariant: "floating-product<script>" },
+      blocks: []
+    }]
+  });
+  assert.doesNotMatch(invalid, /section-banner-/);
+});
+
+test("WebsiteSpec heroes use the same modern banner composition during SSR", () => {
+  const html = renderPageContent({
+    title: "Generated studio",
+    content: { source: "websiteSpec", hideTitle: true },
+    sections: [{
+      id: "generated-banner",
+      key: "generated-banner",
+      settings: {
+        bannerVariant: "floating-product",
+        layout: "asymmetric",
+        websiteSpec: { type: "hero", collection: false }
+      },
+      blocks: [{
+        key: "generated-banner-heading",
+        type: "RICH_TEXT",
+        value: "<h1>Designed to stand apart</h1>",
+        settings: {},
+        editable: true
+      }, {
+        key: "generated-banner-image",
+        type: "IMAGE",
+        value: {
+          url: "/uploads/generated-product.webp",
+          alt: "Generated product view",
+          width: 1440,
+          height: 1080
+        },
+        settings: {},
+        editable: true
+      }]
+    }]
+  });
+
+  assert.match(html, /section-banner-floating-product/);
+  assert.match(html, /<div class="section-inner">/);
+  assert.match(html, /class="section-copy content-block hero-copy"/);
+  assert.match(html, /<figure class="section-media hero-media">/);
+  assert.match(html, /width="1440" height="1080"/);
+});
+
 test("WebsiteSpec pages keep preview-compatible layout hooks and editable hero points", () => {
   const html = renderPageContent({
     title: "Home",

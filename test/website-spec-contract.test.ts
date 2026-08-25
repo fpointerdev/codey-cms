@@ -238,6 +238,27 @@ test("non-custom WebsiteSpec section settings remain backward compatible", () =>
   assert.equal(settings?.customOption, true);
 });
 
+test("WebsiteSpec carries only registered modern banner variants into CMS sections", () => {
+  const spec = customElementsWebsiteSpec() as unknown as {
+    pages: Array<{ sections: Array<Record<string, unknown>> }>;
+  };
+  spec.pages[0].sections = [{
+    key: "hero",
+    type: "hero",
+    heading: "A modern opening",
+    settings: { bannerVariant: "glass-interface" }
+  }];
+
+  const settings = buildWebsiteGenerationPlan(spec).cmsPages[0]?.sections[0]?.settings;
+  assert.equal(settings?.bannerVariant, "glass-interface");
+
+  (spec.pages[0].sections[0].settings as Record<string, unknown>).bannerVariant = "unknown-banner";
+  assert.throws(
+    () => buildWebsiteGenerationPlan(spec),
+    /Use a banner design advertised by the builder registry/
+  );
+});
+
 function customElementValues() {
   return {
     "process-steps": {

@@ -153,13 +153,17 @@ import {
   clearContentAsset,
   deleteContentCollection,
   deleteContentEntry,
+  disconnectContentExtension,
+  exportContentBundle,
+  importContentBundle,
   installContentExtension,
   moveContentField,
   removeContentField,
   saveContentCollection,
-  saveContentEntry
+  saveContentEntry,
+  updateContentExtension
 } from "./content-model-actions.js";
-import { syncContentFieldRows } from "./content-model-views.js";
+import { filterContentExtensions, syncContentFieldRows } from "./content-model-views.js";
 
 const builderDragType = "application/x-codey-builder";
 
@@ -911,6 +915,24 @@ function bindAdminClick(event) {
     return true;
   }
 
+  const updateExtensionButton = event.target.closest("[data-update-content-extension]");
+  if (updateExtensionButton) {
+    void updateContentExtension(updateExtensionButton);
+    return true;
+  }
+
+  const disconnectExtensionButton = event.target.closest("[data-disconnect-content-extension]");
+  if (disconnectExtensionButton) {
+    void disconnectContentExtension(disconnectExtensionButton);
+    return true;
+  }
+
+  const exportContentButton = event.target.closest("[data-export-content-bundle]");
+  if (exportContentButton) {
+    void exportContentBundle(exportContentButton);
+    return true;
+  }
+
   const settingsTabButton = event.target.closest("[data-open-settings-tab]");
   if (settingsTabButton) {
     const tab = settingsTabButton.dataset.openSettingsTab;
@@ -1435,9 +1457,24 @@ function bindSlugEvents() {
 
 function bindContentModelEvents() {
   elements.page.addEventListener("change", (event) => {
+    const extensionCategory = event.target.closest("[data-extension-category]");
+    if (extensionCategory) {
+      filterContentExtensions(extensionCategory);
+      return;
+    }
+    const importInput = event.target.closest("[data-import-content-bundle]");
+    if (importInput) {
+      void importContentBundle(importInput);
+      return;
+    }
     if (event.target.closest("[data-content-field-type]")) syncContentFieldRows();
   });
   elements.page.addEventListener("input", (event) => {
+    const extensionSearch = event.target.closest("[data-extension-search]");
+    if (extensionSearch) {
+      filterContentExtensions(extensionSearch);
+      return;
+    }
     const label = event.target.closest("[data-content-field-label]");
     const keyInput = event.target.closest('[data-content-field-row] [name="fieldKey"]');
     if (!label && !keyInput) return;

@@ -87,6 +87,12 @@ const sectionDecorationPositionOptions = [
   { value: "bottom-right", label: "Bottom right" }
 ];
 
+const modernBannerOptions = [
+  { value: "glass-interface", label: "Glass interface" },
+  { value: "kinetic-product", label: "Kinetic product" },
+  { value: "floating-product", label: "Floating product" }
+];
+
 const backgroundPositionOptions = [
   { value: "center", label: "Center" },
   { value: "top", label: "Top" },
@@ -233,6 +239,7 @@ export function sectionControlFields(section = {}, mediaAssets = []) {
   const tablet = responsive.tablet || {};
   const mobile = responsive.mobile || {};
   const animation = sanitizeAnimationSettings(settings.animation || {});
+  const isModernBanner = modernBannerOptions.some((option) => option.value === settings.bannerVariant);
 
   return [
     { name: "label", label: "Container label", value: section.label || section.key || "", group: "Layout" },
@@ -272,6 +279,15 @@ export function sectionControlFields(section = {}, mediaAssets = []) {
     { name: "mobileLayout", label: "Mobile grid", type: "choice", value: mobile.layout || "one-column", options: mobileLayoutOptions, compact: true, group: "Layout" },
     { name: "mobileSpacing", label: "Mobile spacing", type: "select", value: mobile.spacing || "sm", options: inheritedSectionSpacingOptions, group: "Layout" },
 
+    ...(isModernBanner ? [{
+      name: "bannerVariant",
+      label: "Banner design",
+      type: "select",
+      value: settings.bannerVariant,
+      options: modernBannerOptions,
+      help: "Switch the composition without changing your content.",
+      group: "Style"
+    }] : []),
     { name: "stylePreset", label: "Style preset", type: "select", value: style.preset || "default", options: sectionStylePresetOptions, group: "Style" },
     {
       type: "section",
@@ -380,10 +396,14 @@ export function sectionSettingsFromControls(values, currentSettings = {}, backgr
   const image = mode === "image"
     ? backgroundAsset || imageAssetFromBackground(currentDesign.background)
     : {};
+  const bannerValues = modernBannerOptions.map((option) => option.value);
+  const currentBannerVariant = oneOf(currentSettings.bannerVariant, bannerValues, undefined);
+  const bannerVariant = oneOf(values.bannerVariant, bannerValues, currentBannerVariant);
 
   return {
     ...currentSettings,
     ...advancedSettingsFromValues(values, currentSettings),
+    ...(bannerVariant ? { bannerVariant } : {}),
     layout: values.layout || "one-column",
     container: values.container || "default",
     spacing: values.spacing || "md",

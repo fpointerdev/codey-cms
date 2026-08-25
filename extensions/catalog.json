@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": "1.0.0",
+  "extensions": [
+    {
+      "id": "codey.team-directory",
+      "version": "1.0.0",
+      "directory": "codey-team-directory",
+      "manifestSha256": "97cd578d38898c4578eeb2d5968771580c896185ce45c7615c68cb4e87fdd29e"
+    }
+  ]
+}

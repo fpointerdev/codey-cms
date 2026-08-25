@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const adminEmail = process.env.INTEGRATION_ADMIN_EMAIL || "integration-owner@example.com";
 const adminPassword = process.env.INTEGRATION_ADMIN_PASSWORD || "IntegrationOwner123!";
@@ -10,6 +10,40 @@ async function login(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByText(adminEmail, { exact: true })).toBeVisible();
+}
+
+async function resetTeamDirectoryFixture(request: APIRequestContext) {
+  const loginResponse = await request.post("/api/v1/auth/login", {
+    data: { email: adminEmail, password: adminPassword }
+  });
+  expect(loginResponse.ok()).toBeTruthy();
+  const loginBody = await loginResponse.json();
+  const headers = { authorization: `Bearer ${loginBody.data.tokens.accessToken}` };
+
+  const extensionResponse = await request.get("/api/v1/cms/extensions", { headers });
+  expect(extensionResponse.ok()).toBeTruthy();
+  const extensionBody = await extensionResponse.json();
+  const extensions = extensionBody.data.extensions as Array<{ id: string; installed: boolean }>;
+  const teamExtension = extensions.find((extension) => extension.id === "codey.team-directory");
+  if (teamExtension?.installed) {
+    const disconnectResponse = await request.delete("/api/v1/cms/extensions/codey.team-directory", {
+      headers,
+      data: { confirmation: "codey.team-directory" }
+    });
+    expect(disconnectResponse.ok()).toBeTruthy();
+  }
+
+  const collectionsResponse = await request.get("/api/v1/cms/collections", { headers });
+  expect(collectionsResponse.ok()).toBeTruthy();
+  const collectionsBody = await collectionsResponse.json();
+  const collections = collectionsBody.data.collections as Array<{ slug: string }>;
+  if (collections.some((collection) => collection.slug === "team-members")) {
+    const deleteResponse = await request.delete("/api/v1/cms/collections/team-members", {
+      headers,
+      data: { confirmation: "team-members" }
+    });
+    expect(deleteResponse.ok()).toBeTruthy();
+  }
 }
 
 test("admin settings and builder controls complete their primary workflows", async ({ page }) => {
@@ -121,7 +155,7 @@ test("account protection stays discoverable without interrupting normal login", 
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 });
 
-test("editors can model and publish a custom collection without code", async ({ page }) => {
+test("editors can model and publish a custom collection without code", async ({ page, request }) => {
   const runId = Date.now();
   const collectionName = `Browser resources ${runId}`;
   const collectionSlug = `browser-resources-${runId}`;
@@ -132,8 +166,31 @@ test("editors can model and publish a custom collection without code", async ({ 
     if (message.type() === "error") browserErrors.push(message.text());
   });
 
+  await resetTeamDirectoryFixture(request);
   await login(page);
   await page.getByRole("link", { name: "Collections", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/collections$/);
+  const teamExtension = page.locator(".content-extension-card").filter({ hasText: "Team directory" });
+  await page.getByLabel("Find extensions").fill("not-a-real-pack");
+  await expect(teamExtension).toBeHidden();
+  await expect(page.getByText("No extensions match", { exact: true })).toBeVisible();
+  await page.getByLabel("Find extensions").fill("leadership");
+  await page.getByLabel("Category").selectOption("directory");
+  await expect(teamExtension).toBeVisible();
+  await expect(teamExtension.getByText("Catalog verified", { exact: true })).toBeVisible();
+  await expect(teamExtension.getByRole("link", { name: "Documentation" })).toHaveAttribute("rel", "noopener noreferrer");
+  await teamExtension.getByRole("button", { name: "Install" }).click();
+  await expect(teamExtension.getByText("Installed", { exact: true })).toBeVisible();
+  await teamExtension.getByRole("button", { name: "Disconnect" }).click();
+  const disconnectDialog = page.getByRole("dialog", { name: "Disconnect extension" });
+  await disconnectDialog.getByLabel("Type codey.team-directory").fill("codey.team-directory");
+  await disconnectDialog.getByRole("button", { name: "Disconnect" }).click();
+  await expect(page.getByText("Team members", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: /Team members/ }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const teamCollectionDialog = page.getByRole("dialog", { name: "Delete collection" });
+  await teamCollectionDialog.getByLabel("Type team-members").fill("team-members");
+  await teamCollectionDialog.getByRole("button", { name: "Delete" }).click();
   await expect(page).toHaveURL(/\/dashboard\/collections$/);
   await page.getByRole("link", { name: "New collection" }).click();
   await page.getByLabel("Name", { exact: true }).fill(collectionName);
@@ -354,6 +411,25 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await expect(page.locator("[data-builder-section-pattern='story-timeline']")).toBeVisible();
   await librarySearch.fill("capability bento");
   await expect(page.locator("[data-builder-section-pattern='capability-bento']")).toBeVisible();
+  await librarySearch.fill("glass interface banner");
+  await expect(page.locator("[data-builder-section-pattern='glass-interface-banner']")).toBeVisible();
+  await librarySearch.fill("kinetic product banner");
+  await expect(page.locator("[data-builder-section-pattern='kinetic-product-banner']")).toBeVisible();
+  await librarySearch.fill("floating product banner");
+  await expect(page.locator("[data-builder-section-pattern='floating-product-banner']")).toBeVisible();
+  const sectionCountBeforeBanner = await page.locator("[data-builder-section]").count();
+  await librarySearch.fill("glass interface banner");
+  await page.locator("[data-builder-section-pattern='glass-interface-banner']").click();
+  await expect(page.locator("[data-builder-section]")).toHaveCount(sectionCountBeforeBanner + 1);
+  const glassBannerSection = page.locator("[data-builder-section]").last();
+  await glassBannerSection.locator("[data-edit-builder-section]").click();
+  const bannerDialog = page.getByRole("dialog", { name: "Glass interface banner" });
+  await bannerDialog.getByRole("tab", { name: "Style" }).click();
+  await expect(bannerDialog.getByLabel("Banner design")).toHaveValue("glass-interface");
+  await expect(bannerDialog.getByLabel("Banner design").locator("option")).toHaveCount(3);
+  await bannerDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Undo last canvas change" }).click();
+  await expect(page.locator("[data-builder-section]")).toHaveCount(sectionCountBeforeBanner);
   const sectionCountBeforeProductPattern = await page.locator("[data-builder-section]").count();
   await librarySearch.fill("product spotlight");
   await page.locator("[data-builder-section-pattern='product-spotlight']").click();

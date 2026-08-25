@@ -102,6 +102,7 @@ const sectionSettingsSchema = z.object({
   template: z
     .enum(["hero", "content", "gallery", "products", "contact", "custom", "section-pattern"])
     .default("custom"),
+  bannerVariant: z.enum(["glass-interface", "kinetic-product", "floating-product"]).optional(),
   layout: z
     .enum(["one-column", "two-column", "three-column", "four-column", "sidebar-left", "sidebar-right", "full-bleed", "asymmetric"])
     .default("one-column"),

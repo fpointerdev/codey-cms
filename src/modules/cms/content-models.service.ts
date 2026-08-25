@@ -1,10 +1,21 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { AppError } from "../../core/errors/app-error.js";
+import {
+  canonicalExtensionJson,
+  extensionManifestSha256
+} from "../../extensions/extension-integrity.js";
+import {
+  extensionManifestSchema,
+  type ExtensionManifest
+} from "../../extensions/extension-manifest.js";
+import { compareSemanticVersions } from "../../extensions/extension-registry.js";
 import { sanitizeRichText } from "./rich-text-sanitizer.js";
 import {
   createContentCollectionSchema,
+  contentBundleSchema,
   type ContentEntryQuery,
+  type ContentBundle,
   type ContentField,
   type CreateContentCollectionInput,
   type CreateContentEntryInput,
@@ -14,6 +25,21 @@ import {
 
 type ContentModelDatabase = PrismaClient | Prisma.TransactionClient;
 type RequestUser = { id: string };
+type EntryListQuery = Omit<ContentEntryQuery, "filter" | "sortBy" | "sortOrder"> &
+  Partial<Pick<ContentEntryQuery, "filter" | "sortBy" | "sortOrder">>;
+
+type ExtensionChangePlan = {
+  status: "available" | "installed" | "updateAvailable" | "customized" | "conflict" | "versionConflict" | "ahead" | "receiptInvalid";
+  installedVersion: string | null;
+  availableVersion: string;
+  installedDigest: string | null;
+  availableDigest: string;
+  added: string[];
+  updated: string[];
+  removed: string[];
+  customized: string[];
+  conflicts: string[];
+};
 
 type EntrySnapshot = {
   title: string;
@@ -23,6 +49,15 @@ type EntrySnapshot = {
   status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   publishedAt: string | null;
 };
+
+const extensionInstallationReceiptSelect = {
+  id: true,
+  extensionId: true,
+  version: true,
+  manifestSha256: true,
+  installedAt: true,
+  updatedAt: true
+} satisfies Prisma.CmsExtensionInstallationSelect;
 
 function json(value: unknown) {
   return value as Prisma.InputJsonValue;
@@ -64,6 +99,42 @@ function validationError(field: ContentField, message: string): never {
   throw new AppError(422, "content_entry_invalid", message, {
     field: field.key,
     label: field.label
+  });
+}
+
+function contentEntryFilters(fields: ContentField[], filters: string[]) {
+  return filters.map((filter): Prisma.CmsCollectionEntryWhereInput => {
+    const separator = filter.indexOf("=");
+    const key = separator > 0 ? filter.slice(0, separator).trim() : "";
+    const rawValue = separator > 0 ? filter.slice(separator + 1).trim() : "";
+    const field = fields.find((candidate) => candidate.key === key);
+    if (!field || !rawValue || ["richText", "image", "file"].includes(field.type)) {
+      throw new AppError(
+        422,
+        "content_filter_invalid",
+        "Filters must use filter=field=value with a scalar filterable field.",
+        { filter }
+      );
+    }
+
+    let value: string | number | boolean = rawValue;
+    if (field.type === "number") {
+      value = Number(rawValue);
+      if (!Number.isFinite(value)) {
+        throw new AppError(422, "content_filter_invalid", `${field.label} needs a numeric filter value.`);
+      }
+    } else if (field.type === "boolean") {
+      if (!new Set(["true", "false"]).has(rawValue)) {
+        throw new AppError(422, "content_filter_invalid", `${field.label} needs true or false.`);
+      }
+      value = rawValue === "true";
+    }
+
+    return {
+      data: field.multiple
+        ? { path: [field.key], array_contains: [value] }
+        : { path: [field.key], equals: value }
+    };
   });
 }
 
@@ -175,6 +246,36 @@ function fieldsFrom(value: Prisma.JsonValue | unknown) {
   return parsed as ContentField[];
 }
 
+function collectionModel(collection: {
+  name: string;
+  slug: string;
+  description: string | null;
+  titleField: string;
+  fields: Prisma.JsonValue;
+  publicRead: boolean;
+}): CreateContentCollectionInput {
+  return createContentCollectionSchema.parse({
+    name: collection.name,
+    slug: collection.slug,
+    description: collection.description ?? undefined,
+    titleField: collection.titleField,
+    fields: fieldsFrom(collection.fields),
+    publicRead: collection.publicRead
+  });
+}
+
+function installedManifest(value: Prisma.JsonValue): ExtensionManifest {
+  const parsed = extensionManifestSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new AppError(500, "extension_installation_invalid", "The saved extension receipt is invalid.");
+  }
+  return parsed.data;
+}
+
+function extensionModelsEqual(left: unknown, right: unknown) {
+  return canonicalExtensionJson(left) === canonicalExtensionJson(right);
+}
+
 function entrySnapshot(entry: {
   title: string;
   slug: string;
@@ -252,6 +353,16 @@ export class ContentModelsService {
     const site = await database.site.findUnique({ where: { slug: "default" }, select: { id: true } });
     if (!site) throw new AppError(503, "site_not_initialized", "Complete site setup before managing collections.");
     return site.id;
+  }
+
+  private async lockExtension(
+    database: ContentModelDatabase,
+    siteId: string,
+    extensionId: string
+  ) {
+    await database.$queryRaw(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtext(${`${siteId}:${extensionId}`}))::text AS "lock"
+    `);
   }
 
   private async collectionBySlug(collectionSlug: string, database: ContentModelDatabase = this.prisma) {
@@ -454,23 +565,28 @@ export class ContentModelsService {
     });
   }
 
-  async listEntries(collectionSlug: string, query: ContentEntryQuery, allowDrafts: boolean) {
+  async listEntries(collectionSlug: string, query: EntryListQuery, allowDrafts: boolean) {
     const collection = await this.collectionBySlug(collectionSlug);
     if (!allowDrafts && !collection.publicRead) {
       throw new AppError(404, "content_collection_not_found", "Collection not found.");
     }
 
+    const fields = fieldsFrom(collection.fields);
     const where: Prisma.CmsCollectionEntryWhereInput = {
       collectionId: collection.id,
       ...(query.locale ? { locale: query.locale } : {}),
       ...(query.q ? { title: { contains: query.q, mode: "insensitive" } } : {}),
-      ...(!allowDrafts || !query.includeDrafts ? publicVisibility() : {})
+      ...(!allowDrafts || !query.includeDrafts ? publicVisibility() : {}),
+      ...(query.filter?.length ? { AND: contentEntryFilters(fields, query.filter) } : {})
     };
     const skip = (query.page - 1) * query.limit;
     const [entries, total] = await Promise.all([
       this.prisma.cmsCollectionEntry.findMany({
         where,
-        orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+        orderBy: [
+          { [query.sortBy ?? "publishedAt"]: query.sortOrder ?? "desc" },
+          { id: query.sortOrder ?? "desc" }
+        ],
         skip,
         take: query.limit
       }),
@@ -801,6 +917,322 @@ export class ContentModelsService {
       data: { status: "PUBLISHED" }
     });
     return result.count;
+  }
+
+  async exportContentBundle(collectionSlugs: string[]) {
+    const siteId = await this.defaultSiteId();
+    const collections = await this.prisma.cmsCollection.findMany({
+      where: { siteId, slug: { in: collectionSlugs } },
+      include: { entries: { orderBy: [{ locale: "asc" }, { slug: "asc" }] } }
+    });
+    const bySlug = new Map(collections.map((collection) => [collection.slug, collection]));
+    const missing = collectionSlugs.filter((slug) => !bySlug.has(slug));
+    if (missing.length) {
+      throw new AppError(404, "content_collection_not_found", "One or more collections were not found.", {
+        collections: missing
+      });
+    }
+
+    return contentBundleSchema.parse({
+      schemaVersion: "1.0",
+      kind: "codey-cms.content-bundle",
+      collections: collectionSlugs.map((slug) => {
+        const collection = bySlug.get(slug)!;
+        return {
+          model: collectionModel(collection),
+          entries: collection.entries.map((entry) => ({
+            slug: entry.slug,
+            locale: entry.locale,
+            data: entry.data,
+            status: entry.status,
+            publishedAt: entry.publishedAt
+          }))
+        };
+      })
+    });
+  }
+
+  async importContentBundle(bundle: ContentBundle, user?: RequestUser) {
+    return this.transaction(async (transaction) => {
+      const siteId = await this.defaultSiteId(transaction);
+      const collectionSlugs = bundle.collections.map((collection) => collection.model.slug).sort();
+      for (const slug of collectionSlugs) {
+        await this.lockExtension(transaction, siteId, `content-bundle:${slug}`);
+      }
+
+      const nextService = new ContentModelsService(transaction);
+      const collections = await nextService.installCollectionPack(
+        bundle.collections.map((collection) => collection.model)
+      );
+      const collectionBySlug = new Map(collections.map((collection) => [collection.slug, collection]));
+      const created: Array<{
+        entry: Parameters<typeof entrySnapshot>[0] & { id: string };
+        fields: ContentField[];
+        siteId: string;
+      }> = [];
+
+      for (const collectionBundle of bundle.collections) {
+        const collection = collectionBySlug.get(collectionBundle.model.slug)!;
+        const fields = fieldsFrom(collection.fields);
+        for (const input of collectionBundle.entries) {
+          const data = normalizeContentEntryData(fields, input.data);
+          const title = String(data[collection.titleField] ?? "").trim();
+          if (!title) throw new AppError(422, "content_entry_invalid", "The display title field is required.");
+          const entry = await transaction.cmsCollectionEntry.create({
+            data: {
+              collectionId: collection.id,
+              title,
+              slug: input.slug,
+              locale: input.locale,
+              data: json(data),
+              status: input.status,
+              publishedAt: input.publishedAt,
+              createdById: user?.id,
+              updatedById: user?.id
+            }
+          });
+          created.push({ entry, fields, siteId });
+        }
+      }
+
+      for (const item of created) {
+        await this.validateRelations(
+          transaction,
+          item.siteId,
+          item.fields,
+          item.entry.data as Record<string, unknown>,
+          item.entry.locale
+        );
+        await this.createRevision(transaction, item.entry, "IMPORT", user);
+      }
+
+      return {
+        imported: true,
+        collections: collections.map((collection) => collection.slug),
+        entries: created.length
+      };
+    });
+  }
+
+  async listExtensionInstallations() {
+    const siteId = await this.defaultSiteId();
+    return this.prisma.cmsExtensionInstallation.findMany({
+      where: { siteId },
+      orderBy: [{ updatedAt: "desc" }, { extensionId: "asc" }]
+    });
+  }
+
+  private async extensionPlan(
+    database: ContentModelDatabase,
+    extension: ExtensionManifest
+  ): Promise<ExtensionChangePlan> {
+    const siteId = await this.defaultSiteId(database);
+    const availableDigest = extensionManifestSha256(extension);
+    const installation = await database.cmsExtensionInstallation.findUnique({
+      where: { siteId_extensionId: { siteId, extensionId: extension.id } }
+    });
+
+    if (!installation) {
+      const conflicts = await database.cmsCollection.findMany({
+        where: { siteId, slug: { in: extension.contentModels.map((model) => model.slug) } },
+        select: { slug: true }
+      });
+      return {
+        status: conflicts.length ? "conflict" : "available",
+        installedVersion: null,
+        availableVersion: extension.version,
+        installedDigest: null,
+        availableDigest,
+        added: extension.contentModels.map((model) => model.slug),
+        updated: [],
+        removed: [],
+        customized: [],
+        conflicts: conflicts.map((collection) => collection.slug)
+      };
+    }
+
+    const parsedReceipt = extensionManifestSchema.safeParse(installation.manifest);
+    if (
+      !parsedReceipt.success ||
+      parsedReceipt.data.id !== installation.extensionId ||
+      parsedReceipt.data.version !== installation.version ||
+      extensionManifestSha256(parsedReceipt.data) !== installation.manifestSha256
+    ) {
+      return {
+        status: "receiptInvalid",
+        installedVersion: installation.version,
+        availableVersion: extension.version,
+        installedDigest: installation.manifestSha256,
+        availableDigest,
+        added: [],
+        updated: [],
+        removed: [],
+        customized: [],
+        conflicts: []
+      };
+    }
+    const previous = parsedReceipt.data;
+    const previousBySlug = new Map(previous.contentModels.map((model) => [model.slug, model]));
+    const availableBySlug = new Map(extension.contentModels.map((model) => [model.slug, model]));
+    const previousSlugs = [...previousBySlug.keys()];
+    const availableSlugs = [...availableBySlug.keys()];
+    const currentCollections = await database.cmsCollection.findMany({
+      where: { siteId, slug: { in: [...new Set([...previousSlugs, ...availableSlugs])] } }
+    });
+    const currentBySlug = new Map(currentCollections.map((collection) => [collection.slug, collection]));
+    const customized = previousSlugs.filter((slug) => availableBySlug.has(slug)).filter((slug) => {
+      const current = currentBySlug.get(slug);
+      return !current || !extensionModelsEqual(collectionModel(current), previousBySlug.get(slug));
+    });
+    const added = availableSlugs.filter((slug) => !previousBySlug.has(slug));
+    const updated = availableSlugs.filter((slug) => {
+      const prior = previousBySlug.get(slug);
+      return prior && !extensionModelsEqual(prior, availableBySlug.get(slug));
+    });
+    const removed = previousSlugs.filter((slug) => !availableBySlug.has(slug));
+    const conflicts = added.filter((slug) => currentBySlug.has(slug));
+    const versionComparison = compareSemanticVersions(extension.version, installation.version);
+    let status: ExtensionChangePlan["status"];
+
+    if (customized.length) status = "customized";
+    else if (conflicts.length) status = "conflict";
+    else if (versionComparison === null || (versionComparison === 0 && installation.manifestSha256 !== availableDigest)) {
+      status = "versionConflict";
+    } else if (versionComparison < 0) status = "ahead";
+    else if (versionComparison > 0) status = "updateAvailable";
+    else status = "installed";
+
+    return {
+      status,
+      installedVersion: installation.version,
+      availableVersion: extension.version,
+      installedDigest: installation.manifestSha256,
+      availableDigest,
+      added,
+      updated,
+      removed,
+      customized,
+      conflicts
+    };
+  }
+
+  async planExtension(extension: ExtensionManifest) {
+    return this.extensionPlan(this.prisma, extension);
+  }
+
+  async installExtension(extension: ExtensionManifest) {
+    return this.transaction(async (transaction) => {
+      const siteId = await this.defaultSiteId(transaction);
+      await this.lockExtension(transaction, siteId, extension.id);
+      const plan = await this.extensionPlan(transaction, extension);
+      if (plan.installedVersion) {
+        throw new AppError(409, "extension_already_installed", "This extension is already installed.", { plan });
+      }
+      if (plan.conflicts.length) {
+        throw new AppError(409, "extension_collection_conflict", "One or more extension collections already exist.", {
+          collections: plan.conflicts
+        });
+      }
+
+      const collections = await new ContentModelsService(transaction).installCollectionPack(extension.contentModels);
+      const installation = await transaction.cmsExtensionInstallation.create({
+        data: {
+          siteId,
+          extensionId: extension.id,
+          version: extension.version,
+          manifestSha256: extensionManifestSha256(extension),
+          manifest: json(extension)
+        },
+        select: extensionInstallationReceiptSelect
+      });
+      return { installation, collections, plan };
+    });
+  }
+
+  async updateExtension(extension: ExtensionManifest) {
+    return this.transaction(async (transaction) => {
+      const siteId = await this.defaultSiteId(transaction);
+      await this.lockExtension(transaction, siteId, extension.id);
+      const plan = await this.extensionPlan(transaction, extension);
+      if (!plan.installedVersion) {
+        throw new AppError(404, "extension_not_installed", "Install this extension before updating it.");
+      }
+      if (plan.status === "installed") {
+        const installation = await transaction.cmsExtensionInstallation.findUniqueOrThrow({
+          where: { siteId_extensionId: { siteId, extensionId: extension.id } },
+          select: extensionInstallationReceiptSelect
+        });
+        return { installation, collections: [], preservedCollections: [], plan };
+      }
+      if (plan.status !== "updateAvailable") {
+        throw new AppError(409, "extension_update_blocked", "The extension cannot be updated safely.", { plan });
+      }
+
+      const previous = installedManifest((await transaction.cmsExtensionInstallation.findUniqueOrThrow({
+        where: { siteId_extensionId: { siteId, extensionId: extension.id } },
+        select: { manifest: true }
+      })).manifest);
+      const previousSlugs = new Set(previous.contentModels.map((model) => model.slug));
+      const nextService = new ContentModelsService(transaction);
+      const collections = [];
+      const addedModels = extension.contentModels.filter((model) => !previousSlugs.has(model.slug));
+      if (addedModels.length) {
+        collections.push(...await nextService.installCollectionPack(addedModels));
+      }
+      for (const model of extension.contentModels.filter((item) => plan.updated.includes(item.slug))) {
+        collections.push(await nextService.updateCollection(model.slug, model));
+      }
+      const nextModelSlugs = extension.contentModels.map((model) => model.slug);
+      for (const model of extension.contentModels) {
+        await nextService.assertRelationCollections(
+          transaction,
+          siteId,
+          model.slug,
+          model.fields,
+          nextModelSlugs
+        );
+      }
+
+      const installation = await transaction.cmsExtensionInstallation.update({
+        where: { siteId_extensionId: { siteId, extensionId: extension.id } },
+        data: {
+          version: extension.version,
+          manifestSha256: extensionManifestSha256(extension),
+          manifest: json(extension)
+        },
+        select: extensionInstallationReceiptSelect
+      });
+      return { installation, collections, preservedCollections: plan.removed, plan };
+    });
+  }
+
+  async disconnectExtension(extensionId: string, confirmation: string) {
+    if (confirmation !== extensionId) {
+      throw new AppError(422, "confirmation_mismatch", "Type the extension ID to confirm disconnection.");
+    }
+
+    return this.transaction(async (transaction) => {
+      const siteId = await this.defaultSiteId(transaction);
+      await this.lockExtension(transaction, siteId, extensionId);
+      const installation = await transaction.cmsExtensionInstallation.findUnique({
+        where: { siteId_extensionId: { siteId, extensionId } }
+      });
+      if (!installation) throw new AppError(404, "extension_not_installed", "Extension installation not found.");
+      const manifest = extensionManifestSchema.safeParse(installation.manifest);
+      const preservedCollections = await transaction.cmsCollection.findMany({
+        where: {
+          siteId,
+          slug: { in: manifest.success ? manifest.data.contentModels.map((model) => model.slug) : [] }
+        },
+        select: { slug: true }
+      });
+      await transaction.cmsExtensionInstallation.delete({ where: { id: installation.id } });
+      return {
+        disconnected: true,
+        extensionId,
+        preservedCollections: preservedCollections.map((collection) => collection.slug)
+      };
+    });
   }
 
   async installCollectionPack(collections: CreateContentCollectionInput[]) {

@@ -1,4 +1,4 @@
-import { api, setStatus, slugFromTitle, state } from "./core.js";
+import { api, elements, setStatus, slugFromTitle, state } from "./core.js";
 import { uploadMediaFile } from "./content-actions.js";
 import { bootstrap } from "./controller.js";
 import { getModalFormHandler } from "./modal.js";
@@ -8,6 +8,19 @@ import { setFormDisabled, setFormMessage } from "./ui.js";
 function optional(value) {
   const normalized = String(value || "").trim();
   return normalized || undefined;
+}
+
+function setContentWorkspaceBusy(busy, message = "") {
+  const page = elements.page;
+  if (!page) return;
+
+  page.inert = busy;
+  if (busy) {
+    page.setAttribute("aria-busy", "true");
+    if (message) setStatus(message);
+  } else {
+    page.removeAttribute("aria-busy");
+  }
 }
 
 function optionalNumber(value) {
@@ -146,13 +159,13 @@ export async function saveContentCollection(form) {
   }
 }
 
-async function confirmation(title, message, expected) {
+async function confirmation(title, message, expected, options = {}) {
   const values = await getModalFormHandler()({
-    label: "Confirm deletion",
+    label: options.label || "Confirm deletion",
     title,
     description: message,
     fields: [{ name: "confirmation", label: `Type ${expected}`, required: true }],
-    submitLabel: "Delete"
+    submitLabel: options.submitLabel || "Delete"
   });
   return values?.confirmation === expected;
 }
@@ -272,6 +285,7 @@ export async function installContentExtension(button) {
   const extensionId = button.dataset.installContentExtension;
   if (!extensionId) return;
   button.disabled = true;
+  setContentWorkspaceBusy(true, "Installing extension...");
   try {
     await api(`/cms/extensions/${encodeURIComponent(extensionId)}/install`, {
       method: "POST",
@@ -282,5 +296,103 @@ export async function installContentExtension(button) {
   } catch (error) {
     button.disabled = false;
     setStatus(error.message || "Unable to install extension.", true);
+  } finally {
+    setContentWorkspaceBusy(false);
+  }
+}
+
+export async function updateContentExtension(button) {
+  const extensionId = button.dataset.updateContentExtension;
+  if (!extensionId) return;
+  button.disabled = true;
+  setContentWorkspaceBusy(true, "Updating extension...");
+  try {
+    const response = await api(`/cms/extensions/${encodeURIComponent(extensionId)}/update`, {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    await bootstrap();
+    const preserved = response.preservedCollections?.length
+      ? ` ${response.preservedCollections.length} removed model${response.preservedCollections.length === 1 ? " was" : "s were"} kept as normal collections.`
+      : "";
+    setStatus(`Extension updated.${preserved}`);
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to update extension.", true);
+  } finally {
+    setContentWorkspaceBusy(false);
+  }
+}
+
+export async function disconnectContentExtension(button) {
+  const extensionId = button.dataset.disconnectContentExtension;
+  if (!extensionId || !await confirmation(
+    "Disconnect extension",
+    "The extension receipt will be removed. Collections and entries stay unchanged.",
+    extensionId,
+    { label: "Confirm disconnection", submitLabel: "Disconnect" }
+  )) return;
+  button.disabled = true;
+  setContentWorkspaceBusy(true, "Disconnecting extension...");
+  try {
+    const response = await api(`/cms/extensions/${encodeURIComponent(extensionId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation: extensionId })
+    });
+    await bootstrap();
+    setStatus(`Extension disconnected. ${response.preservedCollections.length} collection${response.preservedCollections.length === 1 ? " was" : "s were"} preserved.`);
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to disconnect extension.", true);
+  } finally {
+    setContentWorkspaceBusy(false);
+  }
+}
+
+export async function exportContentBundle(button) {
+  const collections = String(button.dataset.exportContentBundle || "")
+    .split(",")
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+  if (!collections.length) return;
+  button.disabled = true;
+  try {
+    const { bundle } = await api("/cms/collections/export", {
+      method: "POST",
+      body: JSON.stringify({ collections })
+    });
+    const blob = new Blob([`${JSON.stringify(bundle, null, 2)}\n`], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `codey-content-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus(`${collections.length} collection${collections.length === 1 ? "" : "s"} exported.`);
+  } catch (error) {
+    setStatus(error.message || "Unable to export collections.", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+export async function importContentBundle(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  input.disabled = true;
+  try {
+    if (file.size > 10 * 1024 * 1024) throw new Error("Content bundles cannot exceed 10 MB.");
+    const bundle = JSON.parse(await file.text());
+    const response = await api("/cms/collections/import", {
+      method: "POST",
+      body: JSON.stringify(bundle)
+    });
+    input.value = "";
+    await bootstrap();
+    setStatus(`${response.collections.length} collection${response.collections.length === 1 ? "" : "s"} and ${response.entries} entries imported.`);
+  } catch (error) {
+    setStatus(error.message || "Unable to import the content bundle.", true);
+  } finally {
+    input.disabled = false;
   }
 }

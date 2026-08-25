@@ -257,6 +257,29 @@ Rollback notes:
 - The previous runtime ignores the new tables and enum types.
 - Preserve support cases and tracking records in an export or backup before removing the migration.
 
+### `20260825000000_extension_installations`
+
+Purpose:
+
+- Stores the installed extension version, validated manifest snapshot, and SHA-256 digest per site.
+- Enables drift-safe extension updates and non-destructive disconnection without changing collection ownership.
+
+Risk:
+
+- Low. The migration adds one empty table and does not modify existing collections or entries.
+- Collections created before this migration remain ordinary site collections until an administrator explicitly installs a non-conflicting extension.
+
+Forward deploy notes:
+
+- Deploy the migration before using extension lifecycle API contract `1.0`.
+- Backups automatically include installation receipts with the rest of PostgreSQL; no new environment variable is required.
+- Do not create receipts manually. Install through the dashboard or authenticated CMS API so the manifest digest and collection transaction stay consistent.
+
+Rollback notes:
+
+- The previous runtime ignores the installation table and existing content remains usable.
+- Preserve the table if a later upgrade should retain installed-version history; dropping it disconnects every extension but does not delete collections or entries.
+
 ## Clean Clone Migration Smoke
 
 For a copied runtime smoke test:

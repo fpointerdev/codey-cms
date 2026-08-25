@@ -69,7 +69,11 @@ async function validationTarget(target?: string): Promise<{
   if (await access(manifestPath).then(() => true).catch(() => false)) {
     return validateManifestFile(manifestPath);
   }
-  return discoverExtensions(resolved);
+  const discovered = await discoverExtensions(resolved);
+  return {
+    extensions: discovered.extensions.map((extension) => extension.manifest),
+    failures: discovered.failures
+  };
 }
 
 async function validateManifestFile(manifestPath: string) {

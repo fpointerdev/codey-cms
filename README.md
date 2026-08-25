@@ -79,15 +79,16 @@ Useful docs:
 
 ## Extend CodeY
 
-Custom collections let administrators model reusable content such as people, locations, events, and resources from the dashboard. Declarative extension packs can ship reusable collection models without executing third-party server code.
+Custom collections let administrators model reusable content such as people, locations, events, and resources from the dashboard. Declarative extension packs use checksum-pinned catalog verification, drift-safe atomic upgrades, and non-destructive disconnect without executing third-party server code. Atomic content bundles, typed filters, and deterministic sorting give integrations a stable data-portability contract.
 
 ```bash
 pnpm extension:create yourname.extension-name
+pnpm extension:catalog
 pnpm extension:validate
 pnpm extension:validate -- --json extensions/yourname-extension-name
 ```
 
-See `CONTRIBUTING.md` for the contribution workflow and `docs/extensions.md` for the stable manifest contract.
+See `CONTRIBUTING.md` for the contribution workflow, `docs/extensions.md` for the stable manifest contract, and `docs/extension-governance.md` for catalog review and maintenance policy.
 
 ## Safety Boundary
 

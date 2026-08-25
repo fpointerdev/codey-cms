@@ -29,10 +29,11 @@ Create declarative model packs with:
 
 ```bash
 pnpm extension:create yourname.extension-name
+pnpm extension:catalog
 pnpm extension:validate
 ```
 
-Extension manifests cannot execute code. Explain the intended editor workflow, use a narrow CMS compatibility range, and include a recognized open-source license.
+Extension manifests cannot execute code. Explain the intended editor workflow, use a narrow CMS compatibility range, include a recognized open-source license, and provide documentation and support ownership. Catalog contributions must update the checksum-pinned `extensions/catalog.json`.
 
 ## Pull request checklist
 

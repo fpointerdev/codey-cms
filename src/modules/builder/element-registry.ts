@@ -89,7 +89,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-08-24.1";
+export const builderRegistryVersion = "2026-08-25.1";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label
@@ -1018,6 +1018,69 @@ export const builderSectionPatternRegistry = [
       verticalAlign: "center",
       responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
       ...builderStylePresetRegistry.find((preset) => preset.id === "premium-dark")?.settings
+    }
+  },
+  {
+    id: "glass-interface-banner",
+    label: "Glass interface banner",
+    description: "Dark interactive banner with focused copy and a translucent media surface.",
+    category: "hero",
+    elements: ["hero-creative", "image"],
+    defaultSettings: {
+      bannerVariant: "glass-interface",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      minHeight: 680,
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "premium-dark", backgroundColor: "#0d1117", textColor: "#ffffff", accentColor: "#c9ff67", radius: 28, shadow: "glow" },
+      decoration: { type: "spotlight", position: "center-right", color: "#8b73ff", opacity: 0.3 },
+      animation: { effect: "fade-up", durationMs: 700, delayMs: 0 }
+    }
+  },
+  {
+    id: "kinetic-product-banner",
+    label: "Kinetic product banner",
+    description: "Editorial product banner with oversized type and overlapping product media.",
+    category: "hero",
+    elements: ["hero-creative", "image"],
+    defaultSettings: {
+      bannerVariant: "kinetic-product",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "center",
+      minHeight: 680,
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "editorial-light", backgroundColor: "#f2c94c", textColor: "#17140f", accentColor: "#17140f", radius: 24, shadow: "strong" },
+      decoration: { type: "split", position: "center-right", color: "#ffffff", opacity: 0.24 },
+      animation: { effect: "reveal-up", durationMs: 700, delayMs: 0 }
+    }
+  },
+  {
+    id: "floating-product-banner",
+    label: "Floating product banner",
+    description: "Premium dark banner with quiet copy and a floating product or fashion visual.",
+    category: "hero",
+    elements: ["hero-creative", "image"],
+    defaultSettings: {
+      bannerVariant: "floating-product",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      minHeight: 680,
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "premium-dark", backgroundColor: "#171a1f", textColor: "#ffffff", accentColor: "#d7ff4f", radius: 28, shadow: "strong" },
+      decoration: { type: "frame", position: "bottom-right", color: "#ff8066", opacity: 0.22 },
+      animation: { effect: "fade-up", durationMs: 800, delayMs: 0 }
     }
   },
   {

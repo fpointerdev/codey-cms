@@ -71,6 +71,20 @@ model CmsCollection {
   @@index([siteId, updatedAt])
 }
 
+model CmsExtensionInstallation {
+  id             String   @id @default(cuid())
+  siteId         String
+  extensionId    String
+  version        String
+  manifestSha256 String
+  manifest       Json
+  installedAt    DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([siteId, extensionId])
+  @@index([siteId, updatedAt])
+}
+
 model CmsCollectionEntry {
   id          String                       @id @default(cuid())
   collectionId String

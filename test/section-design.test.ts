@@ -62,12 +62,42 @@ test("section editor exposes one consistent three-tab control model", () => {
   assert.ok(fields.find((field) => field.name === "layout")?.options?.some((option) => option.value === "sidebar-left"));
   assert.ok(fields.find((field) => field.name === "stylePreset")?.options?.some((option) => option.value === "liquid"));
 
+  const bannerFields = sectionControlFields({
+    label: "Modern banner",
+    settings: { bannerVariant: "glass-interface" }
+  });
+  const bannerDesign = bannerFields.find((field) => field.name === "bannerVariant");
+  assert.equal(bannerDesign?.group, "Style");
+  assert.equal(bannerDesign?.value, "glass-interface");
+  assert.deepEqual(bannerDesign?.options?.map((option) => option.value), [
+    "glass-interface",
+    "kinetic-product",
+    "floating-product"
+  ]);
+
   const newSectionFields = sectionControlFields({ key: "new-section", settings: {} });
   assert.equal(newSectionFields.find((field) => field.name === "backgroundColor")?.value, "#ffffff");
   assert.equal(
     newSectionFields.find((field) => field.name === "backgroundAssetId")?.options?.[0]?.label,
     "Choose from media library"
   );
+});
+
+test("modern banner design switches without changing unrelated section settings", () => {
+  const settings = sectionSettingsFromControls({
+    bannerVariant: "floating-product"
+  }, {
+    bannerVariant: "glass-interface",
+    patternId: "glass-interface-banner",
+    customSetting: "keep-me"
+  });
+
+  assert.equal(settings.bannerVariant, "floating-product");
+  assert.equal(settings.patternId, "glass-interface-banner");
+  assert.equal(settings.customSetting, "keep-me");
+
+  const invalid = sectionSettingsFromControls({ bannerVariant: "unsafe-value" }, settings);
+  assert.equal(invalid.bannerVariant, "floating-product");
 });
 
 test("section settings synchronize background, border, responsive, and visibility values", () => {
@@ -198,6 +228,14 @@ test("section schema accepts the 1.0 design contract and rejects unsafe values",
   };
 
   assert.equal(pageSectionSchema.safeParse(section).success, true);
+  assert.equal(pageSectionSchema.safeParse({
+    ...section,
+    settings: { ...section.settings, bannerVariant: "kinetic-product" }
+  }).success, true);
+  assert.equal(pageSectionSchema.safeParse({
+    ...section,
+    settings: { ...section.settings, bannerVariant: "unknown-banner" }
+  }).success, false);
   assert.equal(pageSectionSchema.safeParse({
     ...section,
     settings: {

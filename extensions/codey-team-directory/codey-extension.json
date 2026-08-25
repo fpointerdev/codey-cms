@@ -9,6 +9,20 @@
   "author": {
     "name": "CodeY"
   },
+  "categories": [
+    "directory",
+    "content"
+  ],
+  "keywords": [
+    "team",
+    "people",
+    "leadership",
+    "profiles"
+  ],
+  "repository": "https://github.com/fpointerdev/codey-cms",
+  "documentation": "https://github.com/fpointerdev/codey-cms/blob/main/docs/extensions.md",
+  "support": "https://github.com/fpointerdev/codey-cms/issues",
+  "changelog": "https://github.com/fpointerdev/codey-cms/releases",
   "requires": {
     "cms": ">=1.1.0 <2.0.0"
   },
