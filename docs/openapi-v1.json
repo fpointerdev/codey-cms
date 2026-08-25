@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CodeY CMS API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Generated stable /api/v1 contract. Each operation identifies its authentication, permission, path parameter, and authoritative Zod validation source."
   },
   "servers": [
@@ -1358,7 +1358,7 @@
         ],
         "operationId": "cms_get_cms_collections",
         "summary": "GET /cms/collections",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:81",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:169",
         "x-codey-permission": {
           "action": "read",
           "subject": "cms"
@@ -1405,7 +1405,7 @@
         ],
         "operationId": "cms_post_cms_collections",
         "summary": "POST /cms/collections",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:89",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:177",
         "x-codey-validation": {
           "body": "createContentCollectionSchema"
         },
@@ -1469,7 +1469,7 @@
         ],
         "operationId": "cms_delete_cms_collections_collectionSlug",
         "summary": "DELETE /cms/collections/{collectionSlug}",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:118",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:226",
         "x-codey-validation": {
           "params": "contentCollectionParams",
           "body": "deleteContentCollectionSchema"
@@ -1543,7 +1543,7 @@
         ],
         "operationId": "cms_get_cms_collections_collectionSlug",
         "summary": "GET /cms/collections/{collectionSlug}",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:98",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:206",
         "x-codey-validation": {
           "params": "contentCollectionParams"
         },
@@ -1604,7 +1604,7 @@
         ],
         "operationId": "cms_patch_cms_collections_collectionSlug",
         "summary": "PATCH /cms/collections/{collectionSlug}",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:107",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:215",
         "x-codey-validation": {
           "params": "contentCollectionParams",
           "body": "updateContentCollectionSchema"
@@ -1680,7 +1680,7 @@
         ],
         "operationId": "cms_get_cms_collections_collectionSlug_entries",
         "summary": "GET /cms/collections/{collectionSlug}/entries",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:130",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:238",
         "x-codey-validation": {
           "params": "contentCollectionParams",
           "query": "contentEntryQuerySchema"
@@ -1728,7 +1728,7 @@
         ],
         "operationId": "cms_post_cms_collections_collectionSlug_entries",
         "summary": "POST /cms/collections/{collectionSlug}/entries",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:151",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:259",
         "x-codey-validation": {
           "params": "contentCollectionParams",
           "body": "createContentEntrySchema"
@@ -1804,7 +1804,7 @@
         ],
         "operationId": "cms_delete_cms_collections_collectionSlug_entries_entrySlug",
         "summary": "DELETE /cms/collections/{collectionSlug}/entries/{entrySlug}",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:200",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:308",
         "x-codey-validation": {
           "params": "contentEntryParams",
           "query": "contentEntryQuerySchema"
@@ -1875,7 +1875,7 @@
         ],
         "operationId": "cms_get_cms_collections_collectionSlug_entries_entrySlug",
         "summary": "GET /cms/collections/{collectionSlug}/entries/{entrySlug}",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:165",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:273",
         "x-codey-validation": {
           "params": "contentEntryParams",
           "query": "contentEntryQuerySchema"
@@ -1932,7 +1932,7 @@
         ],
         "operationId": "cms_patch_cms_collections_collectionSlug_entries_entrySlug",
         "summary": "PATCH /cms/collections/{collectionSlug}/entries/{entrySlug}",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:180",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:288",
         "x-codey-validation": {
           "params": "contentEntryParams",
           "query": "contentEntryQuerySchema",
@@ -2018,7 +2018,7 @@
         ],
         "operationId": "cms_get_cms_collections_collectionSlug_entries_entrySlug_revisions",
         "summary": "GET /cms/collections/{collectionSlug}/entries/{entrySlug}/revisions",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:213",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:321",
         "x-codey-validation": {
           "params": "contentEntryParams",
           "query": "contentEntryQuerySchema"
@@ -2091,7 +2091,7 @@
         ],
         "operationId": "cms_post_cms_collections_collectionSlug_entries_entrySlug_revisions_revisionId_restore",
         "summary": "POST /cms/collections/{collectionSlug}/entries/{entrySlug}/revisions/{revisionId}/restore",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:227",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:335",
         "x-codey-validation": {
           "params": "contentEntryRevisionParams",
           "query": "contentEntryQuerySchema"
@@ -2137,6 +2137,134 @@
         "responses": {
           "200": {
             "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/cms/collections/export": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_collections_export",
+        "summary": "POST /cms/collections/export",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:186",
+        "x-codey-validation": {
+          "body": "exportContentBundleSchema"
+        },
+        "x-codey-permission": {
+          "action": "read",
+          "subject": "cms"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Validated at runtime by exportContentBundleSchema.",
+                "x-codey-zod-schema": "exportContentBundleSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/cms/collections/import": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_collections_import",
+        "summary": "POST /cms/collections/import",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:197",
+        "x-codey-validation": {
+          "body": "contentBundleSchema"
+        },
+        "x-codey-permission": {
+          "action": "create",
+          "subject": "cms"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Validated at runtime by contentBundleSchema.",
+                "x-codey-zod-schema": "contentBundleSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Resource created.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2222,7 +2350,7 @@
         ],
         "operationId": "cms_get_cms_extensions",
         "summary": "GET /cms/extensions",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:43",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:49",
         "x-codey-permission": {
           "action": "read",
           "subject": "cms"
@@ -2264,6 +2392,82 @@
         }
       }
     },
+    "/cms/extensions/{extensionId}": {
+      "delete": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_delete_cms_extensions_extensionId",
+        "summary": "DELETE /cms/extensions/{extensionId}",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:157",
+        "x-codey-validation": {
+          "params": "extensionParamsSchema",
+          "body": "disconnectExtensionSchema"
+        },
+        "x-codey-permission": {
+          "action": "delete",
+          "subject": "cms"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "extensionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Validated at runtime by disconnectExtensionSchema.",
+                "x-codey-zod-schema": "disconnectExtensionSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/cms/extensions/{extensionId}/install": {
       "post": {
         "tags": [
@@ -2271,7 +2475,7 @@
         ],
         "operationId": "cms_post_cms_extensions_extensionId_install",
         "summary": "POST /cms/extensions/{extensionId}/install",
-        "x-codey-source": "src/modules/cms/content-models.routes.ts:63",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:108",
         "x-codey-validation": {
           "params": "extensionParamsSchema"
         },
@@ -2298,6 +2502,132 @@
         "responses": {
           "201": {
             "description": "Resource created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/cms/extensions/{extensionId}/plan": {
+      "get": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_get_cms_extensions_extensionId_plan",
+        "summary": "GET /cms/extensions/{extensionId}/plan",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:126",
+        "x-codey-validation": {
+          "params": "extensionParamsSchema"
+        },
+        "x-codey-permission": {
+          "action": "read",
+          "subject": "cms"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "extensionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/cms/extensions/{extensionId}/update": {
+      "post": {
+        "tags": [
+          "cms"
+        ],
+        "operationId": "cms_post_cms_extensions_extensionId_update",
+        "summary": "POST /cms/extensions/{extensionId}/update",
+        "x-codey-source": "src/modules/cms/content-models.routes.ts:140",
+        "x-codey-validation": {
+          "params": "extensionParamsSchema"
+        },
+        "x-codey-permission": {
+          "action": "update",
+          "subject": "cms"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "extensionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
             "content": {
               "application/json": {
                 "schema": {

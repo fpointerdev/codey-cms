@@ -11,15 +11,21 @@ import {
   contentEntryParams,
   contentEntryQuerySchema,
   contentEntryRevisionParams,
+  contentBundleSchema,
   createContentCollectionSchema,
   createContentEntrySchema,
   deleteContentCollectionSchema,
+  exportContentBundleSchema,
   updateContentCollectionSchema,
   updateContentEntrySchema
 } from "./content-models.schemas.js";
 import type { ContentEntryQuery } from "./content-models.schemas.js";
 import { ContentModelsService } from "./content-models.service.js";
-import { extensionParamsSchema } from "../../extensions/extension-manifest.js";
+import {
+  disconnectExtensionSchema,
+  extensionManifestSchema,
+  extensionParamsSchema
+} from "../../extensions/extension-manifest.js";
 import {
   discoverExtensions,
   getExtension,
@@ -44,17 +50,56 @@ export function registerContentModelRoutes(
     "/extensions",
     requirePermission(context, "read", "cms"),
     asyncHandler(async (_req, res) => {
-      const [{ extensions, failures }, collections] = await Promise.all([
+      const [{ extensions, failures }, installations] = await Promise.all([
         discoverExtensions(),
-        service.listCollections()
+        service.listExtensionInstallations()
       ]);
-      const installedSlugs = new Set(collections.map((collection) => collection.slug));
+      const availableIds = new Set(extensions.map((extension) => extension.manifest.id));
+      const available = await Promise.all(extensions.map(async ({ manifest, provenance }) => {
+        const lifecycle = await service.planExtension(manifest);
+        return {
+          ...manifest,
+          provenance,
+          available: true,
+          compatible: satisfiesCmsVersion(runtimeVersion, manifest.requires.cms),
+          installed: lifecycle.installedVersion !== null,
+          lifecycle
+        };
+      }));
+      const unavailable = installations
+        .filter((installation) => !availableIds.has(installation.extensionId))
+        .map((installation) => {
+          const manifest = extensionManifestSchema.safeParse(installation.manifest);
+          return {
+            ...(manifest.success ? manifest.data : {
+              id: installation.extensionId,
+              name: installation.extensionId,
+              description: "The installed extension package is not available in this runtime.",
+              version: installation.version,
+              license: "Unknown",
+              author: { name: "Unknown" },
+              requires: { cms: "Unknown" },
+              contentModels: []
+            }),
+            available: false,
+            compatible: false,
+            installed: true,
+            lifecycle: {
+              status: "unavailable",
+              installedVersion: installation.version,
+              availableVersion: null,
+              installedDigest: installation.manifestSha256,
+              availableDigest: null,
+              added: [],
+              updated: [],
+              removed: [],
+              customized: [],
+              conflicts: []
+            }
+          };
+        });
       return sendSuccess(res, {
-        extensions: extensions.map((extension) => ({
-          ...extension,
-          compatible: satisfiesCmsVersion(runtimeVersion, extension.requires.cms),
-          installed: extension.contentModels.every((model) => installedSlugs.has(model.slug))
-        })),
+        extensions: [...available, ...unavailable],
         failures
       });
     })
@@ -65,7 +110,7 @@ export function registerContentModelRoutes(
     requirePermission(context, "create", "cms"),
     validateRequest({ params: extensionParamsSchema }),
     asyncHandler(async (req, res) => {
-      const extension = await getExtension(req.params.extensionId);
+      const { manifest: extension } = await getExtension(req.params.extensionId);
       if (!satisfiesCmsVersion(runtimeVersion, extension.requires.cms)) {
         throw new AppError(
           422,
@@ -73,8 +118,51 @@ export function registerContentModelRoutes(
           `Extension ${extension.name} requires CodeY CMS ${extension.requires.cms}.`
         );
       }
-      const collections = await service.installCollectionPack(extension.contentModels);
-      return sendCreated(res, { extension: extension.id, collections });
+      const result = await service.installExtension(extension);
+      return sendCreated(res, { extension: extension.id, ...result });
+    })
+  );
+
+  router.get(
+    "/extensions/:extensionId/plan",
+    requirePermission(context, "read", "cms"),
+    validateRequest({ params: extensionParamsSchema }),
+    asyncHandler(async (req, res) => {
+      const { manifest: extension } = await getExtension(req.params.extensionId);
+      return sendSuccess(res, {
+        extension: extension.id,
+        compatible: satisfiesCmsVersion(runtimeVersion, extension.requires.cms),
+        plan: await service.planExtension(extension)
+      });
+    })
+  );
+
+  router.post(
+    "/extensions/:extensionId/update",
+    requirePermission(context, "update", "cms"),
+    validateRequest({ params: extensionParamsSchema }),
+    asyncHandler(async (req, res) => {
+      const { manifest: extension } = await getExtension(req.params.extensionId);
+      if (!satisfiesCmsVersion(runtimeVersion, extension.requires.cms)) {
+        throw new AppError(
+          422,
+          "extension_incompatible",
+          `Extension ${extension.name} requires CodeY CMS ${extension.requires.cms}.`
+        );
+      }
+      return sendSuccess(res, { extension: extension.id, ...await service.updateExtension(extension) });
+    })
+  );
+
+  router.delete(
+    "/extensions/:extensionId",
+    requirePermission(context, "delete", "cms"),
+    validateRequest({ params: extensionParamsSchema, body: disconnectExtensionSchema }),
+    asyncHandler(async (req, res) => {
+      return sendSuccess(res, await service.disconnectExtension(
+        req.params.extensionId,
+        req.body.confirmation
+      ));
     })
   );
 
@@ -92,6 +180,26 @@ export function registerContentModelRoutes(
     validateRequest({ body: createContentCollectionSchema }),
     asyncHandler(async (req, res) => {
       return sendCreated(res, { collection: await service.createCollection(req.body) });
+    })
+  );
+
+  router.post(
+    "/collections/export",
+    requirePermission(context, "read", "cms"),
+    validateRequest({ body: exportContentBundleSchema }),
+    asyncHandler(async (req, res) => {
+      return sendSuccess(res, {
+        bundle: await service.exportContentBundle(req.body.collections)
+      });
+    })
+  );
+
+  router.post(
+    "/collections/import",
+    requirePermission(context, "create", "cms"),
+    validateRequest({ body: contentBundleSchema }),
+    asyncHandler(async (req, res) => {
+      return sendCreated(res, await service.importContentBundle(req.body, req.user));
     })
   );
 

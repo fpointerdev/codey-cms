@@ -1,6 +1,6 @@
 {
   "name": "codey-cms",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "CodeY CMS contributors",
   "license": "GPL-2.0-or-later",
   "repository": {
@@ -30,7 +30,7 @@
     "audit:load": "node scripts/audit-load.mjs",
     "audit:quality": "node scripts/run-public-quality-audits.mjs",
     "test:release": "pnpm run validate && pnpm run test:installation && pnpm run test:integration && pnpm run test:recovery && pnpm run test:e2e",
-    "validate": "pnpm run release:containers && pnpm run lint && pnpm run extension:validate && pnpm run api:check && pnpm run typecheck && pnpm run test:coverage && pnpm run db:validate && pnpm run build",
+    "validate": "pnpm run release:containers && pnpm run lint && pnpm run extension:catalog -- --check && pnpm run extension:validate && pnpm run api:check && pnpm run typecheck && pnpm run test:coverage && pnpm run db:validate && pnpm run build",
     "runtime:start": "pnpm db:deploy && node dist/src/server.js",
     "runtime:bootstrap": "pnpm db:deploy && pnpm db:seed",
     "setup:admin": "pnpm prisma:generate && node scripts/setup-admin.mjs",
@@ -58,6 +58,7 @@
     "db:deploy": "pnpm db:schema && prisma migrate deploy --schema prisma/generated/schema.prisma",
     "db:seed": "pnpm prisma:generate && tsx prisma/seed.ts",
     "extension:create": "node scripts/create-extension.mjs",
+    "extension:catalog": "node --import tsx scripts/generate-extension-catalog.ts",
     "extension:validate": "node --import tsx scripts/validate-extensions.ts"
   },
   "dependencies": {

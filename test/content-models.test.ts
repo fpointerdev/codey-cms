@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AppError } from "../src/core/errors/app-error.js";
 import {
+  contentBundleSchema,
+  contentEntryQuerySchema,
   createContentCollectionSchema,
   updateContentCollectionSchema
 } from "../src/modules/cms/content-models.schemas.js";
@@ -169,4 +171,47 @@ test("multiple content values remain bounded and preserve their configured order
   assert.throws(() => normalizeContentEntryData(galleryField, {
     gallery: Array.from({ length: 101 }, () => ({ url: "/uploads/image.webp" }))
   }), /no more than 100/);
+});
+
+test("collection queries expose bounded filters and deterministic sorting", () => {
+  const query = contentEntryQuerySchema.parse({
+    filter: ["category=news", "featured=true"],
+    sortBy: "title",
+    sortOrder: "asc"
+  });
+
+  assert.deepEqual(query.filter, ["category=news", "featured=true"]);
+  assert.equal(query.sortBy, "title");
+  assert.equal(query.sortOrder, "asc");
+  assert.equal(contentEntryQuerySchema.safeParse({ filter: Array.from({ length: 11 }, () => "field=value") }).success, false);
+});
+
+test("content bundles reject duplicate identities and unbounded payloads", () => {
+  const bundle = {
+    schemaVersion: "1.0",
+    kind: "codey-cms.content-bundle",
+    collections: [{
+      model: {
+        name: "Resources",
+        slug: "resources",
+        titleField: "title",
+        fields: [fields[0]],
+        publicRead: true
+      },
+      entries: [{ slug: "guide", locale: "en", data: { title: "Guide" }, status: "PUBLISHED" }]
+    }]
+  };
+
+  assert.equal(contentBundleSchema.safeParse(bundle).success, true);
+  assert.equal(contentBundleSchema.safeParse({
+    ...bundle,
+    collections: [bundle.collections[0], bundle.collections[0]]
+  }).success, false);
+  assert.equal(contentBundleSchema.safeParse({
+    ...bundle,
+    collections: [{
+      ...bundle.collections[0],
+      entries: [bundle.collections[0].entries[0], bundle.collections[0].entries[0]]
+    }]
+  }).success, false);
 });

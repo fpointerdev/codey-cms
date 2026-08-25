@@ -29,6 +29,8 @@ const manifest = {
   description: `${name} content model pack.`,
   license: "GPL-2.0-or-later",
   author: { name: "Your name" },
+  categories: ["content"],
+  keywords: ["structured-content"],
   requires: { cms: ">=1.1.0 <2.0.0" },
   contentModels: [{
     name: "Items",
@@ -54,4 +56,5 @@ await writeFile(
   "utf8"
 );
 console.log(`Created ${path.relative(process.cwd(), directory)}.`);
+console.log("Add documentation and support links, then run pnpm extension:catalog.");
 console.log("Run pnpm extension:validate before opening a pull request.");

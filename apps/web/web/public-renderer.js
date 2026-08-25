@@ -1331,7 +1331,9 @@ function renderStructuredBlock(block, renderContext = {}) {
   const ctaHtml = cta?.label && cta?.url
     ? `<a class="action-link" href="${escapeHtml(safePublicHref(cta.url))}">${escapeHtml(cta.label)}</a>`
     : "";
-  const headingTag = ["featureGrid", "pricing", "faq", "custom"].includes(value.type) ? "h2" : "h3";
+  const headingTag = variantToken === "hero-creative" || ["featureGrid", "pricing", "faq", "custom"].includes(value.type)
+    ? "h2"
+    : "h3";
 
   if (!title && !body && !note && !imageHtml && !statsHtml && !itemsHtml && !ctaHtml) return "";
 
@@ -1429,6 +1431,7 @@ function sectionClassName(section, includeBuilderClasses = true) {
   const tabletSpacing = oneOf(tablet.spacing, ["inherit", "none", "sm", "md", "lg", "xl"], "inherit");
   const mobileLayout = oneOf(mobile.layout, ["inherit", "one-column", "two-column"], "one-column");
   const mobileSpacing = oneOf(mobile.spacing, ["inherit", "none", "sm", "md", "lg", "xl"], "sm");
+  const bannerVariant = modernBannerVariant(settings);
 
   return [
     "page-section",
@@ -1438,6 +1441,7 @@ function sectionClassName(section, includeBuilderClasses = true) {
     websiteSpec?.type === "hero" && settings.mediaMode === "background"
       ? "section-media-background has-background-media"
       : "",
+    bannerVariant ? `section-banner-${bannerVariant}` : "",
     background.mode === "image" && background.imageUrl ? "has-section-background-image" : "",
     style.borderWidth > 0 ? "section-has-border" : "",
     visibility.desktop ? "" : "section-hidden-desktop",
@@ -1470,6 +1474,10 @@ function sectionClassName(section, includeBuilderClasses = true) {
     ] : []),
     advancedClassList(settings)
   ].join(" ");
+}
+
+function modernBannerVariant(settings = {}) {
+  return oneOf(settings.bannerVariant, ["glass-interface", "kinetic-product", "floating-product"], "");
 }
 
 function sectionStyleAttribute(section) {
@@ -2122,7 +2130,7 @@ export function renderSections(page, options = {}) {
                 ? renderWebsiteSpecBackgroundMedia(section, renderContext)
                 : ""}
               ${renderSectionDecoration(section)}
-              ${section.label ? `<h2 class="section-label">${escapeHtml(section.label)}</h2>` : ""}
+              ${section.label && !modernBannerVariant(section.settings) ? `<h2 class="section-label">${escapeHtml(section.label)}</h2>` : ""}
               ${isRecord(section.settings?.websiteSpec) ? '<div class="section-inner">' : ""}
               ${isRecord(section.settings?.websiteSpec) && !canEdit
                 ? renderWebsiteSpecSection(section, renderContext)

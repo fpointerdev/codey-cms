@@ -70,6 +70,9 @@ function patternIcon(patternId) {
   const icons = {
     "hero-proof": "HP",
     "split-hero": "SH",
+    "glass-interface-banner": "GI",
+    "kinetic-product-banner": "KP",
+    "floating-product-banner": "FP",
     "service-showcase": "SS",
     "media-band": "MB",
     "process-tabs": "PT",

@@ -171,35 +171,94 @@ export function renderCollectionEditorPage(collection, collections = [], entries
 
 function extensionCards(extensions = []) {
   if (!extensions.length) return "";
+  const categories = [...new Set(extensions.flatMap((extension) => extension.categories || []))].sort();
   return `
     <section class="admin-section content-extension-section">
       <div class="section-heading-row"><div><p class="section-label">Starter packs</p><h2>Extensions</h2><p class="dashboard-copy">Install trusted declarative models without server code.</p></div></div>
+      <div class="content-extension-tools">
+        <label><span>Find extensions</span><input type="search" placeholder="Search by name or purpose" data-extension-search /></label>
+        ${categories.length ? `<label><span>Category</span><select data-extension-category><option value="">All categories</option>${categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category[0].toUpperCase() + category.slice(1))}</option>`).join("")}</select></label>` : ""}
+      </div>
       <div class="content-extension-grid">
-        ${extensions.map((extension) => `
-          <article class="admin-card content-extension-card">
-            <div><span class="status-pill">v${escapeHtml(extension.version)}</span><h3>${escapeHtml(extension.name)}</h3><p>${escapeHtml(extension.description)}</p></div>
+        ${extensions.map((extension) => {
+          const links = [
+            ["Documentation", extension.documentation],
+            ["Support", extension.support],
+            ["Repository", extension.repository],
+            ["Changelog", extension.changelog]
+          ].filter(([, url]) => url);
+          const searchValue = [extension.id, extension.name, extension.description, extension.author?.name, ...(extension.categories || []), ...(extension.keywords || [])].join(" ").toLowerCase();
+          return `
+          <article class="admin-card content-extension-card" data-extension-card data-extension-search-value="${escapeHtml(searchValue)}" data-extension-categories="${escapeHtml((extension.categories || []).join(","))}">
+            <div>
+              <div class="content-extension-badges">
+                <span class="status-pill">v${escapeHtml(extension.lifecycle?.installedVersion || extension.version)}</span>
+                <span class="status-pill ${extension.provenance?.catalogVerified ? "success" : ""}">${extension.provenance?.catalogVerified ? "Catalog verified" : "Operator pack"}</span>
+                ${(extension.categories || []).map((category) => `<span class="status-pill">${escapeHtml(category)}</span>`).join("")}
+              </div>
+              <h3>${escapeHtml(extension.name)}</h3>
+              <p>${escapeHtml(extension.description)}</p>
+              ${extension.lifecycle?.status === "updateAvailable" ? `<small>Update available: v${escapeHtml(extension.lifecycle.availableVersion)}</small>` : ""}
+              ${extension.lifecycle?.status === "customized" ? '<small>Collections were customized. Updates are paused to protect those changes.</small>' : ""}
+              ${extension.lifecycle?.status === "conflict" ? '<small>A collection URL conflicts with this pack.</small>' : ""}
+              ${extension.lifecycle?.status === "versionConflict" ? '<small>This version changed without a version increase and was blocked.</small>' : ""}
+              ${extension.lifecycle?.status === "receiptInvalid" ? '<small>The installation receipt failed its integrity check. Disconnect it before reinstalling.</small>' : ""}
+              ${extension.lifecycle?.status === "unavailable" ? '<small>The package is not available in this CMS version. Existing content is unaffected.</small>' : ""}
+              ${links.length ? `<nav class="content-extension-links" aria-label="${escapeHtml(extension.name)} resources">${links.map(([label, url]) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`).join("")}</nav>` : ""}
+            </div>
             <footer>
               <small>${extension.contentModels.length} ${extension.contentModels.length === 1 ? "collection" : "collections"} · ${escapeHtml(extension.license)}</small>
-              ${extension.installed
-                ? '<span class="status-pill success">Installed</span>'
-                : extension.compatible && hasPermission("create", "cms")
+              <span class="content-extension-actions">
+                ${extension.lifecycle?.status === "updateAvailable" && extension.compatible && hasPermission("update", "cms")
+                  ? `<button type="button" class="secondary-button" data-update-content-extension="${escapeHtml(extension.id)}">Update</button>`
+                  : ""}
+                ${!extension.installed && extension.lifecycle?.status === "available" && extension.compatible && hasPermission("create", "cms")
                   ? `<button type="button" class="secondary-button" data-install-content-extension="${escapeHtml(extension.id)}">Install</button>`
-                  : '<span class="status-pill error">Not compatible</span>'}
+                  : ""}
+                ${extension.installed ? '<span class="status-pill success">Installed</span>' : ""}
+                ${extension.installed && hasPermission("delete", "cms")
+                  ? `<button type="button" class="secondary-button compact danger" data-disconnect-content-extension="${escapeHtml(extension.id)}">Disconnect</button>`
+                  : ""}
+                ${!extension.compatible && extension.available ? '<span class="status-pill error">Not compatible</span>' : ""}
+              </span>
             </footer>
           </article>
-        `).join("")}
+        `;
+        }).join("")}
       </div>
+      <p class="table-empty-state" data-extension-empty hidden><strong>No extensions match</strong><span>Try another name or category.</span></p>
     </section>
   `;
 }
 
+export function filterContentExtensions(control) {
+  const section = control.closest(".content-extension-section");
+  if (!section) return;
+  const query = String(section.querySelector("[data-extension-search]")?.value || "").trim().toLowerCase();
+  const category = String(section.querySelector("[data-extension-category]")?.value || "");
+  let visible = 0;
+  section.querySelectorAll("[data-extension-card]").forEach((card) => {
+    const categories = String(card.dataset.extensionCategories || "").split(",").filter(Boolean);
+    const matches = (!query || String(card.dataset.extensionSearchValue || "").includes(query)) && (!category || categories.includes(category));
+    card.hidden = !matches;
+    if (matches) visible += 1;
+  });
+  const empty = section.querySelector("[data-extension-empty]");
+  if (empty) empty.hidden = visible > 0;
+}
+
 export function renderCollectionsPage(collections = [], extensionResponse = {}, errorMessage = "") {
+  const collectionSlugs = collections.map((collection) => collection.slug).join(",");
   renderAdminShell(
     { view: "collections" },
     `
       <section class="admin-page-header">
         <div><p class="section-label">CMS</p><h1 class="dashboard-title">Collections</h1><p class="dashboard-copy">Structure reusable content, then manage every entry with a simple form.</p></div>
-        ${hasPermission("create", "cms") ? '<a class="admin-primary-link" href="/dashboard/collections/new" data-dashboard-link>New collection</a>' : ""}
+        <div class="button-row">
+          ${collections.length ? `<button type="button" class="secondary-button" data-export-content-bundle="${escapeHtml(collectionSlugs)}">Export</button>` : ""}
+          ${hasPermission("create", "cms") ? '<label class="secondary-button content-file-button">Import<input type="file" accept="application/json,.json" data-import-content-bundle /></label>' : ""}
+          ${hasPermission("create", "cms") ? '<a class="admin-primary-link" href="/dashboard/collections/new" data-dashboard-link>New collection</a>' : ""}
+        </div>
       </section>
       ${errorMessage ? `<p class="form-message error">${escapeHtml(errorMessage)}</p>` : ""}
       <section class="admin-section">

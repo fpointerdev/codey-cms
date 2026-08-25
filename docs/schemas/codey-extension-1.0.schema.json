@@ -65,10 +65,42 @@
         }
       }
     },
+    "categories": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "enum": [
+          "commerce",
+          "content",
+          "directory",
+          "marketing",
+          "operations",
+          "publishing"
+        ]
+      }
+    },
+    "keywords": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 40
+      }
+    },
     "homepage": {
       "$ref": "#/$defs/httpUrl"
     },
     "repository": {
+      "$ref": "#/$defs/httpUrl"
+    },
+    "documentation": {
+      "$ref": "#/$defs/httpUrl"
+    },
+    "support": {
+      "$ref": "#/$defs/httpUrl"
+    },
+    "changelog": {
       "$ref": "#/$defs/httpUrl"
     },
     "requires": {

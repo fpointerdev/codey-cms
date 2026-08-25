@@ -197,18 +197,20 @@ const entryDataSchema = z.record(z.unknown()).superRefine((value, context) => {
   }
 });
 
+const contentEntryStatusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]);
+
 export const createContentEntrySchema = z.object({
   slug: entrySlugSchema,
   locale: z.string().trim().toLowerCase().min(2).max(16).default("en"),
   data: entryDataSchema,
-  status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).default("DRAFT"),
+  status: contentEntryStatusSchema.default("DRAFT"),
   publishedAt: z.coerce.date().optional()
 }).strict();
 
 export const updateContentEntrySchema = z.object({
   slug: entrySlugSchema.optional(),
   data: entryDataSchema.optional(),
-  status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
+  status: contentEntryStatusSchema.optional(),
   publishedAt: z.coerce.date().nullable().optional()
 }).strict().refine((value) => Object.keys(value).length > 0, "Provide at least one entry change.");
 
@@ -216,6 +218,12 @@ export const contentEntryQuerySchema = z.object({
   locale: z.string().trim().toLowerCase().min(2).max(16).optional(),
   q: z.string().trim().max(160).optional(),
   includeDrafts: z.enum(["true", "false"]).optional().transform((value) => value === "true"),
+  filter: z.preprocess(
+    (value) => value === undefined ? [] : Array.isArray(value) ? value : [value],
+    z.array(z.string().trim().min(3).max(500)).max(10)
+  ).default([]),
+  sortBy: z.enum(["title", "publishedAt", "createdAt", "updatedAt"]).default("publishedAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(25)
 });
@@ -224,9 +232,81 @@ export const deleteContentCollectionSchema = z.object({
   confirmation: collectionSlugSchema
 }).strict();
 
+const contentBundleEntrySchema = z.object({
+  slug: entrySlugSchema,
+  locale: z.string().trim().toLowerCase().min(2).max(16).default("en"),
+  data: entryDataSchema,
+  status: contentEntryStatusSchema.default("DRAFT"),
+  publishedAt: z.coerce.date().nullable().optional()
+}).strict();
+
+const contentBundleCollectionSchema = z.object({
+  model: createContentCollectionSchema,
+  entries: z.array(contentBundleEntrySchema).max(5_000)
+}).strict().superRefine((collection, context) => {
+  const identities = new Set<string>();
+  collection.entries.forEach((entry, index) => {
+    const identity = `${entry.locale}:${entry.slug}`;
+    if (identities.has(identity)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["entries", index, "slug"],
+        message: "Entry slugs must be unique per language inside a collection."
+      });
+    }
+    identities.add(identity);
+  });
+});
+
+export const contentBundleSchema = z.object({
+  schemaVersion: z.literal("1.0"),
+  kind: z.literal("codey-cms.content-bundle"),
+  collections: z.array(contentBundleCollectionSchema).min(1).max(20)
+}).strict().superRefine((bundle, context) => {
+  const slugs = new Set<string>();
+  let entryCount = 0;
+  bundle.collections.forEach((collection, index) => {
+    if (slugs.has(collection.model.slug)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["collections", index, "model", "slug"],
+        message: "Collection slugs must be unique inside a content bundle."
+      });
+    }
+    slugs.add(collection.model.slug);
+    entryCount += collection.entries.length;
+  });
+  if (entryCount > 5_000) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["collections"],
+      message: "A content bundle cannot contain more than 5,000 entries."
+    });
+  }
+  if (Buffer.byteLength(JSON.stringify(bundle), "utf8") > 10 * 1024 * 1024) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "A content bundle cannot exceed 10 MB."
+    });
+  }
+});
+
+export const exportContentBundleSchema = z.object({
+  collections: z.array(collectionSlugSchema).min(1).max(20)
+}).strict().superRefine((value, context) => {
+  if (new Set(value.collections).size !== value.collections.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["collections"],
+      message: "Collection slugs must be unique."
+    });
+  }
+});
+
 export type ContentField = z.infer<typeof contentFieldSchema>;
 export type CreateContentCollectionInput = z.infer<typeof createContentCollectionSchema>;
 export type UpdateContentCollectionInput = z.infer<typeof updateContentCollectionSchema>;
 export type CreateContentEntryInput = z.infer<typeof createContentEntrySchema>;
 export type UpdateContentEntryInput = z.infer<typeof updateContentEntrySchema>;
 export type ContentEntryQuery = z.infer<typeof contentEntryQuerySchema>;
+export type ContentBundle = z.infer<typeof contentBundleSchema>;

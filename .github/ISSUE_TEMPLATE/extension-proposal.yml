@@ -1,0 +1,41 @@
+name: Extension proposal
+description: Propose a declarative content-model pack for the verified catalog.
+title: "[Extension]: "
+labels: ["extension"]
+body:
+  - type: input
+    id: id
+    attributes:
+      label: Extension ID
+      placeholder: vendor.extension-name
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Editor workflow
+      description: Explain who manages this content and the task the pack simplifies.
+    validations:
+      required: true
+  - type: textarea
+    id: models
+    attributes:
+      label: Models and relations
+      description: List the proposed collections, important fields, and relations.
+    validations:
+      required: true
+  - type: input
+    id: maintenance
+    attributes:
+      label: Maintainer and support URL
+    validations:
+      required: true
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Safety contract
+      options:
+        - label: The proposal is declarative and does not require executable code, SQL, secrets, or network permissions.
+          required: true
+        - label: Existing user content will be preserved through updates and disconnection.
+          required: true

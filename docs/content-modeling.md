@@ -47,6 +47,19 @@ DELETE /api/v1/cms/collections/:collectionSlug/entries/:entrySlug
 
 Use `locale`, `q`, `page`, and `limit` on entry lists. Authenticated editors may add `includeDrafts=true`. Public responses never expose drafts, archived entries, private collections, or entries whose publish time is in the future.
 
+Headless clients can add up to ten exact typed filters with repeated `filter=field=value` parameters. Text, email, URL, number, boolean, date, choice, and relation fields are filterable; rich text and assets are intentionally excluded. Use `sortBy=title|publishedAt|createdAt|updatedAt` and `sortOrder=asc|desc` for deterministic ordering.
+
+## Portable content bundles
+
+Administrators can export or import up to twenty collections and 5,000 entries through the dashboard or API:
+
+```text
+POST /api/v1/cms/collections/export
+POST /api/v1/cms/collections/import
+```
+
+The `codey-cms.content-bundle` `1.0` contract is described by `docs/schemas/codey-content-bundle-1.0.schema.json`. Imports are create-only and atomic: all models are created first, entries are normalized and sanitized, cyclic and cross-collection relations are validated after every entry exists, and one failure rolls back the entire bundle. Existing collection slugs are never overwritten. Revision history starts with an `IMPORT` revision; older audit history remains available through encrypted backups rather than portable bundles.
+
 ## Scheduling and revisions
 
 Custom entries participate in the existing `/api/v1/cms/publishing/scheduled` and `/api/v1/cms/publishing/run` workflow. Revision history is available below each entry API path and restore creates a new revision rather than erasing history.

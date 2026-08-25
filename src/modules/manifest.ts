@@ -459,8 +459,17 @@ export const themeManifest = {
       collections: {
         publicRenderer: false,
         publicApi: true,
+        queryContract: "1.0",
+        contentBundle: "1.0",
         adminRoute: "/dashboard/collections",
         apiRoute: "/api/v1/cms/collections"
+      },
+      extensions: {
+        manifest: "1.0",
+        catalog: "1.0",
+        lifecycle: "1.0",
+        executableCode: false,
+        apiRoute: "/api/v1/cms/extensions"
       }
     },
     apiRoutes: {

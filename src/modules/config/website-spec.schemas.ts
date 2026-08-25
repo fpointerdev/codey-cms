@@ -70,7 +70,20 @@ const customValueMaxBytes = 64_000;
 const customValueMaxDepth = 8;
 const customValueMaxEntries = 2_000;
 
-const websiteSpecSectionSettingsSchema = z.record(z.unknown());
+const modernBannerVariants = ["glass-interface", "kinetic-product", "floating-product"] as const;
+
+const websiteSpecSectionSettingsSchema = z.record(z.unknown()).superRefine((settings, context) => {
+  if (
+    settings.bannerVariant !== undefined &&
+    !modernBannerVariants.includes(settings.bannerVariant as typeof modernBannerVariants[number])
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["bannerVariant"],
+      message: "Use a banner design advertised by the builder registry."
+    });
+  }
+});
 
 function portableCustomValueIssue(value: unknown) {
   if (!isPlainRecord(value)) {
