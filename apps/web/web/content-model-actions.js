@@ -1,4 +1,4 @@
-import { api, setStatus, slugFromTitle, state } from "./core.js";
+import { api, elements, setStatus, slugFromTitle, state } from "./core.js";
 import { uploadMediaFile } from "./content-actions.js";
 import { bootstrap } from "./controller.js";
 import { getModalFormHandler } from "./modal.js";
@@ -8,6 +8,19 @@ import { setFormDisabled, setFormMessage } from "./ui.js";
 function optional(value) {
   const normalized = String(value || "").trim();
   return normalized || undefined;
+}
+
+function setContentWorkspaceBusy(busy, message = "") {
+  const page = elements.page;
+  if (!page) return;
+
+  page.inert = busy;
+  if (busy) {
+    page.setAttribute("aria-busy", "true");
+    if (message) setStatus(message);
+  } else {
+    page.removeAttribute("aria-busy");
+  }
 }
 
 function optionalNumber(value) {
@@ -272,6 +285,7 @@ export async function installContentExtension(button) {
   const extensionId = button.dataset.installContentExtension;
   if (!extensionId) return;
   button.disabled = true;
+  setContentWorkspaceBusy(true, "Installing extension...");
   try {
     await api(`/cms/extensions/${encodeURIComponent(extensionId)}/install`, {
       method: "POST",
@@ -282,6 +296,8 @@ export async function installContentExtension(button) {
   } catch (error) {
     button.disabled = false;
     setStatus(error.message || "Unable to install extension.", true);
+  } finally {
+    setContentWorkspaceBusy(false);
   }
 }
 
@@ -289,6 +305,7 @@ export async function updateContentExtension(button) {
   const extensionId = button.dataset.updateContentExtension;
   if (!extensionId) return;
   button.disabled = true;
+  setContentWorkspaceBusy(true, "Updating extension...");
   try {
     const response = await api(`/cms/extensions/${encodeURIComponent(extensionId)}/update`, {
       method: "POST",
@@ -302,6 +319,8 @@ export async function updateContentExtension(button) {
   } catch (error) {
     button.disabled = false;
     setStatus(error.message || "Unable to update extension.", true);
+  } finally {
+    setContentWorkspaceBusy(false);
   }
 }
 
@@ -314,6 +333,7 @@ export async function disconnectContentExtension(button) {
     { label: "Confirm disconnection", submitLabel: "Disconnect" }
   )) return;
   button.disabled = true;
+  setContentWorkspaceBusy(true, "Disconnecting extension...");
   try {
     const response = await api(`/cms/extensions/${encodeURIComponent(extensionId)}`, {
       method: "DELETE",
@@ -324,6 +344,8 @@ export async function disconnectContentExtension(button) {
   } catch (error) {
     button.disabled = false;
     setStatus(error.message || "Unable to disconnect extension.", true);
+  } finally {
+    setContentWorkspaceBusy(false);
   }
 }
 

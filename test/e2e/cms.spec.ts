@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const adminEmail = process.env.INTEGRATION_ADMIN_EMAIL || "integration-owner@example.com";
 const adminPassword = process.env.INTEGRATION_ADMIN_PASSWORD || "IntegrationOwner123!";
@@ -10,6 +10,40 @@ async function login(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByText(adminEmail, { exact: true })).toBeVisible();
+}
+
+async function resetTeamDirectoryFixture(request: APIRequestContext) {
+  const loginResponse = await request.post("/api/v1/auth/login", {
+    data: { email: adminEmail, password: adminPassword }
+  });
+  expect(loginResponse.ok()).toBeTruthy();
+  const loginBody = await loginResponse.json();
+  const headers = { authorization: `Bearer ${loginBody.data.tokens.accessToken}` };
+
+  const extensionResponse = await request.get("/api/v1/cms/extensions", { headers });
+  expect(extensionResponse.ok()).toBeTruthy();
+  const extensionBody = await extensionResponse.json();
+  const extensions = extensionBody.data.extensions as Array<{ id: string; installed: boolean }>;
+  const teamExtension = extensions.find((extension) => extension.id === "codey.team-directory");
+  if (teamExtension?.installed) {
+    const disconnectResponse = await request.delete("/api/v1/cms/extensions/codey.team-directory", {
+      headers,
+      data: { confirmation: "codey.team-directory" }
+    });
+    expect(disconnectResponse.ok()).toBeTruthy();
+  }
+
+  const collectionsResponse = await request.get("/api/v1/cms/collections", { headers });
+  expect(collectionsResponse.ok()).toBeTruthy();
+  const collectionsBody = await collectionsResponse.json();
+  const collections = collectionsBody.data.collections as Array<{ slug: string }>;
+  if (collections.some((collection) => collection.slug === "team-members")) {
+    const deleteResponse = await request.delete("/api/v1/cms/collections/team-members", {
+      headers,
+      data: { confirmation: "team-members" }
+    });
+    expect(deleteResponse.ok()).toBeTruthy();
+  }
 }
 
 test("admin settings and builder controls complete their primary workflows", async ({ page }) => {
@@ -121,7 +155,7 @@ test("account protection stays discoverable without interrupting normal login", 
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 });
 
-test("editors can model and publish a custom collection without code", async ({ page }) => {
+test("editors can model and publish a custom collection without code", async ({ page, request }) => {
   const runId = Date.now();
   const collectionName = `Browser resources ${runId}`;
   const collectionSlug = `browser-resources-${runId}`;
@@ -132,6 +166,7 @@ test("editors can model and publish a custom collection without code", async ({ 
     if (message.type() === "error") browserErrors.push(message.text());
   });
 
+  await resetTeamDirectoryFixture(request);
   await login(page);
   await page.getByRole("link", { name: "Collections", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard\/collections$/);
