@@ -188,12 +188,13 @@ export function mediaKindForMimeType(mimeType = "") {
 }
 
 export async function uploadMediaFile(file, altText = "") {
-  const kind = mediaKindForMimeType(file.type || "");
+  const mimeType = file.type || (/\.glb$/i.test(file.name || "") ? "model/gltf-binary" : "application/octet-stream");
+  const kind = mediaKindForMimeType(mimeType);
   const { asset } = await api("/cms/media/upload", {
     method: "POST",
     body: JSON.stringify({
       filename: file.name || `upload-${Date.now()}`,
-      mimeType: file.type || "application/octet-stream",
+      mimeType,
       dataBase64: await fileToBase64(file),
       kind,
       altText
@@ -641,6 +642,8 @@ export async function editContentBlock(page, blockKey) {
     const mediaAsset = file
       ? await uploadMediaFile(file, values.structuredImageAlt || values.structuredTitle || block.label || "")
       : null;
+    const modelFile = selectedFile(values.structuredModelFile);
+    const modelAsset = modelFile ? await uploadMediaFile(modelFile, values.structuredTitle || block.label || "3D model") : null;
     const itemMediaAssets = {};
     for (const mediaField of structuredEditor.mediaFields || []) {
       const itemFile = selectedFile(values[mediaField.name]);
@@ -652,7 +655,7 @@ export async function editContentBlock(page, blockKey) {
     }
 
     return updatePageBlock(page.slug, block, {
-      value: structuredEditor.valueFrom(values, mediaAsset, itemMediaAssets),
+      value: structuredEditor.valueFrom(values, mediaAsset, itemMediaAssets, { model: modelAsset }),
       settings: cssSettingsPayload(block, values),
       mediaAssetId: mediaAsset?.id || block.mediaAssetId || undefined
     });

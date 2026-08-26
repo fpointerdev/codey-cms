@@ -40,9 +40,9 @@ test("frontend builder templates match the registered editor elements", () => {
   const frontendIds = componentTemplates.map((template) => template.id).sort();
 
   assert.deepEqual(frontendIds, editorIds);
-  assert.equal(builderElementRegistry.length, 37);
-  assert.equal(editorIds.length, 36);
-  assert.equal(generatorIds.length, 35);
+  assert.equal(builderElementRegistry.length, 40);
+  assert.equal(editorIds.length, 39);
+  assert.equal(generatorIds.length, 38);
   assert.equal(generatorIds.includes("custom-code"), false);
   assert.deepEqual(
     ["heading", "rich-text", "image", "button"].filter((elementId) => !frontendIds.includes(elementId)),
@@ -51,7 +51,7 @@ test("frontend builder templates match the registered editor elements", () => {
 });
 
 test("builder registry advertises the additive liquid style contract", () => {
-  assert.equal(builderRegistryVersion, "2026-08-25.1");
+  assert.equal(builderRegistryVersion, "2026-08-26.2");
   assert.equal(builderStylePresetRegistry.length, 5);
   assert.equal(builderStylePresetRegistry.find((preset) => preset.id === "liquid")?.settings.style?.preset, "liquid");
 });
@@ -103,7 +103,7 @@ test("section patterns preserve block ownership and satisfy the builder contract
   const registeredPatternIds = builderSectionPatternRegistry.map((pattern) => pattern.id).sort();
   const frontendPatternIds = sectionPatternTemplates.map((pattern) => pattern.id).sort();
   assert.deepEqual(frontendPatternIds, registeredPatternIds);
-  assert.equal(registeredPatternIds.length, 23);
+  assert.equal(registeredPatternIds.length, 26);
 
   for (const pattern of sectionPatternTemplates) {
     const registeredPattern = builderSectionPatternRegistry.find((item) => item.id === pattern.id);
@@ -426,10 +426,94 @@ test("video elements expose hover playback and poster settings", () => {
   assert.ok(editor?.fields.some((field) => field.name === "structuredPresentation" && field.value === "hero"));
 });
 
+test("3D elements expose focused scene, panorama, and secure model-upload controls", () => {
+  const sceneEditor = structuredContentEditor({
+    key: "scene",
+    type: "CUSTOM",
+    settings: { elementId: "three-scene" },
+    value: {
+      variant: "three-scene",
+      title: "Material study",
+      body: "A dimensional product story.",
+      display: { preset: "crystal", tone: "dark", accent: "#48c9e8", motion: "gentle", interactive: true, camera: "close", lighting: "dramatic", finish: "chrome" }
+    }
+  });
+  const modelEditor = structuredContentEditor({
+    key: "model",
+    type: "CUSTOM",
+    settings: { elementId: "three-model" },
+    value: {
+      variant: "three-model",
+      title: "Product model",
+      modelUrl: "/uploads/product.glb",
+      image: { url: "/uploads/product.webp", alt: "Product model preview" },
+      display: { preset: "product-stage", tone: "light", accent: "#087f76", motion: "dynamic", interactive: true }
+    }
+  });
+  const panoramaEditor = structuredContentEditor({
+    key: "panorama",
+    type: "CUSTOM",
+    settings: { elementId: "three-panorama" },
+    value: {
+      variant: "three-panorama",
+      title: "Tour the space",
+      image: { url: "/uploads/tour.webp", alt: "Wide view of the showroom" },
+      display: { tone: "dark", motion: "none", interactive: true, ratio: "16 / 9", startView: "left" }
+    }
+  });
+
+  assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreePreset" && field.value === "crystal"));
+  assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeMotion" && field.value === "gentle"));
+  assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeCamera" && field.value === "close"));
+  assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeLighting" && field.value === "dramatic"));
+  assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeFinish" && field.value === "chrome"));
+  assert.equal(modelEditor?.fields.find((field) => field.name === "structuredModelFile")?.accept, "model/gltf-binary,.glb");
+  assert.equal(modelEditor?.fields.find((field) => field.name === "structuredImageFile")?.imagePicker, true);
+  assert.equal(panoramaEditor?.fields.find((field) => field.name === "structuredImageFile")?.label, "Panorama image");
+  assert.ok(panoramaEditor?.fields.some((field) => field.name === "structuredThreeStartView" && field.value === "left"));
+  assert.equal(panoramaEditor?.fields.some((field) => field.name === "structuredThreePreset"), false);
+
+  const updated = modelEditor?.valueFrom({
+    structuredTitle: "Updated model",
+    structuredImageAlt: "Updated product preview",
+    structuredThreePreset: "product-stage",
+    structuredThreeMotion: "none",
+    structuredThreeInteractive: false,
+    structuredThreeRatio: "4 / 3",
+    structuredThreeTone: "brand",
+    structuredThreeAccent: "#ff8066",
+    structuredThreeCamera: "front",
+    structuredThreeLighting: "soft",
+    structuredThreeFinish: "clay"
+  }, null, {}, { model: { id: "model-2", url: "/uploads/replacement.glb" } });
+
+  assert.equal(updated?.modelUrl, "/uploads/replacement.glb");
+  assert.equal(updated?.modelAssetId, "model-2");
+  assert.equal(updated?.display.motion, "none");
+  assert.equal(updated?.display.interactive, false);
+  assert.equal(updated?.display.camera, "front");
+  assert.equal(updated?.display.lighting, "soft");
+  assert.equal(updated?.display.finish, "clay");
+
+  const invalidPanorama = validateBuilderSectionContract({
+    key: "panorama-section",
+    settings: { elementId: "three-panorama" },
+    blocks: [{
+      key: "panorama",
+      type: "CUSTOM",
+      label: "Panorama",
+      settings: { elementId: "three-panorama" },
+      value: { variant: "three-panorama", title: "Missing image" }
+    }]
+  }, { pageSlug: "tour", requireElementId: true });
+  assert.ok(invalidPanorama.errors.some((error) => error.code === "invalid_three_panorama_image"));
+});
+
 test("media uploads classify supported video and document formats correctly", () => {
   assert.equal(mediaKindForMimeType("image/webp"), "IMAGE");
   assert.equal(mediaKindForMimeType("video/mp4"), "VIDEO");
   assert.equal(mediaKindForMimeType("application/pdf"), "DOCUMENT");
+  assert.equal(mediaKindForMimeType("model/gltf-binary"), "OTHER");
   assert.equal(mediaKindForMimeType("text/plain"), "OTHER");
 });
 

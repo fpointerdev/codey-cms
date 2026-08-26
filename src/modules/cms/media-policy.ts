@@ -1,7 +1,7 @@
 import { extname } from "node:path";
 import { AppError } from "../../core/errors/app-error.js";
 
-export type AllowedMediaKind = "DOCUMENT" | "IMAGE" | "VIDEO";
+export type AllowedMediaKind = "DOCUMENT" | "IMAGE" | "OTHER" | "VIDEO";
 
 type MediaPolicy = {
   mimeType: string;
@@ -9,6 +9,75 @@ type MediaPolicy = {
   extensions: string[];
   matches: (body: Buffer) => boolean;
 };
+
+function isSelfContainedGlb(body: Buffer) {
+  if (
+    body.length < 20 ||
+    body.subarray(0, 4).toString("ascii") !== "glTF" ||
+    body.readUInt32LE(4) !== 2 ||
+    body.readUInt32LE(8) !== body.length
+  ) {
+    return false;
+  }
+
+  try {
+    let offset = 12;
+    let document: Record<string, unknown> | null = null;
+    let binaryLength = 0;
+
+    while (offset < body.length) {
+      if (offset + 8 > body.length) return false;
+      const chunkLength = body.readUInt32LE(offset);
+      const chunkType = body.readUInt32LE(offset + 4);
+      const chunkEnd = offset + 8 + chunkLength;
+      if (chunkLength % 4 !== 0 || chunkEnd > body.length) return false;
+
+      if (offset === 12 && chunkType !== 0x4e4f534a) return false;
+      if (chunkType === 0x4e4f534a) {
+        if (document || chunkLength < 2) return false;
+        const value: unknown = JSON.parse(body.subarray(offset + 8, chunkEnd).toString("utf8").trim());
+        if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+        document = value as Record<string, unknown>;
+      } else if (chunkType === 0x004e4942) {
+        if (binaryLength > 0) return false;
+        binaryLength = chunkLength;
+      }
+
+      offset = chunkEnd;
+    }
+
+    if (!document || offset !== body.length) return false;
+    const asset = document.asset;
+    if (
+      !asset ||
+      typeof asset !== "object" ||
+      Array.isArray(asset) ||
+      (asset as Record<string, unknown>).version !== "2.0"
+    ) return false;
+
+    const hasExternalUri = (value: unknown): boolean => {
+      if (Array.isArray(value)) return value.some(hasExternalUri);
+      if (!value || typeof value !== "object") return false;
+
+      return Object.entries(value).some(([key, item]) => (
+        (key === "uri" && typeof item === "string") || hasExternalUri(item)
+      ));
+    };
+
+    const buffers = Array.isArray(document.buffers) ? document.buffers : [];
+    if (buffers.length > 1) return false;
+    if (buffers.length === 1) {
+      const buffer = buffers[0];
+      if (!buffer || typeof buffer !== "object" || Array.isArray(buffer)) return false;
+      const byteLength = buffer.byteLength;
+      if (!Number.isInteger(byteLength) || Number(byteLength) < 0 || Number(byteLength) > binaryLength) return false;
+    }
+
+    return !hasExternalUri(document);
+  } catch {
+    return false;
+  }
+}
 
 const policies: MediaPolicy[] = [
   {
@@ -58,6 +127,12 @@ const policies: MediaPolicy[] = [
     kind: "DOCUMENT",
     extensions: [".pdf"],
     matches: (body) => body.subarray(0, 5).toString("ascii") === "%PDF-"
+  },
+  {
+    mimeType: "model/gltf-binary",
+    kind: "OTHER",
+    extensions: [".glb"],
+    matches: isSelfContainedGlb
   }
 ];
 
@@ -96,7 +171,7 @@ export function assertAllowedMediaDeclaration(
     throw new AppError(
       422,
       "unsupported_media_type",
-      "File type is not supported. Use JPEG, PNG, GIF, WebP, AVIF, MP4, WebM, or PDF."
+      "File type is not supported. Use JPEG, PNG, GIF, WebP, AVIF, MP4, WebM, PDF, or GLB."
     );
   }
 

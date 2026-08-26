@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
+import sharp from "sharp";
 
 const adminEmail = process.env.INTEGRATION_ADMIN_EMAIL || "integration-owner@example.com";
 const adminPassword = process.env.INTEGRATION_ADMIN_PASSWORD || "IntegrationOwner123!";
@@ -44,6 +45,114 @@ async function resetTeamDirectoryFixture(request: APIRequestContext) {
     });
     expect(deleteResponse.ok()).toBeTruthy();
   }
+}
+
+async function canvasSignature(canvas: import("@playwright/test").Locator) {
+  const screenshot = await canvas.screenshot();
+  const metadata = await sharp(screenshot).metadata();
+  const { data: pixels, info } = await sharp(screenshot)
+    .resize(64, 64, { fit: "fill" })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const colors = new Set<string>();
+  let minimum = 255;
+  let maximum = 0;
+  let hash = 2166136261;
+  const samples: number[] = [];
+  const pixelCount = info.width * info.height;
+
+  for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+    const index = pixel * info.channels;
+    const red = pixels[index] || 0;
+    const green = pixels[index + 1] || 0;
+    const blue = pixels[index + 2] || 0;
+    const quantizedRed = red >> 5;
+    const quantizedGreen = green >> 5;
+    const quantizedBlue = blue >> 5;
+    const luminance = Math.round(red * 0.21 + green * 0.72 + blue * 0.07);
+    samples.push(luminance);
+    minimum = Math.min(minimum, luminance);
+    maximum = Math.max(maximum, luminance);
+    colors.add(`${quantizedRed}-${quantizedGreen}-${quantizedBlue}`);
+    hash = Math.imul(hash ^ quantizedRed, 16777619);
+    hash = Math.imul(hash ^ quantizedGreen, 16777619);
+    hash = Math.imul(hash ^ quantizedBlue, 16777619);
+  }
+
+  return {
+    colors: colors.size,
+    hash: hash >>> 0,
+    range: maximum - minimum,
+    width: metadata.width || 0,
+    height: metadata.height || 0,
+    samples
+  };
+}
+
+function canvasDifference(left: { samples: number[] }, right: { samples: number[] }) {
+  if (left.samples.length !== right.samples.length || left.samples.length === 0) return Number.POSITIVE_INFINITY;
+  const total = left.samples.reduce((difference, sample, index) => {
+    return difference + Math.abs(sample - (right.samples[index] || 0));
+  }, 0);
+  return total / left.samples.length;
+}
+
+function triangleGlb() {
+  const positions = Buffer.alloc(36);
+  [-1, -1, 0, 1, -1, 0, 0, 1, 0].forEach((value, index) => positions.writeFloatLE(value, index * 4));
+  const indices = Buffer.alloc(8);
+  [0, 1, 2].forEach((value, index) => indices.writeUInt16LE(value, index * 2));
+  const binary = Buffer.concat([positions, indices]);
+  const document = {
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+    buffers: [{ byteLength: 42 }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36, target: 34962 },
+      { buffer: 0, byteOffset: 36, byteLength: 6, target: 34963 }
+    ],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: "VEC3", min: [-1, -1, 0], max: [1, 1, 0] },
+      { bufferView: 1, componentType: 5123, count: 3, type: "SCALAR", min: [0], max: [2] }
+    ]
+  };
+  const source = Buffer.from(JSON.stringify(document), "utf8");
+  const json = Buffer.concat([source, Buffer.alloc((4 - source.length % 4) % 4, 0x20)]);
+  const body = Buffer.alloc(12 + 8 + json.length + 8 + binary.length);
+  body.write("glTF", 0, "ascii");
+  body.writeUInt32LE(2, 4);
+  body.writeUInt32LE(body.length, 8);
+  body.writeUInt32LE(json.length, 12);
+  body.writeUInt32LE(0x4e4f534a, 16);
+  json.copy(body, 20);
+  const binaryOffset = 20 + json.length;
+  body.writeUInt32LE(binary.length, binaryOffset);
+  body.writeUInt32LE(0x004e4942, binaryOffset + 4);
+  binary.copy(body, binaryOffset + 8);
+  return body;
+}
+
+async function panoramaPng() {
+  const source = Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#163c4a"/>
+          <stop offset="0.45" stop-color="#48c9e8"/>
+          <stop offset="1" stop-color="#f2c94c"/>
+        </linearGradient>
+      </defs>
+      <rect width="1200" height="600" fill="url(#sky)"/>
+      <path d="M0 420 C170 310 330 540 520 390 S900 300 1200 430 V600 H0 Z" fill="#13312d"/>
+      <circle cx="230" cy="190" r="74" fill="#c9ff67"/>
+      <rect x="760" y="170" width="230" height="180" rx="20" fill="#ff8066"/>
+    </svg>
+  `);
+  return sharp(source).png().toBuffer();
 }
 
 test("admin settings and builder controls complete their primary workflows", async ({ page }) => {
@@ -1007,6 +1116,291 @@ test("custom code executes in a sandbox without access to the CMS page", async (
     await page.request.delete(`/api/v1/cms/pages/${slug}`, {
       headers: authorization
     });
+  }
+});
+
+test("premium 3D scenes and 360 panoramas render, move, pause, and remain framed", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium", "Canvas pixel acceptance runs once in Chromium.");
+  const visualOutput = process.env.CODEY_VISUAL_OUTPUT?.replace(/\/$/, "");
+  const apiLogin = await page.request.post("/api/v1/auth/login", {
+    data: { email: adminEmail, password: adminPassword }
+  });
+  expect(apiLogin.ok()).toBeTruthy();
+  const apiLoginBody = await apiLogin.json();
+  const authorization = { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` };
+  const slug = `three-scene-${Date.now()}`;
+  const modelUpload = await page.request.post("/api/v1/cms/media/upload", {
+    headers: authorization,
+    data: {
+      filename: "acceptance-model.glb",
+      mimeType: "model/gltf-binary",
+      kind: "OTHER",
+      dataBase64: triangleGlb().toString("base64"),
+      altText: "Browser acceptance 3D model"
+    }
+  });
+  expect(modelUpload.ok()).toBeTruthy();
+  const modelUploadBody = await modelUpload.json();
+  const modelAsset = modelUploadBody.data.asset;
+  const panoramaUpload = await page.request.post("/api/v1/cms/media/upload", {
+    headers: authorization,
+    data: {
+      filename: "acceptance-panorama.png",
+      mimeType: "image/png",
+      kind: "IMAGE",
+      dataBase64: (await panoramaPng()).toString("base64"),
+      altText: "Colorful 360-degree acceptance landscape"
+    }
+  });
+  expect(panoramaUpload.ok()).toBeTruthy();
+  const panoramaUploadBody = await panoramaUpload.json();
+  const panoramaAsset = panoramaUploadBody.data.asset;
+  const created = await page.request.post("/api/v1/cms/pages", {
+    headers: authorization,
+    data: {
+      title: "Dimensional studio",
+      slug,
+      content: {},
+      status: "PUBLISHED",
+      sections: [{
+        key: "visual-intro",
+        label: "Dimensional introduction",
+        sortOrder: 0,
+        settings: {
+          template: "custom",
+          layout: "one-column",
+          container: "wide",
+          spacing: "sm",
+          minHeight: 1200
+        },
+        blocks: [{
+          key: "visual-intro-copy",
+          type: "TEXT",
+          label: "Introduction",
+          value: "Scroll to explore the dimensional studio.",
+          sortOrder: 0,
+          editable: true
+        }]
+      }, {
+        key: "three-stage",
+        label: "3D experience",
+        sortOrder: 1,
+        settings: {
+          template: "custom",
+          elementId: "three-scene",
+          layout: "full-bleed",
+          container: "wide",
+          spacing: "lg",
+          animation: { effect: "fade-up", durationMs: 320, delayMs: 0 }
+        },
+        blocks: [{
+          key: "three-scene",
+          type: "CUSTOM",
+          label: "3D scene",
+          value: {
+            variant: "three-scene",
+            title: "Form in motion",
+            body: "A responsive Three.js scene with a semantic server-rendered introduction.",
+            display: {
+              preset: "product-stage",
+              tone: "dark",
+              accent: "#c9ff67",
+              motion: "dynamic",
+              interactive: true,
+              ratio: "16 / 10",
+              camera: "close",
+              lighting: "dramatic",
+              finish: "chrome"
+            }
+          },
+          settings: { elementId: "three-scene" },
+          sortOrder: 0,
+          editable: true
+        }, {
+          key: "three-model",
+          type: "CUSTOM",
+          label: "3D model",
+          value: {
+            variant: "three-model",
+            title: "Uploaded model",
+            body: "This GLB is loaded from CMS-managed storage.",
+            modelUrl: modelAsset.url,
+            modelAssetId: modelAsset.id,
+            display: {
+              preset: "product-stage",
+              tone: "light",
+              accent: "#087f76",
+              motion: "none",
+              interactive: true,
+              ratio: "4 / 3",
+              camera: "front",
+              lighting: "soft",
+              finish: "brand"
+            }
+          },
+          settings: { elementId: "three-model" },
+          sortOrder: 1,
+          editable: true
+        }, {
+          key: "three-panorama",
+          type: "CUSTOM",
+          label: "360 panorama",
+          value: {
+            variant: "three-panorama",
+            title: "Explore the full space",
+            body: "Use the arrow keys or drag to look around the panorama.",
+            image: {
+              url: panoramaAsset.url,
+              alt: panoramaAsset.altText,
+              width: panoramaAsset.width,
+              height: panoramaAsset.height
+            },
+            display: {
+              tone: "dark",
+              motion: "none",
+              interactive: true,
+              ratio: "16 / 9",
+              startView: "left"
+            }
+          },
+          settings: { elementId: "three-panorama" },
+          sortOrder: 2,
+          editable: true
+        }]
+      }]
+    }
+  });
+  expect(created.ok()).toBeTruthy();
+
+  try {
+    let threeRuntimeRequested = false;
+    page.on("request", (request) => {
+      if (request.url().endsWith("/vendor/three-runtime.js")) threeRuntimeRequested = true;
+    });
+    const motionRuntime = page.waitForResponse((response) => response.url().endsWith("/vendor/motion-runtime.js"));
+    await page.goto(`/${slug}`);
+    await motionRuntime;
+    await page.waitForTimeout(150);
+    expect(threeRuntimeRequested).toBeFalsy();
+
+    const stages = page.locator("[data-three-scene]");
+    const stage = stages.first();
+    const canvas = stage.locator("canvas[data-three-canvas]");
+    await expect(page.getByRole("heading", { name: "Form in motion" })).toBeVisible();
+    const threeRuntime = page.waitForResponse((response) => response.url().endsWith("/vendor/three-runtime.js"));
+    await stage.scrollIntoViewIfNeeded();
+    await threeRuntime;
+    await expect(stage).toHaveAttribute("data-three-status", "ready");
+    await expect(canvas).toBeVisible();
+    const modelStage = stages.nth(1);
+    await modelStage.scrollIntoViewIfNeeded();
+    await expect(modelStage).toHaveAttribute("data-three-model-status", "ready");
+    const modelPixels = await canvasSignature(modelStage.locator("canvas[data-three-canvas]"));
+    expect(modelPixels.colors).toBeGreaterThan(3);
+    expect(modelPixels.range).toBeGreaterThan(20);
+    const panoramaStage = stages.nth(2);
+    await panoramaStage.scrollIntoViewIfNeeded();
+    await expect(panoramaStage).toHaveAttribute("data-three-panorama-status", "ready");
+    const panoramaCanvas = panoramaStage.locator("canvas[data-three-canvas]");
+    const panoramaPixels = await canvasSignature(panoramaCanvas);
+    expect(panoramaPixels.colors).toBeGreaterThan(8);
+    expect(panoramaPixels.range).toBeGreaterThan(30);
+    await panoramaStage.focus();
+    const panoramaBefore = await canvasSignature(panoramaCanvas);
+    await page.keyboard.press("ArrowRight");
+    await page.waitForTimeout(80);
+    expect(canvasDifference(panoramaBefore, await canvasSignature(panoramaCanvas))).toBeGreaterThan(0.5);
+    await testInfo.attach("three-panorama-desktop", {
+      body: await page.screenshot({ path: visualOutput ? `${visualOutput}/codey-panorama-desktop.png` : undefined }),
+      contentType: "image/png"
+    });
+    await stage.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await page.waitForTimeout(120);
+    await expect(page.locator(".codey-animate")).toHaveAttribute("data-motion-enhanced", "true");
+
+    const desktopPixels = await canvasSignature(canvas);
+    expect(desktopPixels.width).toBeGreaterThan(500);
+    expect(desktopPixels.height).toBeGreaterThan(300);
+    expect(desktopPixels.colors).toBeGreaterThan(8);
+    expect(desktopPixels.range).toBeGreaterThan(30);
+    await testInfo.attach("three-scene-desktop", {
+      body: await page.screenshot({ path: visualOutput ? `${visualOutput}/codey-three-desktop.png` : undefined }),
+      contentType: "image/png"
+    });
+
+    const beforeMotion = await canvasSignature(canvas);
+    await page.waitForTimeout(280);
+    const afterMotion = await canvasSignature(canvas);
+    expect(canvasDifference(beforeMotion, afterMotion)).toBeGreaterThan(0.5);
+
+    const motionToggle = page.locator("[data-three-toggle]");
+    await expect(motionToggle).toHaveAccessibleName("Pause motion");
+    await motionToggle.click();
+    await expect(motionToggle).toHaveAccessibleName("Play motion");
+    await page.waitForTimeout(80);
+    const paused = await canvasSignature(canvas);
+    await page.waitForTimeout(280);
+    expect(canvasDifference(paused, await canvasSignature(canvas))).toBeLessThan(0.5);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(stage).toBeVisible();
+    await stage.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await page.waitForTimeout(120);
+    const mobileFrame = await stage.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        top: bounds.top,
+        right: bounds.right,
+        bottom: bounds.bottom,
+        left: bounds.left,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth
+      };
+    });
+    expect(mobileFrame.top).toBeLessThan(mobileFrame.viewportHeight);
+    expect(mobileFrame.bottom).toBeGreaterThan(0);
+    expect(mobileFrame.left).toBeLessThan(mobileFrame.viewportWidth);
+    expect(mobileFrame.right).toBeGreaterThan(0);
+    const mobilePixels = await canvasSignature(canvas);
+    expect(mobilePixels.width).toBeGreaterThan(300);
+    expect(mobilePixels.height).toBeGreaterThan(220);
+    expect(mobilePixels.colors).toBeGreaterThan(8);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    await testInfo.attach("three-scene-mobile", {
+      body: await page.screenshot({ path: visualOutput ? `${visualOutput}/codey-three-mobile.png` : undefined }),
+      contentType: "image/png"
+    });
+
+    await panoramaStage.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await page.waitForTimeout(120);
+    const mobilePanoramaFrame = await panoramaStage.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        top: bounds.top,
+        right: bounds.right,
+        bottom: bounds.bottom,
+        left: bounds.left,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth
+      };
+    });
+    expect(mobilePanoramaFrame.top).toBeLessThan(mobilePanoramaFrame.viewportHeight);
+    expect(mobilePanoramaFrame.bottom).toBeGreaterThan(0);
+    expect(mobilePanoramaFrame.left).toBeLessThan(mobilePanoramaFrame.viewportWidth);
+    expect(mobilePanoramaFrame.right).toBeGreaterThan(0);
+    const mobilePanoramaPixels = await canvasSignature(panoramaCanvas);
+    expect(mobilePanoramaPixels.width).toBeGreaterThan(300);
+    expect(mobilePanoramaPixels.height).toBeGreaterThan(220);
+    expect(mobilePanoramaPixels.colors).toBeGreaterThan(8);
+    await testInfo.attach("three-panorama-mobile", {
+      body: await page.screenshot({ path: visualOutput ? `${visualOutput}/codey-panorama-mobile.png` : undefined }),
+      contentType: "image/png"
+    });
+  } finally {
+    await page.request.delete(`/api/v1/cms/pages/${slug}`, { headers: authorization });
+    await page.request.delete(`/api/v1/cms/media/${modelAsset.id}`, { headers: authorization });
+    await page.request.delete(`/api/v1/cms/media/${panoramaAsset.id}`, { headers: authorization });
   }
 });
 

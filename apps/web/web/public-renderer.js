@@ -751,7 +751,16 @@ function structuredDisplay(value, fallbackVariant = "") {
     ratio: oneOf(display.ratio, ["16 / 10", "16 / 9", "4 / 3", "1 / 1"], variant === "image-hotspots" ? "16 / 10" : "16 / 9"),
     preload: oneOf(display.preload, ["metadata", "none"], "metadata"),
     loop: display.loop === true,
-    playback: oneOf(display.playback, ["controls", "hover-focus"], "controls")
+    playback: oneOf(display.playback, ["controls", "hover-focus"], "controls"),
+    preset: oneOf(display.preset, ["product-stage", "crystal", "wave"], "product-stage"),
+    tone: oneOf(display.tone, ["dark", "light", "brand"], variant === "three-model" ? "light" : "dark"),
+    accent: safeHex(display.accent),
+    motion: oneOf(display.motion, ["none", "gentle", "dynamic"], "gentle"),
+    interactive: display.interactive !== false,
+    camera: oneOf(display.camera, ["front", "angled", "close"], "angled"),
+    lighting: oneOf(display.lighting, ["soft", "studio", "dramatic"], "studio"),
+    finish: oneOf(display.finish, ["original", "brand", "clay", "chrome"], variant === "three-model" ? "original" : "brand"),
+    startView: oneOf(display.startView, ["front", "left", "right"], "front")
   };
 }
 
@@ -1043,6 +1052,46 @@ function renderStructuredVideo(value, display) {
   `;
 }
 
+function renderStructuredThreeVisual(value, display, variant, renderContext) {
+  const image = value.image || value.poster;
+  const poster = renderStructuredImage(
+    image,
+    firstText(value, ["title", "heading"]) || "3D scene preview",
+    renderContext,
+    "structured-three-poster"
+  );
+  const modelValue = isRecord(value.model) ? value.model.url || value.model.src : value.modelUrl;
+  const model = safeMediaSrc(modelValue);
+  const panoramaValue = isRecord(image) ? image.url || image.src : image;
+  const panorama = variant === "three-panorama" ? safeMediaSrc(panoramaValue) : "";
+  const tone = display.tone || (variant === "three-model" ? "light" : "dark");
+  const accent = display.accent || (tone === "light" ? "#087f76" : "#c9ff67");
+
+  return `
+    <div class="structured-three-visual" style="--structured-three-ratio:${escapeHtml(display.ratio)}">
+      <div
+        class="structured-three-stage"
+        data-three-scene
+        data-three-preset="${escapeHtml(display.preset)}"
+        data-three-tone="${escapeHtml(tone)}"
+        data-three-accent="${escapeHtml(accent)}"
+        data-three-motion="${escapeHtml(display.motion)}"
+        data-three-interactive="${display.interactive ? "true" : "false"}"
+        data-three-camera="${escapeHtml(display.camera)}"
+        data-three-lighting="${escapeHtml(display.lighting)}"
+        data-three-finish="${escapeHtml(display.finish)}"
+        data-three-start-view="${escapeHtml(display.startView)}"
+        ${model ? `data-three-model="${escapeHtml(model)}"` : ""}
+        ${panorama ? `data-three-panorama="${escapeHtml(panorama)}"` : ""}
+      >
+        ${poster ? `<div class="structured-three-fallback">${poster}</div>` : ""}
+        <span class="structured-three-status" aria-hidden="true">${variant === "three-panorama" ? "360 preview" : "3D preview"}</span>
+      </div>
+      ${display.motion === "none" ? "" : '<button class="three-motion-toggle" type="button" data-three-toggle aria-pressed="false" hidden>Pause motion</button>'}
+    </div>
+  `;
+}
+
 function boundedPercent(value, fallback, min = 0, max = 100) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
@@ -1314,11 +1363,13 @@ function renderStructuredBlock(block, renderContext = {}) {
   const variantToken = cssToken(variant);
   const display = structuredDisplay(value, variantToken);
   if (variantToken === "quote-highlight") return renderStructuredQuote(value, display);
-  const imageHtml = variantToken === "video"
-    ? renderStructuredVideo(value, display)
-    : variantToken === "image-hotspots"
-      ? renderStructuredHotspotScene(value, display, renderContext)
-      : renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
+  const imageHtml = ["three-scene", "three-model", "three-panorama"].includes(variantToken)
+    ? renderStructuredThreeVisual(value, display, variantToken, renderContext)
+    : variantToken === "video"
+      ? renderStructuredVideo(value, display)
+      : variantToken === "image-hotspots"
+        ? renderStructuredHotspotScene(value, display, renderContext)
+        : renderStructuredImage(value.image || value.media || block.mediaAsset, title || block.label || "", renderContext);
   const statsHtml = renderStructuredStats(value.stats || value.metrics);
   const itemsHtml = renderStructuredCollection(
     structuredCollectionItems(value, variantToken),

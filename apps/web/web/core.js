@@ -573,6 +573,96 @@ export const componentTemplates = [
     ]
   },
   {
+    id: "three-scene",
+    label: "3D Scene",
+    description: "Add an interactive Three.js scene from a small set of polished presets.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "3D scene",
+        value: {
+          variant: "three-scene",
+          title: "A new dimension",
+          body: "Use a polished 3D scene to create depth without managing a model file.",
+          display: {
+            preset: "product-stage",
+            tone: "dark",
+            accent: "#c9ff67",
+            motion: "gentle",
+            interactive: true,
+            ratio: "16 / 10",
+            camera: "angled",
+            lighting: "studio",
+            finish: "brand"
+          }
+        }
+      }
+    ]
+  },
+  {
+    id: "three-model",
+    label: "3D Model",
+    description: "Upload one GLB model with a poster image and simple visitor controls.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "3D model",
+        value: {
+          variant: "three-model",
+          title: "Explore the product",
+          body: "Upload a GLB model, then choose how visitors can view it.",
+          modelUrl: "",
+          image: {
+            url: placeholderImage(1600, 1000, "3D model preview"),
+            alt: "3D model preview",
+            width: 1600,
+            height: 1000
+          },
+          display: {
+            preset: "product-stage",
+            tone: "light",
+            accent: "#087f76",
+            motion: "gentle",
+            interactive: true,
+            ratio: "16 / 10",
+            camera: "angled",
+            lighting: "studio",
+            finish: "original"
+          }
+        }
+      }
+    ]
+  },
+  {
+    id: "three-panorama",
+    label: "360 Panorama",
+    description: "Turn one wide image into a visitor-controlled 360-degree scene.",
+    blocks: [
+      {
+        type: "CUSTOM",
+        label: "360 panorama",
+        value: {
+          variant: "three-panorama",
+          title: "Step inside the space",
+          body: "Upload a 2:1 panorama so visitors can explore the full scene without leaving the page.",
+          image: {
+            url: placeholderImage(1800, 900, "360 panorama"),
+            alt: "Wide view of the space",
+            width: 1800,
+            height: 900
+          },
+          display: {
+            tone: "dark",
+            motion: "gentle",
+            interactive: true,
+            ratio: "16 / 9",
+            startView: "front"
+          }
+        }
+      }
+    ]
+  },
+  {
     id: "image-hotspots",
     label: "Interactive Image",
     description: "Position linked products, objects, locations, or details over an image scene.",
@@ -971,6 +1061,68 @@ export const sectionPatternTemplates = [
       style: { preset: "premium-dark", backgroundColor: "#171a1f", textColor: "#ffffff", accentColor: "#d7ff4f", radius: 28, shadow: "strong" },
       decoration: { type: "frame", position: "bottom-right", color: "#ff8066", opacity: 0.22 },
       animation: { effect: "fade-up", durationMs: 800, delayMs: 0 }
+    }
+  },
+  {
+    id: "immersive-product-stage",
+    label: "Immersive product stage",
+    description: "Focused product story paired with an interactive uploaded 3D model.",
+    category: "Hero",
+    elements: ["hero-creative", "three-model"],
+    settings: {
+      patternId: "immersive-product-stage",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      minHeight: 680,
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "premium-dark", backgroundColor: "#11151b", textColor: "#ffffff", accentColor: "#c9ff67", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#c9ff67", opacity: 0.18 },
+      animation: { effect: "fade-up", durationMs: 700, delayMs: 0 }
+    }
+  },
+  {
+    id: "kinetic-3d-story",
+    label: "Kinetic 3D story",
+    description: "Ready-made procedural 3D scene followed by concise proof points.",
+    category: "Content",
+    elements: ["three-scene", "stats-grid"],
+    settings: {
+      patternId: "kinetic-3d-story",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "editorial-light", backgroundColor: "#edf3f1", textColor: "#172426", accentColor: "#087f76", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#087f76", opacity: 0.16 },
+      animation: { effect: "reveal-up", durationMs: 650, delayMs: 0 }
+    }
+  },
+  {
+    id: "immersive-360-tour",
+    label: "Immersive 360 tour",
+    description: "An editorial introduction paired with an interactive panorama of a place or experience.",
+    category: "Hero",
+    elements: ["hero-creative", "three-panorama"],
+    settings: {
+      patternId: "immersive-360-tour",
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      minHeight: 680,
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "premium-dark", backgroundColor: "#11151b", textColor: "#ffffff", accentColor: "#48c9e8", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#48c9e8", opacity: 0.14 },
+      animation: { effect: "fade-up", durationMs: 700, delayMs: 0 }
     }
   },
   {
