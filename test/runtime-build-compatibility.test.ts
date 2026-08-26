@@ -10,11 +10,11 @@ const previousPackages = {
   "postgresql16-client": "16.14-r0"
 };
 const candidatePackages = {
-  openssl: "3.5.7-r0",
+  openssl: "3.5.8-r0",
   "postgresql16-client": "16.15-r0"
 };
 
-test("previous runtime compatibility refreshes one verified legacy package pin", async () => {
+test("previous runtime compatibility refreshes verified legacy package pins", async () => {
   await withRuntime(
     "RUN apk add --no-cache openssl=3.5.7-r0 postgresql16-client=16.14-r0\n",
     "services:\n  backend:\n    build: .\n",
@@ -24,12 +24,20 @@ test("previous runtime compatibility refreshes one verified legacy package pin",
 
       assert.match(dockerfile, /postgresql16-client=16\.15-r0/);
       assert.equal(result.environment.CODEY_APK_POSTGRESQL16_CLIENT_VERSION, "16.15-r0");
-      assert.deepEqual(result.report.refreshedPackages, [{
-        name: "postgresql16-client",
-        fromVersion: "16.14-r0",
-        toVersion: "16.15-r0",
-        method: "verified-legacy-pin-refresh"
-      }]);
+      assert.deepEqual(result.report.refreshedPackages, [
+        {
+          name: "openssl",
+          fromVersion: "3.5.7-r0",
+          toVersion: "3.5.8-r0",
+          method: "verified-legacy-pin-refresh"
+        },
+        {
+          name: "postgresql16-client",
+          fromVersion: "16.14-r0",
+          toVersion: "16.15-r0",
+          method: "verified-legacy-pin-refresh"
+        }
+      ]);
     }
   );
 });
@@ -55,12 +63,21 @@ test("previous runtime compatibility uses declared build arguments without rewri
     const result = await preparePreviousRuntimeBuild(runtimeRoot, candidatePackages);
 
     assert.equal(await readFile(path.join(runtimeRoot, "Dockerfile"), "utf8"), dockerfile);
-    assert.deepEqual(result.report.refreshedPackages, [{
-      name: "postgresql16-client",
-      fromVersion: "16.14-r0",
-      toVersion: "16.15-r0",
-      method: "docker-build-argument"
-    }]);
+    assert.equal(result.environment.CODEY_APK_OPENSSL_VERSION, "3.5.8-r0");
+    assert.deepEqual(result.report.refreshedPackages, [
+      {
+        name: "openssl",
+        fromVersion: "3.5.7-r0",
+        toVersion: "3.5.8-r0",
+        method: "docker-build-argument"
+      },
+      {
+        name: "postgresql16-client",
+        fromVersion: "16.14-r0",
+        toVersion: "16.15-r0",
+        method: "docker-build-argument"
+      }
+    ]);
   });
 });
 
