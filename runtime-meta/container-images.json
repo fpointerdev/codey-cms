@@ -4,7 +4,7 @@
   "postgres": "postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
   "caddy": "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
   "apkPackages": {
-    "openssl": "3.5.7-r0",
+    "openssl": "3.5.8-r0",
     "postgresql16-client": "16.15-r0"
   }
 }

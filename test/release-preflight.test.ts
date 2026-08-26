@@ -72,6 +72,18 @@ test("release workflow pins actions and scopes the signing key to signing steps"
   );
 });
 
+test("CodeQL excludes only reproducibly generated browser bundles", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/security.yml", import.meta.url), "utf8");
+  const config = readFileSync(
+    new URL("../.github/codeql/codeql-config.yml", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(workflow, /config-file: \.\/\.github\/codeql\/codeql-config\.yml/);
+  assert.match(config, /paths-ignore:\s+\- apps\/web\/vendor\/\*\*/);
+  assert.doesNotMatch(config, /apps\/web\/web|scripts\/|src\//);
+});
+
 test("release ancestry enforcement is limited to official tag jobs with full history", () => {
   const preflight = readFileSync(new URL("../scripts/release-preflight.mjs", import.meta.url), "utf8");
   const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");

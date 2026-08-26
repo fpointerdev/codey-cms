@@ -354,7 +354,10 @@ function selectedValue(value, allowed, fallback) {
 }
 
 function structuredDisplayEditor(variant, value) {
-  const supported = Boolean(visualCollectionEditors[variant]) || variant === "video" || variant === "quote-highlight";
+  const threeObject = variant === "three-scene" || variant === "three-model";
+  const threePanorama = variant === "three-panorama";
+  const threeVisual = threeObject || threePanorama;
+  const supported = Boolean(visualCollectionEditors[variant]) || variant === "video" || variant === "quote-highlight" || threeVisual;
   if (!supported) return null;
 
   const display = isRecord(value.display) ? value.display : {};
@@ -428,6 +431,139 @@ function structuredDisplayEditor(variant, value) {
         group: "Settings"
       }
     );
+  } else if (threeVisual) {
+    if (threeObject) {
+      fields.push({
+        name: "structuredThreePreset",
+        label: "Scene",
+        type: "select",
+        value: selectedValue(display.preset, ["product-stage", "crystal", "wave"], "product-stage"),
+        options: [
+          { value: "product-stage", label: "Product stage" },
+          { value: "crystal", label: "Crystal form" },
+          { value: "wave", label: "Architectural wave" }
+        ],
+        group: "Settings"
+      });
+    }
+
+    fields.push(
+      {
+        name: "structuredThreeMotion",
+        label: "Motion",
+        type: "select",
+        value: selectedValue(display.motion, ["none", "gentle", "dynamic"], "gentle"),
+        options: [
+          { value: "none", label: "Still" },
+          { value: "gentle", label: "Gentle" },
+          { value: "dynamic", label: "Dynamic" }
+        ],
+        group: "Settings"
+      },
+      {
+        name: "structuredThreeInteractive",
+        label: threePanorama ? "Let visitors look around" : "Let visitors rotate the scene",
+        type: "checkbox",
+        checked: display.interactive !== false,
+        group: "Settings"
+      },
+      {
+        name: "structuredThreeRatio",
+        label: "Frame",
+        type: "select",
+        value: selectedValue(display.ratio, ["16 / 10", "16 / 9", "4 / 3", "1 / 1"], "16 / 10"),
+        options: [
+          { value: "16 / 10", label: "Wide" },
+          { value: "16 / 9", label: "Cinema" },
+          { value: "4 / 3", label: "Standard" },
+          { value: "1 / 1", label: "Square" }
+        ],
+        group: "Settings"
+      },
+      {
+        name: "structuredThreeTone",
+        label: "Stage tone",
+        type: "select",
+        value: selectedValue(display.tone, ["dark", "light", "brand"], variant === "three-model" ? "light" : "dark"),
+        options: [
+          { value: "dark", label: "Dark" },
+          { value: "light", label: "Light" },
+          { value: "brand", label: "Deep green" }
+        ],
+        group: "Style"
+      }
+    );
+
+    if (threeObject) {
+      const finishOptions = variant === "three-model"
+        ? [
+            { value: "original", label: "Original" },
+            { value: "brand", label: "Brand color" },
+            { value: "clay", label: "Clay" },
+            { value: "chrome", label: "Chrome" }
+          ]
+        : [
+            { value: "brand", label: "Glossy" },
+            { value: "clay", label: "Clay" },
+            { value: "chrome", label: "Chrome" }
+          ];
+      fields.push({
+        name: "structuredThreeAccent",
+        label: "Object color",
+        type: "select",
+        value: selectedValue(display.accent, ["#c9ff67", "#ff8066", "#48c9e8", "#f2c94c", "#087f76"], variant === "three-model" ? "#087f76" : "#c9ff67"),
+        options: [
+          { value: "#c9ff67", label: "Lime" },
+          { value: "#ff8066", label: "Coral" },
+          { value: "#48c9e8", label: "Sky" },
+          { value: "#f2c94c", label: "Gold" },
+          { value: "#087f76", label: "Teal" }
+        ],
+        group: "Style"
+      }, {
+        name: "structuredThreeCamera",
+        label: "View",
+        type: "select",
+        value: selectedValue(display.camera, ["front", "angled", "close"], "angled"),
+        options: [
+          { value: "front", label: "Front" },
+          { value: "angled", label: "Angled" },
+          { value: "close", label: "Close-up" }
+        ],
+        group: "Settings"
+      }, {
+        name: "structuredThreeLighting",
+        label: "Lighting",
+        type: "select",
+        value: selectedValue(display.lighting, ["soft", "studio", "dramatic"], "studio"),
+        options: [
+          { value: "soft", label: "Soft" },
+          { value: "studio", label: "Studio" },
+          { value: "dramatic", label: "Dramatic" }
+        ],
+        group: "Style"
+      }, {
+        name: "structuredThreeFinish",
+        label: "Finish",
+        type: "select",
+        value: selectedValue(display.finish, finishOptions.map((option) => option.value), variant === "three-model" ? "original" : "brand"),
+        options: finishOptions,
+        group: "Style"
+      });
+    } else {
+      fields.push({
+        name: "structuredThreeStartView",
+        label: "Starting view",
+        type: "select",
+        value: selectedValue(display.startView, ["front", "left", "right"], "front"),
+        options: [
+          { value: "front", label: "Center" },
+          { value: "left", label: "Look left" },
+          { value: "right", label: "Look right" }
+        ],
+        group: "Settings"
+      });
+    }
   } else {
     fields.push(
       {
@@ -555,6 +691,28 @@ function structuredDisplayEditor(variant, value) {
         next.preload = selectedValue(values.structuredVideoPreload, ["metadata", "none"], "metadata");
         next.loop = values.structuredVideoLoop === true;
         next.playback = selectedValue(values.structuredVideoPlayback, ["controls", "hover-focus"], "controls");
+      } else if (threeVisual) {
+        next.motion = selectedValue(values.structuredThreeMotion, ["none", "gentle", "dynamic"], "gentle");
+        next.interactive = values.structuredThreeInteractive === true;
+        next.ratio = selectedValue(
+          values.structuredThreeRatio,
+          ["16 / 10", "16 / 9", "4 / 3", "1 / 1"],
+          threePanorama ? "16 / 9" : "16 / 10"
+        );
+        next.tone = selectedValue(values.structuredThreeTone, ["dark", "light", "brand"], variant === "three-model" ? "light" : "dark");
+        if (threeObject) {
+          next.preset = selectedValue(values.structuredThreePreset, ["product-stage", "crystal", "wave"], "product-stage");
+          next.accent = selectedValue(values.structuredThreeAccent, ["#c9ff67", "#ff8066", "#48c9e8", "#f2c94c", "#087f76"], variant === "three-model" ? "#087f76" : "#c9ff67");
+          next.camera = selectedValue(values.structuredThreeCamera, ["front", "angled", "close"], "angled");
+          next.lighting = selectedValue(values.structuredThreeLighting, ["soft", "studio", "dramatic"], "studio");
+          next.finish = selectedValue(
+            values.structuredThreeFinish,
+            variant === "three-model" ? ["original", "brand", "clay", "chrome"] : ["brand", "clay", "chrome"],
+            variant === "three-model" ? "original" : "brand"
+          );
+        } else {
+          next.startView = selectedValue(values.structuredThreeStartView, ["front", "left", "right"], "front");
+        }
       } else {
         next.density = selectedValue(values.structuredDensity, ["comfortable", "compact"], "comfortable");
         next.surface = selectedValue(values.structuredSurface, ["plain", "outline", "soft", "elevated", "liquid"], "outline");
@@ -932,12 +1090,13 @@ export function structuredContentEditor(block) {
     const image = typeof value[imageKey] === "string" ? { url: value[imageKey] } : value[imageKey] || {};
     addField(fields, {
       name: "structuredImageFile",
-      label: "Image",
+      label: variant === "three-panorama" ? "Panorama image" : "Image",
       type: "file",
       accept: "image/*",
       imagePicker: true,
       previewUrl: image.url || image.src || "",
-      previewAlt: image.alt || image.title || firstText(value, [titleKey]) || "Image"
+      previewAlt: image.alt || image.title || firstText(value, [titleKey]) || "Image",
+      help: variant === "three-panorama" ? "Use a wide 2:1 image for a natural 360-degree view." : undefined
     });
     addField(fields, {
       name: "structuredImageAlt",
@@ -976,6 +1135,19 @@ export function structuredContentEditor(block) {
       value: firstText(value, ["posterUrl"]),
       required: false,
       help: "Optional still image shown before playback."
+    });
+  }
+
+  if (variant === "three-model") {
+    addField(fields, {
+      name: "structuredModelFile",
+      label: value.modelUrl ? "Replace 3D model" : "3D model",
+      type: "file",
+      accept: "model/gltf-binary,.glb",
+      required: false,
+      help: value.modelUrl
+        ? "The current model stays published until you upload a replacement."
+        : "Upload one self-contained GLB file. The poster remains visible if 3D is unavailable."
     });
   }
 
@@ -1053,7 +1225,7 @@ export function structuredContentEditor(block) {
   return {
     fields,
     mediaFields: collectionEditor?.mediaFields || [],
-    valueFrom(values, mediaAsset = null, uploadedItemMedia = {}) {
+    valueFrom(values, mediaAsset = null, uploadedItemMedia = {}, auxiliaryMedia = {}) {
       const next = { ...value };
 
       if (titleKey) next[titleKey] = values.structuredTitle || "";
@@ -1081,6 +1253,10 @@ export function structuredContentEditor(block) {
       if (variant === "video") {
         next.posterUrl = values.structuredVideoPosterUrl || "";
       }
+      if (variant === "three-model" && auxiliaryMedia.model?.url) {
+        next.modelUrl = auxiliaryMedia.model.url;
+        next.modelAssetId = auxiliaryMedia.model.id;
+      }
       if (variant === "quote-highlight") {
         next[valueKey(value, ["attribution", "source", "author"], "attribution")] = values.structuredAttribution || "";
       }
@@ -1093,7 +1269,9 @@ export function structuredContentEditor(block) {
         next[imageKey] = {
           ...existingImage,
           [valueKey(existingImage, ["url", "src"], "url")]: url,
-          alt
+          alt,
+          ...(mediaAsset?.width ? { width: mediaAsset.width } : {}),
+          ...(mediaAsset?.height ? { height: mediaAsset.height } : {})
         };
       }
 

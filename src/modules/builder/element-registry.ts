@@ -89,7 +89,7 @@ export type BuilderValidationResult = {
   warnings: BuilderValidationIssue[];
 };
 
-export const builderRegistryVersion = "2026-08-25.1";
+export const builderRegistryVersion = "2026-08-26.2";
 
 function registryPlaceholderImage(width: number, height: number, label: string) {
   const safeLabel = label
@@ -542,6 +542,101 @@ export const builderElementRegistry = [
     ]
   },
   {
+    id: "three-scene",
+    label: "3D Scene",
+    icon: "box",
+    description: "A lightweight interactive Three.js scene with ready-made visual presets.",
+    category: "media",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "A new dimension",
+      body: "Use a polished 3D scene to create depth without managing a model file.",
+      variant: "three-scene",
+      display: {
+        preset: "product-stage",
+        tone: "dark",
+        accent: "#c9ff67",
+        motion: "gentle",
+        interactive: true,
+        ratio: "16 / 10",
+        camera: "angled",
+        lighting: "studio",
+        finish: "brand"
+      }
+    },
+    fieldSchema: [
+      { name: "title", label: "Title", type: "text", required: true },
+      { name: "body", label: "Description", type: "richText", required: false },
+      { name: "display", label: "Scene", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "three-model",
+    label: "3D Model",
+    icon: "scan-3d",
+    description: "Upload one self-contained GLB model and present it in an accessible interactive stage.",
+    category: "media",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Explore the product",
+      body: "Upload a GLB model, then choose how visitors can view it.",
+      variant: "three-model",
+      modelUrl: "",
+      image: { url: registryPlaceholderImage(1600, 1000, "3D model preview"), alt: "3D model preview", width: 1600, height: 1000 },
+      display: {
+        preset: "product-stage",
+        tone: "light",
+        accent: "#087f76",
+        motion: "gentle",
+        interactive: true,
+        ratio: "16 / 10",
+        camera: "angled",
+        lighting: "studio",
+        finish: "original"
+      }
+    },
+    fieldSchema: [
+      { name: "title", label: "Title", type: "text", required: true },
+      { name: "body", label: "Description", type: "richText", required: false },
+      { name: "modelUrl", label: "GLB model", type: "custom", required: false },
+      { name: "image", label: "Poster image", type: "image", required: true },
+      { name: "display", label: "Stage", type: "custom", required: true }
+    ]
+  },
+  {
+    id: "three-panorama",
+    label: "360 Panorama",
+    icon: "rotate-3d",
+    description: "Turn one wide image into an accessible, visitor-controlled 360-degree scene.",
+    category: "media",
+    modules: ["cms"],
+    blockTypes: ["CUSTOM", "RICH_TEXT"],
+    generatorSafe: true,
+    defaultValue: {
+      title: "Step inside the space",
+      body: "Upload a 2:1 panorama so visitors can explore the full scene without leaving the page.",
+      variant: "three-panorama",
+      image: { url: registryPlaceholderImage(1800, 900, "360 panorama"), alt: "Wide view of the space", width: 1800, height: 900 },
+      display: {
+        tone: "dark",
+        motion: "gentle",
+        interactive: true,
+        ratio: "16 / 9",
+        startView: "front"
+      }
+    },
+    fieldSchema: [
+      { name: "title", label: "Title", type: "text", required: true },
+      { name: "body", label: "Description", type: "richText", required: false },
+      { name: "image", label: "Panorama image", type: "image", required: true },
+      { name: "display", label: "View", type: "custom", required: true }
+    ]
+  },
+  {
     id: "image-hotspots",
     label: "Interactive Image",
     icon: "map-pin",
@@ -848,7 +943,7 @@ export const sectionPresetRegistry = [
     id: "two-column",
     label: "Two columns",
     description: "Side-by-side content for image/text and comparison sections.",
-    allowedElements: ["image-text", "image-hotspots", "image-comparison", "text-layout", "cta", "process-steps", "comparison-table", "video", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards", "product-list", "product-showcase"],
+    allowedElements: ["image-text", "image-hotspots", "image-comparison", "text-layout", "cta", "process-steps", "comparison-table", "video", "three-scene", "three-model", "three-panorama", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards", "product-list", "product-showcase"],
     defaultSettings: {
       layout: "two-column",
       container: "default",
@@ -887,7 +982,7 @@ export const sectionPresetRegistry = [
     id: "full-bleed",
     label: "Full width",
     description: "Wide visual section for hero, gallery, and media bands.",
-    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "image-hotspots", "image-comparison", "video", "quote-highlight", "cta", "product-showcase"],
+    allowedElements: ["hero-creative", "slider", "carousel", "gallery", "image-text", "image-hotspots", "image-comparison", "video", "three-scene", "three-model", "three-panorama", "quote-highlight", "cta", "product-showcase"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -900,7 +995,7 @@ export const sectionPresetRegistry = [
     id: "asymmetric",
     label: "Asymmetric",
     description: "Editorial section with stronger visual weight on one side.",
-    allowedElements: ["hero-creative", "image-text", "image-hotspots", "feature-cards", "process-steps", "comparison-table", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards"],
+    allowedElements: ["hero-creative", "image-text", "image-hotspots", "three-scene", "three-model", "three-panorama", "feature-cards", "process-steps", "comparison-table", "timeline", "checklist", "resource-list", "location-cards", "quote-highlight", "bento-grid", "navigation-cards"],
     defaultSettings: {
       layout: "asymmetric",
       container: "wide",
@@ -913,7 +1008,7 @@ export const sectionPresetRegistry = [
     id: "split-hero",
     label: "Split hero",
     description: "Hero section with copy on one side and media or proof on the other.",
-    allowedElements: ["hero-creative", "slider", "carousel", "image-text", "stats-grid", "cta"],
+    allowedElements: ["hero-creative", "slider", "carousel", "image-text", "three-scene", "three-model", "three-panorama", "stats-grid", "cta"],
     defaultSettings: {
       layout: "asymmetric",
       container: "wide",
@@ -928,7 +1023,7 @@ export const sectionPresetRegistry = [
     id: "media-band",
     label: "Media band",
     description: "Wide visual strip for galleries, carousels, project highlights, and image-led storytelling.",
-    allowedElements: ["slider", "carousel", "gallery", "image-text", "image-hotspots", "image-comparison", "video", "text-layout"],
+    allowedElements: ["slider", "carousel", "gallery", "image-text", "image-hotspots", "image-comparison", "video", "three-scene", "three-model", "three-panorama", "text-layout"],
     defaultSettings: {
       layout: "full-bleed",
       container: "wide",
@@ -1081,6 +1176,65 @@ export const builderSectionPatternRegistry = [
       style: { preset: "premium-dark", backgroundColor: "#171a1f", textColor: "#ffffff", accentColor: "#d7ff4f", radius: 28, shadow: "strong" },
       decoration: { type: "frame", position: "bottom-right", color: "#ff8066", opacity: 0.22 },
       animation: { effect: "fade-up", durationMs: 800, delayMs: 0 }
+    }
+  },
+  {
+    id: "immersive-product-stage",
+    label: "Immersive product stage",
+    description: "Focused product story paired with an interactive uploaded 3D model.",
+    category: "hero",
+    elements: ["hero-creative", "three-model"],
+    defaultSettings: {
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      minHeight: 680,
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "premium-dark", backgroundColor: "#11151b", textColor: "#ffffff", accentColor: "#c9ff67", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#c9ff67", opacity: 0.18 },
+      animation: { effect: "fade-up", durationMs: 700, delayMs: 0 }
+    }
+  },
+  {
+    id: "kinetic-3d-story",
+    label: "Kinetic 3D story",
+    description: "Ready-made procedural 3D scene followed by concise proof points.",
+    category: "content",
+    elements: ["three-scene", "stats-grid"],
+    defaultSettings: {
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "lg",
+      align: "start",
+      verticalAlign: "center",
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "editorial-light", backgroundColor: "#edf3f1", textColor: "#172426", accentColor: "#087f76", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#087f76", opacity: 0.16 },
+      animation: { effect: "reveal-up", durationMs: 650, delayMs: 0 }
+    }
+  },
+  {
+    id: "immersive-360-tour",
+    label: "Immersive 360 tour",
+    description: "An editorial introduction paired with an interactive panorama of a place or experience.",
+    category: "hero",
+    elements: ["hero-creative", "three-panorama"],
+    defaultSettings: {
+      layout: "asymmetric",
+      container: "wide",
+      spacing: "xl",
+      gap: "xl",
+      align: "start",
+      verticalAlign: "center",
+      minHeight: 680,
+      responsive: { tablet: { layout: "one-column", spacing: "lg" }, mobile: { layout: "one-column", spacing: "sm" } },
+      style: { preset: "premium-dark", backgroundColor: "#11151b", textColor: "#ffffff", accentColor: "#48c9e8", radius: 0, shadow: "none" },
+      decoration: { type: "none", position: "bottom-right", color: "#48c9e8", opacity: 0.14 },
+      animation: { effect: "fade-up", durationMs: 700, delayMs: 0 }
     }
   },
   {
@@ -1714,6 +1868,21 @@ function validateCustomElementValue(
 
   if (elementId === "quote-highlight" && !hasAnyText(value, ["body", "text", "copy", "content"])) {
     result.errors.push(issue("missing_quote_body", `${label} quote highlight needs quote text.`));
+  }
+
+  if (["three-scene", "three-model", "three-panorama"].includes(elementId) && !hasAnyText(value, ["title", "heading", "headline", "name"])) {
+    result.errors.push(issue("missing_three_scene_title", `${label} 3D element needs a descriptive title.`));
+  }
+
+  if (elementId === "three-model" && hasText(value.modelUrl) && !/\.glb(?:[?#]|$)/i.test(String(value.modelUrl))) {
+    result.errors.push(issue("invalid_three_model_url", `${label} 3D model must use a self-contained GLB file.`));
+  }
+
+  if (elementId === "three-panorama") {
+    const image = isRecord(value.image) ? value.image : {};
+    if (!hasText(image.url) || (!hasText(image.alt) && !hasText(image.altText))) {
+      result.errors.push(issue("invalid_three_panorama_image", `${label} 360 panorama needs an uploaded image and description.`));
+    }
   }
 
   if (elementId === "image-comparison") {

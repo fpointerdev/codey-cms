@@ -6,6 +6,7 @@ import {
   inspectImageBuffer,
   MediaProcessingQueue
 } from "../src/modules/cms/media-optimizer.js";
+import { inspectMediaFile } from "../src/modules/cms/media-policy.js";
 import { MediaService } from "../src/modules/cms/media.service.js";
 
 const processingLimits = {
@@ -14,6 +15,67 @@ const processingLimits = {
   maxHeight: 500,
   maxFrames: 10
 };
+
+function glbFile(document: Record<string, unknown>) {
+  const source = Buffer.from(JSON.stringify(document), "utf8");
+  const padding = Buffer.alloc((4 - source.length % 4) % 4, 0x20);
+  const json = Buffer.concat([source, padding]);
+  const body = Buffer.alloc(20 + json.length);
+  body.write("glTF", 0, "ascii");
+  body.writeUInt32LE(2, 4);
+  body.writeUInt32LE(body.length, 8);
+  body.writeUInt32LE(json.length, 12);
+  body.writeUInt32LE(0x4e4f534a, 16);
+  json.copy(body, 20);
+  return body;
+}
+
+function glbWithBinary(document: Record<string, unknown>, binary: Buffer) {
+  const jsonOnly = glbFile(document);
+  const body = Buffer.alloc(jsonOnly.length + 8 + binary.length);
+  jsonOnly.copy(body);
+  body.writeUInt32LE(binary.length, jsonOnly.length);
+  body.writeUInt32LE(0x004e4942, jsonOnly.length + 4);
+  binary.copy(body, jsonOnly.length + 8);
+  body.writeUInt32LE(body.length, 8);
+  return body;
+}
+
+test("GLB uploads require a valid self-contained version 2 model", () => {
+  const valid = glbFile({ asset: { version: "2.0" }, scenes: [{}], scene: 0 });
+  const external = glbFile({
+    asset: { version: "2.0" },
+    buffers: [{ uri: "https://tracker.example/model.bin", byteLength: 12 }]
+  });
+  const missingBinary = glbFile({
+    asset: { version: "2.0" },
+    buffers: [{ byteLength: 12 }]
+  });
+  const invalidVersion = glbFile({ asset: { version: "1.0" }, scenes: [{}] });
+  const validBinary = glbWithBinary(
+    { asset: { version: "2.0" }, buffers: [{ byteLength: 4 }] },
+    Buffer.alloc(4)
+  );
+
+  assert.equal(inspectMediaFile("product.glb", "model/gltf-binary", valid, "OTHER").kind, "OTHER");
+  assert.equal(inspectMediaFile("product.glb", "model/gltf-binary", validBinary, "OTHER").kind, "OTHER");
+  assert.throws(
+    () => inspectMediaFile("product.glb", "model/gltf-binary", external, "OTHER"),
+    (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === "media_signature_mismatch")
+  );
+  assert.throws(
+    () => inspectMediaFile("product.glb", "model/gltf-binary", missingBinary, "OTHER"),
+    (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === "media_signature_mismatch")
+  );
+  assert.throws(
+    () => inspectMediaFile("product.glb", "model/gltf-binary", invalidVersion, "OTHER"),
+    (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === "media_signature_mismatch")
+  );
+  assert.throws(
+    () => inspectMediaFile("product.png", "model/gltf-binary", valid, "OTHER"),
+    (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === "media_extension_mismatch")
+  );
+});
 
 test("compressed images cannot bypass decoded dimension limits", async () => {
   const compressed = await sharp({

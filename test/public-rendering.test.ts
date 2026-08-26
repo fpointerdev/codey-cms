@@ -663,6 +663,75 @@ test("v1 builder elements server-render semantic process, comparison, and video 
   assert.doesNotMatch(html, /<iframe/);
 });
 
+test("3D elements server-render descriptive content and resilient poster fallbacks", () => {
+  const html = renderPageContent({
+    title: "Dimensional work",
+    content: {},
+    sections: [{
+      id: "dimensional",
+      key: "dimensional",
+      settings: {},
+      blocks: [
+        {
+          key: "procedural-scene",
+          type: "CUSTOM",
+          value: {
+            variant: "three-scene",
+            title: "Material study",
+            body: "Explore form, light, and movement.",
+            display: { preset: "crystal", tone: "dark", accent: "#48c9e8", motion: "gentle", interactive: true, ratio: "16 / 10", camera: "close", lighting: "dramatic", finish: "chrome" }
+          },
+          settings: { elementId: "three-scene" },
+          editable: true
+        },
+        {
+          key: "product-model",
+          type: "CUSTOM",
+          value: {
+            variant: "three-model",
+            title: "Explore the product",
+            body: "Rotate the product to see every detail.",
+            modelUrl: "/uploads/chair.glb",
+            image: { url: "/uploads/chair.webp", alt: "Chair model preview", width: 1600, height: 1000 },
+            display: { preset: "product-stage", tone: "light", accent: "#087f76", motion: "none", interactive: false, ratio: "4 / 3" }
+          },
+          settings: { elementId: "three-model" },
+          editable: true
+        },
+        {
+          key: "showroom-panorama",
+          type: "CUSTOM",
+          value: {
+            variant: "three-panorama",
+            title: "Tour the showroom",
+            body: "Look around the full space.",
+            image: { url: "/uploads/showroom-360.webp", alt: "360-degree showroom view", width: 1800, height: 900 },
+            display: { tone: "dark", motion: "none", interactive: true, ratio: "16 / 9", startView: "left" }
+          },
+          settings: { elementId: "three-panorama" },
+          editable: true
+        }
+      ]
+    }]
+  });
+
+  assert.match(html, /<h3>Material study<\/h3>/);
+  assert.match(html, /data-three-scene/);
+  assert.match(html, /data-three-preset="crystal"/);
+  assert.match(html, /data-three-camera="close"/);
+  assert.match(html, /data-three-lighting="dramatic"/);
+  assert.match(html, /data-three-finish="chrome"/);
+  assert.match(html, /data-three-model="\/uploads\/chair\.glb"/);
+  assert.match(html, /data-three-panorama="\/uploads\/showroom-360\.webp"/);
+  assert.match(html, /data-three-start-view="left"/);
+  assert.match(html, /src="\/uploads\/chair\.webp" alt="Chair model preview" width="1600" height="1000"/);
+  assert.match(html, /src="\/uploads\/showroom-360\.webp" alt="360-degree showroom view" width="1800" height="900"/);
+  assert.match(html, /data-three-interactive="false"/);
+  assert.equal((html.match(/data-three-toggle/g) || []).length, 1);
+  assert.match(html, /data-three-toggle aria-pressed="false" hidden/);
+  assert.doesNotMatch(html, /<script|<iframe/);
+});
+
 test("interactive image placements render bounded accessible product links", () => {
   const html = renderPageContent({
     title: "Showroom",
