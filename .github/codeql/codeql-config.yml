@@ -1,0 +1,4 @@
+name: CodeY CMS CodeQL configuration
+
+paths-ignore:
+  - apps/web/vendor/**
