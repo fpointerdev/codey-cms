@@ -28,7 +28,12 @@ try {
 
   console.log(`Validated the ${process.platform} self-host launcher contract.`);
 } finally {
-  await rm(directory, { recursive: true, force: true });
+  await rm(directory, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === "win32" ? 5 : 0,
+    retryDelay: 200
+  });
 }
 
 async function validateShellLauncher() {
