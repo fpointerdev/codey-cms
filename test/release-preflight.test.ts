@@ -72,6 +72,23 @@ test("release workflow pins actions and scopes the signing key to signing steps"
   );
 });
 
+test("CodeQL initialization and analysis use one pinned action release", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/security.yml", import.meta.url), "utf8");
+  const references = [...workflow.matchAll(
+    /uses: github\/codeql-action\/(?:init|analyze)@([a-f0-9]{40})/g
+  )].map((match) => match[1]);
+
+  assert.equal(references.length, 2);
+  assert.equal(new Set(references).size, 1);
+});
+
+test("Dependabot groups coupled actions and defers npm major migrations", () => {
+  const config = readFileSync(new URL("../.github/dependabot.yml", import.meta.url), "utf8");
+
+  assert.match(config, /github-actions[\s\S]*groups:[\s\S]*patterns:[\s\S]*- "\*"/);
+  assert.match(config, /dependency-name: "\*"[\s\S]*version-update:semver-major/);
+});
+
 test("CodeQL excludes only reproducibly generated browser bundles", () => {
   const workflow = readFileSync(new URL("../.github/workflows/security.yml", import.meta.url), "utf8");
   const config = readFileSync(
