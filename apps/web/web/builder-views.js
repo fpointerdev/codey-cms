@@ -791,6 +791,7 @@ function renderPageSettingsForm(page, layout) {
 
 function renderBuilderStickyHeader(page, layout) {
   const locale = currentLocaleForContent(page).toUpperCase();
+  const visualEditorHref = customStorefrontEditorHref(page, storefrontPageHref(page));
 
   return `
     <section class="builder-sticky-header">
@@ -803,12 +804,15 @@ function renderBuilderStickyHeader(page, layout) {
       </div>
       <div class="builder-sticky-actions">
         <a class="secondary-button" href="/dashboard/pages" data-dashboard-link>Pages</a>
-        <a class="secondary-button" href="${escapeHtml(customStorefrontEditorHref(page, storefrontPageHref(page)))}">Visual editor</a>
-        ${hasPermission("create", "cms") ? '<button type="button" class="secondary-button" data-save-builder-page-template>Save as template</button>' : ""}
+        <nav class="editor-mode-switch" aria-label="Editing mode">
+          <a href="${escapeHtml(visualEditorHref)}">On-page</a>
+          <span aria-current="page">Structure</span>
+        </nav>
         <button type="submit" form="builder-page-settings-form">Save</button>
         <details class="builder-sticky-details">
           <summary class="secondary-button builder-details-toggle">Details</summary>
           <div class="builder-details-panel">
+            ${hasPermission("create", "cms") ? '<div class="button-row"><button type="button" class="secondary-button" data-save-builder-page-template>Save page as template</button></div>' : ""}
             ${renderTranslationPanel("page", page)}
             ${renderPageSettingsForm(page, layout)}
           </div>

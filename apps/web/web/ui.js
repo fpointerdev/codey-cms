@@ -12,7 +12,7 @@ function renderAdminNav(activeView) {
           .toUpperCase();
 
         return `
-        <a href="${escapeHtml(item.href)}" data-dashboard-link class="admin-nav-link ${item.view === activeView ? "active" : ""}" aria-label="${escapeHtml(item.label)}">
+        <a href="${escapeHtml(item.href)}" data-dashboard-link class="admin-nav-link ${item.view === activeView ? "active" : ""}" aria-label="${escapeHtml(item.label)}"${item.view === activeView ? ' aria-current="page"' : ""}>
           <span class="admin-nav-initial" aria-hidden="true">${escapeHtml(shortLabel)}</span>
           <span class="admin-nav-label">${escapeHtml(item.label)}</span>
         </a>

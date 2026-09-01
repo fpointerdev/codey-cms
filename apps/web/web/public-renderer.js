@@ -277,6 +277,10 @@ function renderVisualEditorToolbar(page) {
         <span><strong>${escapeHtml(page.title)}</strong><small>${escapeHtml(page.status || "DRAFT")}</small></span>
       </div>
       <div class="visual-editor-actions">
+        <nav class="editor-mode-switch editor-mode-switch-dark" aria-label="Editing mode">
+          <span aria-current="page">On-page</span>
+          <a href="${escapeHtml(builderHref)}">Structure</a>
+        </nav>
         <span class="visual-editor-history" role="group" aria-label="Edit history">
           ${visualIconButton("&#8630;", "Undo visual change", "data-visual-undo", !(state.visualEditorUndoStack || []).length)}
           ${visualIconButton("&#8631;", "Redo visual change", "data-visual-redo", !(state.visualEditorRedoStack || []).length)}
@@ -313,7 +317,6 @@ function renderVisualEditorToolbar(page) {
             </div>
             <button type="button" class="visual-more-action" data-edit-page-inline>Page settings</button>
             ${canCreateTemplates ? '<button type="button" class="visual-more-action" data-visual-save-page-template>Save as page template</button>' : ""}
-            <a class="visual-more-action" href="${escapeHtml(builderHref)}">Advanced builder</a>
           </div>
         </details>
         <button type="button" class="visual-command-button visual-editor-done" data-exit-visual-editor>Done</button>
