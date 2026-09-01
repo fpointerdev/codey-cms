@@ -912,8 +912,33 @@ test("shop customization and product creation keep advanced controls out of the 
   });
 
   await page.getByRole("link", { name: "Shop", exact: true }).click();
-  await page.getByRole("link", { name: "Customize", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Shop sections" }).getByRole("link")).toHaveCount(4);
+  await expect(page.getByRole("link", { name: "Add product", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "View shop", exact: true }).click();
+  await expect(page).toHaveURL(/\/shop$/);
+  const editShopDesign = page.getByRole("link", { name: "Edit shop design", exact: true });
+  await expect(editShopDesign).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const publicShopLayout = await page.evaluate(() => {
+    const editLink = document.querySelector(".shop-admin-entry")?.getBoundingClientRect();
+    const cartButton = document.querySelector("[data-commerce-cart-toggle]")?.getBoundingClientRect();
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      overlapsCart: Boolean(editLink && cartButton && !(
+        editLink.right <= cartButton.left ||
+        editLink.left >= cartButton.right ||
+        editLink.bottom <= cartButton.top ||
+        editLink.top >= cartButton.bottom
+      ))
+    };
+  });
+  expect(publicShopLayout.documentWidth).toBeLessThanOrEqual(publicShopLayout.viewportWidth);
+  expect(publicShopLayout.overlapsCart).toBe(false);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await editShopDesign.click();
   await expect(page).toHaveURL(/\/dashboard\/shop\/configuration$/);
+  await expect(page.getByRole("navigation", { name: "Shop sections" }).getByRole("link", { name: "Settings", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.locator("[data-shop-settings-form]")).toBeVisible();
   await expect(page.getByText("Live preview", { exact: true })).toBeVisible();
   await expect(page.locator('input[name="catalogHeroMediaFile"]')).toHaveAttribute("type", "file");
@@ -967,7 +992,8 @@ test("shop customization and product creation keep advanced controls out of the 
   await expect(page.locator('input[name="catalogHeroMediaUrl"]')).toHaveValue(/\/uploads\//);
 
   await page.getByRole("link", { name: "Products", exact: true }).click();
-  await page.getByRole("link", { name: "Create Product", exact: true }).first().click();
+  await expect(page.getByRole("navigation", { name: "Catalog tools" })).toBeVisible();
+  await page.getByRole("link", { name: "Add product", exact: true }).first().click();
   await expect(page).toHaveURL(/\/dashboard\/shop\/products\/new$/);
   await expect(page.getByRole("heading", { name: "Product details", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Product images", exact: true })).toBeVisible();
