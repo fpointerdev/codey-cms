@@ -135,6 +135,7 @@ export function renderProductEditorPage({ product = null, categories = [], messa
           </div>
           <div class="button-row">
             <a class="secondary-button" href="${escapeHtml(adminHref("shop-products"))}" data-dashboard-link>Products</a>
+            ${isNew ? "" : `<a class="secondary-button" href="/shop/product/${encodeURIComponent(product.slug)}">View product</a>`}
             <button type="submit">${isNew ? "Create product" : "Save product"}</button>
           </div>
         </section>

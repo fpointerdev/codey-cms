@@ -590,30 +590,48 @@ export function renderPostCategoriesPage(categories, errorMessage = "") {
 }
 
 export function renderShopShell(activeView, content) {
-  const activeTab = activeView === "product-create" || activeView === "product-editor" ? "shop-products" : activeView;
+  const activeTab = ["shop-products", "product-create", "product-editor", "shop-categories", "shop-attributes"].includes(activeView)
+    ? "shop-products"
+    : activeView;
   const tabs = [
     { view: "shop", href: "/dashboard/shop", label: "Overview", modules: ["products", "orders"], permissions: [["read", "products"], ["read", "orders"]] },
     { view: "shop-products", href: "/dashboard/shop/products", label: "Products", modules: ["products"], permissions: [["read", "products"]] },
-    { view: "shop-categories", href: "/dashboard/shop/categories", label: "Categories", modules: ["products"], permissions: [["read", "products"]] },
-    { view: "shop-attributes", href: "/dashboard/shop/attributes", label: "Attributes", modules: ["products"], permissions: [["read", "products"]] },
     { view: "shop-orders", href: "/dashboard/shop/orders", label: "Orders", modules: ["orders"], permissions: [["read", "orders"]] },
-    { view: "shop-configuration", href: "/dashboard/shop/configuration", label: "Customize", modules: ["products"], permissions: [["read", "products"], ["read", "payments"], ["read", "modules"]] }
+    { view: "shop-configuration", href: "/dashboard/shop/configuration", label: "Settings", modules: ["products"], permissions: [["read", "products"], ["read", "payments"], ["read", "modules"]] }
   ].filter((tab) => modulesEnabled(tab.modules) && hasAnyPermission(tab.permissions));
 
   renderAdminShell(
-    { view: activeView },
+    { view: "shop" },
     `
       <section class="admin-page-header">
-        <div><p class="section-label">Shop</p><h1 class="dashboard-title">Shop</h1><p class="dashboard-copy">Manage products, orders, and commerce settings for this project.</p></div>
+        <div><p class="section-label">Shop</p><h1 class="dashboard-title">Shop</h1></div>
+        <div class="button-row">
+          <a class="secondary-button" href="/shop">View shop</a>
+          ${hasPermission("create", "products") ? '<a class="admin-primary-link" href="/dashboard/shop/products/new" data-dashboard-link>Add product</a>' : ""}
+        </div>
       </section>
       <nav class="admin-tabs" aria-label="Shop sections">
         ${tabs
-          .map((tab) => `<a href="${escapeHtml(tab.href)}" data-dashboard-link class="${tab.view === activeTab ? "active" : ""}">${escapeHtml(tab.label)}</a>`)
+          .map((tab) => `<a href="${escapeHtml(tab.href)}" data-dashboard-link class="${tab.view === activeTab ? "active" : ""}"${tab.view === activeTab ? ' aria-current="page"' : ""}>${escapeHtml(tab.label)}</a>`)
           .join("")}
       </nav>
       ${content}
     `
   );
+}
+
+function renderCatalogTools(activeView) {
+  const tools = [
+    { view: "shop-products", href: "/dashboard/shop/products", label: "Products" },
+    { view: "shop-categories", href: "/dashboard/shop/categories", label: "Categories" },
+    { view: "shop-attributes", href: "/dashboard/shop/attributes", label: "Attributes" }
+  ];
+
+  return `
+    <nav class="catalog-tools" aria-label="Catalog tools">
+      ${tools.map((tool) => `<a href="${tool.href}" data-dashboard-link class="${tool.view === activeView ? "active" : ""}"${tool.view === activeView ? ' aria-current="page"' : ""}>${tool.label}</a>`).join("")}
+    </nav>
+  `;
 }
 
 function orderNeedsAttention(order = {}) {
@@ -688,7 +706,7 @@ function commerceReadiness(products, commerce) {
   };
 }
 
-export function renderShopPage({ products = [], orders = [], categories = [], attributes = [], commerce = {}, errorMessage = "" } = {}) {
+export function renderShopPage({ products = [], orders = [], commerce = {}, errorMessage = "" } = {}) {
   const activeProducts = products.filter((product) => product.status === "ACTIVE");
   const draftProducts = products.filter((product) => product.status === "DRAFT");
   const lowStockProducts = activeProducts.filter((product) => (
@@ -699,43 +717,6 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
     .filter((order) => ["PAID", "FULFILLED"].includes(order.status))
     .reduce((total, order) => total + Number(order.totalCents || 0), 0);
   const readiness = commerceReadiness(products, commerce);
-  const actions = [
-    {
-      href: "/dashboard/shop/products",
-      title: "Products",
-      body: "Create draft products, update stock, and publish catalog items.",
-      modules: ["products"],
-      permissions: [["read", "products"]]
-    },
-    {
-      href: "/dashboard/shop/orders",
-      title: "Orders",
-      body: "Review customer orders, checkout state, and queued notifications.",
-      modules: ["orders"],
-      permissions: [["read", "orders"]]
-    },
-    {
-      href: "/dashboard/shop/categories",
-      title: "Categories",
-      body: "Manage catalog taxonomy and product archive pages.",
-      modules: ["products"],
-      permissions: [["read", "products"]]
-    },
-    {
-      href: "/dashboard/shop/attributes",
-      title: "Attributes",
-      body: "Define reusable technical attributes and filter values.",
-      modules: ["products"],
-      permissions: [["read", "products"]]
-    },
-    {
-      href: "/dashboard/shop/configuration",
-      title: "Customize storefront",
-      body: "Choose catalog layouts, product card styles, and visible details.",
-      modules: ["products"],
-      permissions: [["read", "products"], ["read", "payments"], ["read", "modules"]]
-    }
-  ].filter((action) => modulesEnabled(action.modules) && hasAnyPermission(action.permissions));
 
   renderShopShell(
     "shop",
@@ -762,7 +743,7 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
           <article><span>Active products</span><strong>${escapeHtml(activeProducts.length)}</strong><small>${escapeHtml(draftProducts.length)} drafts</small></article>
           <article><span>Open orders</span><strong>${escapeHtml(openOrders.length)}</strong><small>${escapeHtml(orders.length)} total orders</small></article>
           <article><span>Paid revenue</span><strong>${escapeHtml(formatMoney(revenueCents, orders[0]?.currency || "EUR"))}</strong><small>Paid and fulfilled orders</small></article>
-          <article><span>Taxonomy</span><strong>${escapeHtml(categories.length + attributes.length)}</strong><small>${escapeHtml(categories.length)} categories · ${escapeHtml(attributes.length)} attributes</small></article>
+          <article><span>Low stock</span><strong>${escapeHtml(lowStockProducts.length)}</strong><small>3 or fewer available</small></article>
         </div>
       </section>
       ${openOrders.length ? `
@@ -791,25 +772,6 @@ export function renderShopPage({ products = [], orders = [], categories = [], at
           </div>
         </section>
       ` : ""}
-      <section class="admin-section admin-panel">
-        <div class="section-heading-row"><div><p class="section-label">Shortcuts</p><h2>Operate catalog</h2></div></div>
-        <div class="admin-action-list">
-          ${
-            actions.length
-              ? actions
-                  .map(
-                    (action) => `
-                      <a href="${escapeHtml(action.href)}" data-dashboard-link>
-                        <strong>${escapeHtml(action.title)}</strong>
-                        <span>${escapeHtml(action.body)}</span>
-                      </a>
-                    `
-                  )
-                  .join("")
-              : renderTableEmptyState("Shop modules are disabled", "Enable products and orders before operating the shop workspace.")
-          }
-        </div>
-      </section>
     `
   );
   setStatus("Shop overview loaded.");
@@ -821,11 +783,12 @@ export function renderShopProductsPage(products, errorMessage = "") {
     "shop-products",
     `
       <section class="admin-section">
-        <div class="section-heading-row"><div><p class="section-label">Catalog</p><h2>Products</h2></div>${hasPermission("create", "products") ? '<a class="admin-primary-link" href="/dashboard/shop/products/new" data-dashboard-link>Create Product</a>' : ""}</div>
+        <div class="section-heading-row"><div><p class="section-label">Catalog</p><h2>Products</h2></div>${hasPermission("create", "products") ? '<a class="admin-primary-link" href="/dashboard/shop/products/new" data-dashboard-link>Add product</a>' : ""}</div>
+        ${renderCatalogTools("shop-products")}
         ${errorMessage ? `<p class="form-message error">Products are not available yet: ${escapeHtml(errorMessage)}</p>` : ""}
         <div class="admin-card table-card">
           <table class="admin-table">
-            <thead><tr><th>Name</th><th>Slug</th><th>Status</th><th>Price</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Updated</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Status</th><th>Price</th><th>Stock</th><th>Updated</th><th>Actions</th></tr></thead>
             <tbody>
               ${
                 products.length
@@ -834,29 +797,25 @@ export function renderShopProductsPage(products, errorMessage = "") {
                         (product) => `
                           <tr>
                             <td><a href="${escapeHtml(canUpdateProducts ? adminHref("product-editor", product.slug) : publicHrefForProduct(product))}" ${canUpdateProducts ? "data-dashboard-link" : ""}><strong>${escapeHtml(product.name)}</strong></a></td>
-                            <td>${escapeHtml(product.slug)}</td>
                             <td><span class="status-pill">${escapeHtml(product.status)}</span></td>
                             <td>${escapeHtml(formatMoney(product.priceCents, product.currency || "EUR"))}</td>
-                            <td>${escapeHtml(productOnHandStock(product))}</td>
-                            <td>${escapeHtml(productReservedStock(product))}</td>
-                            <td>${escapeHtml(productAvailableStock(product))}</td>
+                            <td><strong>${escapeHtml(productAvailableStock(product))} available</strong><small class="product-stock-detail">${escapeHtml(productOnHandStock(product))} on hand${productReservedStock(product) ? ` · ${escapeHtml(productReservedStock(product))} reserved` : ""}</small></td>
                             <td>${escapeHtml(formatDate(product.updatedAt))}</td>
                             <td>
-                              <a href="${escapeHtml(publicHrefForProduct(product))}">View it</a>
-                              ${canUpdateProducts ? `
-                                <span class="table-separator">/</span>
-                                <a href="${escapeHtml(adminHref("product-editor", product.slug))}" data-dashboard-link>Edit</a>
-                              ` : ""}
+                              <div class="page-actions" aria-label="Actions for ${escapeHtml(product.name)}">
+                                ${canUpdateProducts ? `<a class="page-action-primary" href="${escapeHtml(adminHref("product-editor", product.slug))}" data-dashboard-link>Edit</a>` : ""}
+                                <a href="${escapeHtml(publicHrefForProduct(product))}">View</a>
+                              </div>
                             </td>
                           </tr>
                         `
                       )
                       .join("")
                   : renderEmptyTableRow(
-                      9,
+                      6,
                       "No products yet",
                       "Create the first product as a draft, then publish it when pricing and stock are ready.",
-                      hasPermission("create", "products") ? '<a class="admin-primary-link" href="/dashboard/shop/products/new" data-dashboard-link>Create Product</a>' : ""
+                      hasPermission("create", "products") ? '<a class="admin-primary-link" href="/dashboard/shop/products/new" data-dashboard-link>Add product</a>' : ""
                     )
               }
             </tbody>
@@ -874,9 +833,10 @@ export function renderProductCategoriesPage(categories, errorMessage = "") {
     `
       <section class="admin-section">
         <div class="section-heading-row">
-          <div><p class="section-label">Catalog taxonomy</p><h2>Product Categories</h2><p class="dashboard-copy">Categories power catalog organization, public category pages, and product filters.</p></div>
-          ${hasPermission("create", "products") ? '<button type="button" data-create-product-category>Create Category</button>' : ""}
+          <div><p class="section-label">Catalog</p><h2>Categories</h2></div>
+          ${hasPermission("create", "products") ? '<button type="button" data-create-product-category>Add category</button>' : ""}
         </div>
+        ${renderCatalogTools("shop-categories")}
         ${errorMessage ? `<p class="form-message error">Product categories are not available yet: ${escapeHtml(errorMessage)}</p>` : ""}
         <div class="admin-card table-card">
           <table class="admin-table">
@@ -917,9 +877,10 @@ export function renderProductAttributesPage(attributes, errorMessage = "") {
     `
       <section class="admin-section">
         <div class="section-heading-row">
-          <div><p class="section-label">Product filters</p><h2>Product Attributes</h2><p class="dashboard-copy">Define reusable specs such as material, finish, size, industry, or compatibility.</p></div>
-          ${hasPermission("create", "products") ? '<button type="button" data-create-product-attribute>Create Attribute</button>' : ""}
+          <div><p class="section-label">Catalog</p><h2>Attributes</h2></div>
+          ${hasPermission("create", "products") ? '<button type="button" data-create-product-attribute>Add attribute</button>' : ""}
         </div>
+        ${renderCatalogTools("shop-attributes")}
         ${errorMessage ? `<p class="form-message error">Product attributes are not available yet: ${escapeHtml(errorMessage)}</p>` : ""}
         <div class="admin-card table-card">
           <table class="admin-table">
@@ -1519,17 +1480,17 @@ export function renderShopConfigurationPage(config, shopSettings = {}, paymentCo
     "shop-configuration",
     `
       <section class="admin-section shop-settings-workspace">
-        <div class="section-heading-row"><div><p class="section-label">Customize</p><h2>Shop experience</h2><p class="dashboard-copy">Set the storefront once. Individual products only contain product-specific information.</p></div></div>
+        <div class="section-heading-row"><div><p class="section-label">Settings</p><h2>Store and checkout</h2></div></div>
         <div class="shop-settings-tab-shell">
           <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-storefront" checked />
           <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-rules" />
           <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-payments" />
           <input class="settings-tab-input shop-settings-tab-input" type="radio" name="shop-settings-tab" id="shop-tab-system" />
           <nav class="admin-tabs shop-settings-tabs" aria-label="Shop settings sections">
-            <label for="shop-tab-storefront">Storefront</label>
+            <label for="shop-tab-storefront">Design</label>
             <label for="shop-tab-rules">Commerce rules</label>
             <label for="shop-tab-payments">Payments</label>
-            <label for="shop-tab-system">System</label>
+            <label for="shop-tab-system">Advanced</label>
           </nav>
 
           <section class="shop-settings-tab-panel shop-settings-tab-panel-storefront">
