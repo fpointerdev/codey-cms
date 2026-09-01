@@ -164,6 +164,11 @@ test("admin settings and builder controls complete their primary workflows", asy
     if (message.type() === "error") browserErrors.push(message.text());
   });
 
+  await expect(page.getByRole("heading", { name: "Your website" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Edit website/ })).toBeVisible();
+  await expect(page.locator("details.dashboard-system-details")).not.toHaveAttribute("open", "");
+  await expect(page.getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/dashboard\/settings$/);
   await expect(page.locator("[data-launch-readiness]")).toBeVisible();
@@ -188,7 +193,7 @@ test("admin settings and builder controls complete their primary workflows", asy
   const homeRow = page.getByRole("row").filter({
     has: page.getByRole("link", { name: "Home", exact: true })
   });
-  await homeRow.getByRole("link", { name: "Backend builder" }).click();
+  await homeRow.getByRole("link", { name: "Edit structure" }).click();
   await expect(page).toHaveURL(/\/dashboard\/pages\/home\/builder/);
   const builder = page.locator("[data-page-builder]");
   await expect(builder).toBeVisible();
@@ -498,7 +503,7 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   const homeRow = page.getByRole("row").filter({
     has: page.getByRole("link", { name: "Home", exact: true })
   });
-  await homeRow.getByRole("link", { name: "Backend builder" }).click();
+  await homeRow.getByRole("link", { name: "Edit structure" }).click();
   await expect(page.locator("[data-page-builder]")).toBeVisible();
 
   const librarySearch = page.getByPlaceholder("Search sections and elements");
@@ -647,7 +652,7 @@ test("backend builder follows visual editor changes from another tab", async ({ 
   const homeRow = page.getByRole("row").filter({
     has: page.getByRole("link", { name: "Home", exact: true })
   });
-  await homeRow.getByRole("link", { name: "Backend builder" }).click();
+  await homeRow.getByRole("link", { name: "Edit structure" }).click();
   await expect(page.locator("[data-page-builder]")).toBeVisible();
 
   const visualEditor = await page.context().newPage();
@@ -729,10 +734,15 @@ test("visual editing, design tokens, and reusable sections work without hover", 
   const homeRow = page.getByRole("row").filter({
     has: page.getByRole("link", { name: "Home", exact: true })
   });
-  await homeRow.getByRole("link", { name: "Backend builder" }).click();
-  await page.getByRole("link", { name: "Visual editor", exact: true }).click();
+  await homeRow.getByRole("link", { name: "Edit structure" }).click();
+  const structureModeSwitch = page.getByRole("navigation", { name: "Editing mode" });
+  await expect(structureModeSwitch.getByText("Structure", { exact: true })).toHaveAttribute("aria-current", "page");
+  await structureModeSwitch.getByRole("link", { name: "On-page" }).click();
   await expect(page).toHaveURL(/[?&]edit=1(?:&|$)/);
   await expect(page.locator("[data-editor-ui].visual-editor-bar")).toBeVisible();
+  const onPageModeSwitch = page.getByRole("navigation", { name: "Editing mode" });
+  await expect(onPageModeSwitch.getByText("On-page", { exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(onPageModeSwitch.getByRole("link", { name: "Structure" })).toBeVisible();
   await expect(page.locator("[data-visual-section]").first()).toBeVisible();
   await expect(page.locator("[data-visual-block]").first()).toBeVisible();
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--accent").trim())).toBe("#2463eb");

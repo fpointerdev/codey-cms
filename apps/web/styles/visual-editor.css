@@ -106,6 +106,27 @@ body.editor-enabled[data-visual-device="mobile"]:not(.dashboard-enabled) .page-s
   gap: 6px;
 }
 
+.editor-mode-switch-dark {
+  flex: 0 0 auto;
+  border-color: #44515d;
+  background: #222c35;
+}
+
+.editor-mode-switch-dark a,
+.editor-mode-switch-dark span {
+  color: #cbd4db;
+}
+
+.editor-mode-switch-dark a:hover {
+  color: #ffffff;
+}
+
+.editor-mode-switch-dark [aria-current="page"] {
+  background: #0d7c68;
+  color: #ffffff;
+  box-shadow: none;
+}
+
 .visual-editor-history,
 .visual-device-switch {
   gap: 3px;

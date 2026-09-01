@@ -500,7 +500,7 @@ test("read-only dashboard views hide mutation controls", async () => {
     status: "PUBLISHED",
     updatedAt: new Date().toISOString()
   }]);
-  assert.doesNotMatch(page.innerHTML, /Backend builder|Frontend editor/);
+  assert.doesNotMatch(page.innerHTML, /Edit visually|Edit structure/);
   assert.doesNotMatch(page.innerHTML, /\/dashboard\/pages\/about\/builder/);
 
   renderPostsPage([]);

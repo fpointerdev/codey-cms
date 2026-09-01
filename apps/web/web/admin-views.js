@@ -10,7 +10,6 @@ import {
   state
 } from "./core.js";
 import { adminHref, publicPageHref, publicPostHref, publicProductHref } from "./routes.js";
-import { renderComponentPalette } from "./public-renderer.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
 import {
   cardStyleOptions,
@@ -177,33 +176,33 @@ function currentLocaleSuffix() {
 function renderDashboardActions() {
   const actions = [
     {
-      title: "Pages",
-      body: "Create pages, open live previews, and edit page sections.",
-      action: "Manage pages",
+      title: "Edit website",
+      body: "Pages, navigation, and visual content.",
+      action: "Open pages",
       href: "/dashboard/pages",
       modules: ["cms"],
       permissions: [["read", "cms"]]
     },
     {
-      title: "Posts",
-      body: "Prepare articles, updates, and content connected to site pages.",
-      action: "Manage posts",
+      title: "Write a post",
+      body: "Articles, news, and updates.",
+      action: "Open posts",
       href: "/dashboard/posts",
       modules: ["cms"],
       permissions: [["read", "cms"]]
     },
     {
-      title: "Shop",
-      body: "Review products, orders, and shop module configuration.",
+      title: "Run the shop",
+      body: "Products, orders, and checkout.",
       action: "Open shop",
       href: "/dashboard/shop",
       modules: ["products", "orders"],
       permissions: [["read", "products"], ["read", "orders"]]
     },
     {
-      title: "Users",
-      body: "Invite editors and review access for this client project.",
-      action: "Manage users",
+      title: "Manage the team",
+      body: "People, roles, and access.",
+      action: "Open users",
       href: "/dashboard/users",
       modules: ["users", "roles"],
       permissions: [["read", "users"]]
@@ -294,27 +293,22 @@ export function renderDashboardHome(data = {}) {
       <section class="admin-page-header">
         <div>
           <p class="section-label">Dashboard</p>
-          <h1 class="dashboard-title">Project Console</h1>
-          <p class="dashboard-copy">
-            Manage the website structure, content, users, shop modules, and publishing setup from one focused workspace.
-          </p>
+          <h1 class="dashboard-title">Your website</h1>
         </div>
-        <a class="admin-primary-link" href="/">View Site</a>
+        <a class="admin-primary-link" href="/">View website</a>
       </section>
       <section class="admin-section admin-panel">
-        <div class="section-heading-row"><div><p class="section-label">Workflows</p><h2>Build and operate this site</h2></div></div>
+        <div class="section-heading-row"><div><p class="section-label">Start here</p><h2>What do you want to do?</h2></div></div>
         ${renderDashboardActions()}
       </section>
-      <section class="dashboard-two-column">
-        <div class="admin-section admin-panel">
-          <div class="section-heading-row"><div><p class="section-label">Module state</p><h2>Installed capabilities</h2></div></div>
+      <details class="admin-section admin-panel dashboard-system-details">
+        <summary>
+          <span><strong>Site capabilities</strong><small>Installed modules and technical status</small></span>
+        </summary>
+        <div class="dashboard-system-details-body">
           ${renderModuleStatusList(config)}
         </div>
-        <div class="admin-section admin-panel">
-          <div class="section-heading-row"><div><p class="section-label">Builder library</p><h2>Default elements</h2></div></div>
-          ${renderComponentPalette()}
-        </div>
-      </section>
+      </details>
     `
   );
   setStatus("Dashboard loaded.");
@@ -413,7 +407,7 @@ export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
         ${renderLocaleFilterBar("/dashboard/pages", allPages)}
         <div class="admin-card table-card">
           <table class="admin-table">
-            <thead><tr><th>Title</th><th>Slug</th><th>Language</th><th>Status</th><th>Translations</th><th>Updated</th><th>Editors</th></tr></thead>
+            <thead><tr><th>Title</th><th>Slug</th><th>Language</th><th>Status</th><th>Translations</th><th>Updated</th><th>Actions</th></tr></thead>
             <tbody>
               ${
                 pages.length
@@ -421,24 +415,23 @@ export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
                       .map(
                         (page) => `
                           <tr>
-                            <td><a href="${escapeHtml(canUpdatePages ? hrefWithLocale(adminHref("page-builder", page.slug), page.locale) : publicHrefForPage(page))}" ${canUpdatePages ? "data-dashboard-link" : ""}><strong>${escapeHtml(page.title)}</strong></a></td>
+                            <td><a href="${escapeHtml(canUpdatePages ? customStorefrontEditorHref(page, publicHrefForPage(page)) : publicHrefForPage(page))}"><strong>${escapeHtml(page.title)}</strong></a></td>
                             <td>${escapeHtml(page.slug)}</td>
                             <td>${localeBadge(page)}</td>
                             <td><span class="status-pill">${escapeHtml(page.status)}</span></td>
                             <td>${translationStatusBadges(page, allPages)}</td>
                             <td>${escapeHtml(formatDate(page.updatedAt))}</td>
                             <td>
-                              <a href="${escapeHtml(publicHrefForPage(page))}">View it</a>
-                              ${canUpdatePages ? `
-                                <span class="table-separator">/</span>
-                                <a href="${escapeHtml(customStorefrontEditorHref(page, publicHrefForPage(page)))}">Frontend editor</a>
-                                <span class="table-separator">/</span>
-                                <a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link>Backend builder</a>
-                              ` : ""}
+                              <div class="page-actions" aria-label="Actions for ${escapeHtml(page.title)}">
+                                ${canUpdatePages ? `
+                                  <a class="page-action-primary" href="${escapeHtml(customStorefrontEditorHref(page, publicHrefForPage(page)))}">Edit visually</a>
+                                  <a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link>Edit structure</a>
+                                ` : ""}
+                                <a href="${escapeHtml(publicHrefForPage(page))}">View</a>
                               ${enabledLocales(allPages).length > 1 && hasPermission("create", "cms") ? `
-                                <span class="table-separator">/</span>
                                 <button type="button" class="link-button" data-create-page-translation="${escapeHtml(page.slug)}" data-source-locale="${escapeHtml(page.locale || "en")}" data-source-title="${escapeHtml(page.title)}">Translate</button>
                               ` : ""}
+                              </div>
                             </td>
                           </tr>
                         `
@@ -527,7 +520,7 @@ function renderPostsTable(posts, errorMessage = "", allPosts = posts) {
                               <a href="${escapeHtml(publicHrefForPost(post))}">View it</a>
                               ${canUpdatePosts ? `
                                 <span class="table-separator">/</span>
-                                <a href="${escapeHtml(hrefWithLocale(adminHref("post-builder", post.slug), post.locale))}" data-dashboard-link>Backend builder</a>
+                                <a href="${escapeHtml(hrefWithLocale(adminHref("post-builder", post.slug), post.locale))}" data-dashboard-link>Edit post</a>
                               ` : ""}
                               ${enabledLocales(allPosts).length > 1 && hasPermission("create", "cms") ? `
                                 <span class="table-separator">/</span>
