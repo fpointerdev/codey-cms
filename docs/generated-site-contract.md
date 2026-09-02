@@ -60,6 +60,33 @@ Run `pnpm validate`, validate the WebsiteSpec with `dryRun: true`, then perform 
 Applying a `WebsiteSpec` is atomic. Site settings, modules, media placeholders,
 pages, posts, products, and navigation commit together or roll back together.
 
+## Agent Automation Discovery
+
+`GET /api/v1/config/generation/contract` is the canonical machine-readable
+entrypoint for CodeY and other generation agents. It requires an authenticated
+user with `read:modules`; installation status and minimal readiness remain the
+only anonymous bootstrap diagnostics.
+
+The response keeps WebsiteSpec `1.0` and the builder contract backward
+compatible while adding `automation.version: "1.0"`. Agents should read:
+
+- `runtime` for the installed CMS version and API base path.
+- `automation.workflow` for the ordered readiness, installation, login,
+  discovery, validation, dry-run, atomic apply, and public SSR checks.
+- `automation.authentication` and `automation.responseEnvelope` instead of
+  inferring token or error locations.
+- `websiteSpec.example`, which is parsed by the authoritative Zod validator at
+  runtime, as a valid starting payload rather than a content template.
+- `builder` for the current generator-safe elements, patterns, presets, and
+  bounded editor options.
+- `publicRuntime` for canonical public, shop, product, cart, and checkout
+  behavior. `/cart` and `/checkout` are not generated CMS pages.
+
+Future signed releases advertise `contracts.generationAutomation: "1.0"`.
+CodeY may use that signed flag before installation, then confirm the live
+contract after login. The contract contains operational metadata only; it does
+not expose secrets or internal generation prompts.
+
 ## Exported-Site Acceptance
 
 Signed releases that support the exported-site acceptance contract advertise

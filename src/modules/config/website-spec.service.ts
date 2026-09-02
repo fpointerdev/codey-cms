@@ -20,6 +20,13 @@ import {
 } from "../builder/element-registry.js";
 import { websiteSpecSchema, type WebsiteSpec, type WebsiteSpecMedia, type WebsiteSpecSection } from "./website-spec.schemas.js";
 import { normalizeDesignSystemSettings } from "./site-design.js";
+import {
+  builderContractVersion,
+  exportedSiteAcceptanceContractVersion,
+  generationAutomationContractVersion,
+  runtimeVersion,
+  websiteSpecContractVersion
+} from "../../runtime/release.js";
 
 type RequestUser = {
   id: string;
@@ -195,6 +202,48 @@ const sectionTemplateByType: Record<WebsiteSpecSection["type"], string> = {
   faq: "custom",
   custom: "custom"
 };
+
+const generationExample = websiteSpecSchema.parse({
+  version: "1.0",
+  intent: "presentation",
+  project: {
+    name: "Example site",
+    slug: "example-site",
+    summary: "A concise description of the real website and its audience.",
+    locale: "en",
+    timezone: "UTC",
+    currency: "EUR"
+  },
+  modules: { cms: true },
+  style: {
+    theme: "clean",
+    colorPalette: {
+      primary: "#111827",
+      accent: "#2563eb"
+    }
+  },
+  pages: [{
+    title: "Home",
+    slug: "home",
+    purpose: "home",
+    includeInNavigation: true,
+    seo: {
+      title: "Example site",
+      description: "A clear description for search results."
+    },
+    sections: [{
+      key: "hero",
+      type: "hero",
+      eyebrow: "Example",
+      heading: "A useful, specific headline",
+      body: "Replace this example with truthful customer content.",
+      settings: { elementId: "hero-creative" }
+    }]
+  }],
+  posts: [],
+  products: [],
+  media: []
+});
 
 export function validateWebsiteSpec(input: unknown) {
   return websiteSpecSchema.parse(input);
@@ -446,7 +495,140 @@ async function syncLocalizationSettings(
 
 export function generationContract() {
   return {
-    version: "1.0",
+    name: "codey-cms.website-generation",
+    version: websiteSpecContractVersion,
+    runtime: {
+      product: "codey-cms",
+      version: runtimeVersion,
+      apiBasePath: "/api/v1"
+    },
+    automation: {
+      version: generationAutomationContractVersion,
+      release: {
+        selection: "latest-signed-stable",
+        customerVersionChoice: false,
+        requiredContracts: {
+          websiteSpec: websiteSpecContractVersion,
+          builder: builderContractVersion,
+          generationAutomation: generationAutomationContractVersion,
+          exportedSiteAcceptance: exportedSiteAcceptanceContractVersion
+        }
+      },
+      authentication: {
+        type: "bearer",
+        loginPath: "/api/v1/auth/login",
+        accessTokenPath: "data.tokens.accessToken",
+        header: "Authorization: Bearer <accessToken>",
+        refresh: "http-only-cookie"
+      },
+      responseEnvelope: {
+        successPath: "success",
+        dataPath: "data",
+        errorCodePath: "error.code",
+        requestIdPath: "meta.requestId"
+      },
+      workflow: [
+        {
+          id: "readiness",
+          method: "GET",
+          path: "/api/v1/health/ready",
+          authentication: "none",
+          success: "data.status=ready"
+        },
+        {
+          id: "installation-status",
+          method: "GET",
+          path: "/api/v1/install/status",
+          authentication: "none",
+          success: "data.installed=true"
+        },
+        {
+          id: "installation-complete",
+          method: "POST",
+          path: "/api/v1/install/complete",
+          authentication: "none",
+          requestSchema: "completeInstallationSchema",
+          condition: "installation-status returns data.installed=false"
+        },
+        {
+          id: "login",
+          method: "POST",
+          path: "/api/v1/auth/login",
+          authentication: "none",
+          requestSchema: "loginSchema",
+          success: "data.tokens.accessToken is present"
+        },
+        {
+          id: "discover",
+          method: "GET",
+          path: "/api/v1/config/generation/contract",
+          authentication: "bearer",
+          permission: { action: "read", subject: "modules" }
+        },
+        {
+          id: "validate",
+          method: "POST",
+          path: "/api/v1/config/generation/validate",
+          authentication: "bearer",
+          permission: { action: "read", subject: "modules" },
+          requestSchema: "websiteSpecRequestSchema",
+          body: { spec: "WebsiteSpec 1.0" },
+          writes: false
+        },
+        {
+          id: "dry-run",
+          method: "POST",
+          path: "/api/v1/config/generation/apply",
+          authentication: "bearer",
+          permission: { action: "manage", subject: "modules" },
+          requestSchema: "applyWebsiteSpecRequestSchema",
+          body: { spec: "WebsiteSpec 1.0", dryRun: true },
+          writes: false
+        },
+        {
+          id: "apply",
+          method: "POST",
+          path: "/api/v1/config/generation/apply",
+          authentication: "bearer",
+          permission: { action: "manage", subject: "modules" },
+          requestSchema: "applyWebsiteSpecRequestSchema",
+          body: { spec: "WebsiteSpec 1.0", dryRun: false },
+          writes: true,
+          atomic: true
+        },
+        {
+          id: "verify-public-html",
+          method: "GET",
+          path: "/{pageSlug}",
+          authentication: "none",
+          success: "HTML contains data-server-rendered=true and expected content"
+        }
+      ],
+      guarantees: {
+        validationHasNoWrites: true,
+        dryRunHasNoWrites: true,
+        applyIsAtomic: true,
+        publicContentIsServerRendered: true,
+        unknownRootAndStructuredFieldsAreRejected: true,
+        sectionSettingsAreExtensible: true
+      }
+    },
+    websiteSpec: {
+      version: websiteSpecContractVersion,
+      validator: "websiteSpecSchema",
+      strict: true,
+      requiredRootFields: ["version", "intent", "project", "style", "pages"],
+      defaultedRootFields: ["modules", "posts", "products", "media"],
+      limits: {
+        pages: 40,
+        sectionsPerPage: 30,
+        posts: 80,
+        products: 200,
+        media: 250,
+        customElementValueBytes: 64_000
+      },
+      example: generationExample
+    },
     intents: ["presentation", "cms", "shop", "saas"],
     deploymentProfiles,
     modules: moduleCatalog,
@@ -460,7 +642,31 @@ export function generationContract() {
     },
     sectionTypes: Object.keys(sectionTemplateByType),
     contentBlockTypes: contentBlockTypes(),
-    mediaKinds: ["IMAGE", "VIDEO", "DOCUMENT", "OTHER"]
+    mediaKinds: ["IMAGE", "VIDEO", "DOCUMENT", "OTHER"],
+    publicRuntime: {
+      serverRendered: true,
+      marker: { attribute: "data-server-rendered", value: "true" },
+      routes: [
+        { id: "home", path: "/" },
+        { id: "page", path: "/{slug}" },
+        { id: "shop", path: "/shop", module: "products" },
+        { id: "product", path: "/product/{slug}", module: "products" },
+        { id: "admin", path: "/dashboard" }
+      ],
+      commerce: {
+        cart: "in-context-dialog",
+        checkout: "in-context-dialog",
+        doNotGeneratePageSlugs: ["cart", "checkout"],
+        acceptance: "browser-interaction-required"
+      }
+    },
+    rules: [
+      { id: "registry-first", message: "Use only generator-safe elements advertised by builder.elements." },
+      { id: "no-custom-code", message: "Never emit the trusted-editor custom-code element from WebsiteSpec." },
+      { id: "validate-before-apply", message: "Validate, dry-run, and then apply the same WebsiteSpec." },
+      { id: "truthful-acceptance", message: "Claim a public or commerce journey only after browser interaction passes." },
+      { id: "preserve-runtime", message: "Do not modify authentication, permissions, payments, migrations, or signed update boundaries." }
+    ]
   };
 }
 
