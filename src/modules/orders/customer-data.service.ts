@@ -46,7 +46,8 @@ export async function exportCustomerData(context: ModuleContext, email: string) 
   const payments = orderIds.length
     ? await context.prisma.payment.findMany({
         where: { orderId: { in: orderIds } },
-        orderBy: { createdAt: "asc" }
+        orderBy: { createdAt: "asc" },
+        include: { refunds: { orderBy: { createdAt: "asc" } } }
       })
     : [];
   const paymentReferences = payments.flatMap((payment) => payment.providerReference
@@ -60,7 +61,7 @@ export async function exportCustomerData(context: ModuleContext, email: string) 
     : [];
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     customerEmail: normalizedEmail,
     orders: orders.map(adminOrderDto),
@@ -156,6 +157,10 @@ export async function anonymizeCustomerData(
       await tx.payment.updateMany({
         where: { orderId: { in: orderIds } },
         data: { metadata: Prisma.DbNull }
+      });
+      await tx.paymentRefund.updateMany({
+        where: { payment: { orderId: { in: orderIds } } },
+        data: { note: null, failureMessage: null }
       });
       await tx.orderSupportCase.updateMany({
         where: { orderId: { in: orderIds } },

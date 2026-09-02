@@ -699,7 +699,7 @@ function renderCatalogTools(activeView) {
 function orderNeedsAttention(order = {}) {
   return ["PENDING", "CONFIRMED", "PAID"].includes(order.status)
     || order.checkoutStatus === "PAYMENT_PENDING"
-    || order.supportCases?.some((supportCase) => ["OPEN", "IN_REVIEW"].includes(supportCase.status));
+    || order.supportCases?.some((supportCase) => ["OPEN", "IN_REVIEW", "APPROVED"].includes(supportCase.status));
 }
 
 function productPurchaseMode(product = {}) {
@@ -981,10 +981,35 @@ function paymentForOrder(payments, orderId) {
   return payments.find((payment) => payment.orderId === orderId) || null;
 }
 
-function manualPaymentActions(payment) {
-  if (!payment || payment.provider !== "MANUAL" || !hasPermission("update", "payments")) return "";
+function paymentRefundedCents(payment) {
+  const value = payment?.metadata && typeof payment.metadata === "object"
+    ? payment.metadata.refundedCents
+    : 0;
+  return Number.isInteger(value) ? Math.min(payment.amountCents, Math.max(0, value)) : 0;
+}
 
-  if (["PENDING", "REQUIRES_ACTION"].includes(payment.status)) {
+function paymentStatusDetails(payment) {
+  if (!payment) return "";
+  const refundedCents = paymentRefundedCents(payment);
+  const pending = payment.refunds?.find((refund) => refund.status === "PENDING");
+  const failed = payment.refunds?.find((refund) => refund.status === "FAILED");
+
+  return [
+    refundedCents > 0
+      ? `<small class="payment-order-status">Refunded ${escapeHtml(formatMoney(refundedCents, payment.currency))}</small>`
+      : "",
+    pending
+      ? `<small class="payment-order-status">Refund pending: ${escapeHtml(formatMoney(pending.amountCents, pending.currency))}</small>`
+      : failed
+        ? '<small class="payment-order-status error">Last refund failed</small>'
+        : ""
+  ].join("");
+}
+
+function paymentActions(payment, order) {
+  if (!payment || !hasPermission("update", "payments")) return "";
+
+  if (payment.provider === "MANUAL" && ["PENDING", "REQUIRES_ACTION"].includes(payment.status)) {
     return `
       <div class="payment-order-actions">
         <button type="button" class="link-button" data-manual-payment-action="SUCCEED" data-payment-id="${escapeHtml(payment.id)}">Mark paid</button>
@@ -993,11 +1018,46 @@ function manualPaymentActions(payment) {
     `;
   }
 
-  if (payment.status === "SUCCEEDED") {
-    return `<button type="button" class="link-button danger" data-manual-payment-action="REFUND" data-payment-id="${escapeHtml(payment.id)}">Mark refunded</button>`;
-  }
+  const refundedCents = paymentRefundedCents(payment);
+  const remainingCents = payment.amountCents - refundedCents;
+  const pending = payment.refunds?.find((refund) => refund.status === "PENDING");
+  if (payment.status !== "SUCCEEDED" || remainingCents <= 0 || pending) return "";
 
-  return "";
+  const failed = payment.refunds?.find((refund) => (
+    refund.status === "FAILED" &&
+    refund.initiatedByUserId &&
+    refund.amountCents <= remainingCents &&
+    (!refund.supportCaseId || order?.supportCases?.some((supportCase) => (
+      supportCase.id === refund.supportCaseId && supportCase.status === "APPROVED"
+    )))
+  ));
+  const approvedRequest = order?.supportCases?.find((supportCase) => (
+    supportCase.type === "REFUND" &&
+    supportCase.status === "APPROVED" &&
+    supportCase.requestedRefundCents > 0 &&
+    supportCase.requestedRefundCents <= remainingCents
+  ));
+  const linkedRequest = failed
+    ? failed.supportCaseId
+      ? order?.supportCases?.find((supportCase) => supportCase.id === failed.supportCaseId)
+      : null
+    : approvedRequest;
+  const amountCents = failed?.amountCents || linkedRequest?.requestedRefundCents || remainingCents;
+  return `
+    <button
+      type="button"
+      class="link-button danger"
+      data-payment-refund="${escapeHtml(payment.id)}"
+      data-payment-provider="${escapeHtml(payment.provider)}"
+      data-refund-currency="${escapeHtml(payment.currency)}"
+      data-refund-max-cents="${escapeHtml(remainingCents)}"
+      data-refund-amount-cents="${escapeHtml(amountCents)}"
+      data-refund-reason="${escapeHtml(failed?.reason || "CUSTOMER_REQUEST")}"
+      data-refund-note="${escapeHtml(failed?.note || "")}"
+      ${failed ? `data-retry-refund-id="${escapeHtml(failed.id)}"` : ""}
+      ${linkedRequest ? `data-refund-support-case-id="${escapeHtml(linkedRequest.id)}"` : ""}
+    >${failed ? "Retry refund" : linkedRequest ? "Issue approved refund" : "Refund"}</button>
+  `;
 }
 
 function merchantOrderAction(order) {
@@ -1059,8 +1119,11 @@ function orderSupportCases(order) {
           <article>
             <div><span><strong>${escapeHtml(supportCase.subject)}</strong><small>${escapeHtml(supportCase.type.replaceAll("_", " "))} · ${escapeHtml(formatDate(supportCase.createdAt))}</small></span><span class="status-pill">${escapeHtml(supportCase.status)}</span></div>
             <p>${escapeHtml(supportCase.message)}</p>
+            ${supportCase.type === "REFUND" && supportCase.requestedRefundCents
+              ? `<p><strong>Requested refund:</strong> ${escapeHtml(formatMoney(supportCase.requestedRefundCents, order.currency))}</p>`
+              : ""}
             ${supportCase.merchantResponse ? `<blockquote><strong>Response</strong><p>${escapeHtml(supportCase.merchantResponse)}</p></blockquote>` : ""}
-            ${hasPermission("update", "orders") ? `<button type="button" class="link-button" data-order-case-update="${escapeHtml(supportCase.id)}" data-order-case-status="${escapeHtml(supportCase.status)}" data-order-case-response="${escapeHtml(supportCase.merchantResponse || "")}">Update request</button>` : ""}
+            ${hasPermission("update", "orders") ? `<button type="button" class="link-button" data-order-case-update="${escapeHtml(supportCase.id)}" data-order-case-type="${escapeHtml(supportCase.type)}" data-order-case-status="${escapeHtml(supportCase.status)}" data-order-case-response="${escapeHtml(supportCase.merchantResponse || "")}">${supportCase.type === "REFUND" ? "Review refund request" : "Update request"}</button>` : ""}
           </article>
         `).join("")}
       </div>
@@ -1106,7 +1169,7 @@ function orderDetailRow(order) {
 
 export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
   const openCaseCount = orders.reduce((count, order) => count + (order.supportCases || [])
-    .filter((supportCase) => ["OPEN", "IN_REVIEW"].includes(supportCase.status)).length, 0);
+    .filter((supportCase) => ["OPEN", "IN_REVIEW", "APPROVED"].includes(supportCase.status)).length, 0);
   renderShopShell(
     "shop-orders",
     `
@@ -1133,9 +1196,9 @@ export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
                           <tr>
                             <td><strong>${escapeHtml(order.orderNumber || order.id)}</strong></td>
                             <td>${escapeHtml(order.customerName || order.customerEmail)}</td>
-                            <td><span class="status-pill">${escapeHtml(order.status)}</span>${order.supportCases?.some((supportCase) => ["OPEN", "IN_REVIEW"].includes(supportCase.status)) ? '<small class="payment-order-status">Buyer request</small>' : ""}</td>
+                            <td><span class="status-pill">${escapeHtml(order.status)}</span>${order.supportCases?.some((supportCase) => ["OPEN", "IN_REVIEW", "APPROVED"].includes(supportCase.status)) ? '<small class="payment-order-status">Buyer request</small>' : ""}</td>
                             <td>${payment
-                              ? `<strong>${escapeHtml(payment.provider)}</strong><small class="payment-order-status">${escapeHtml(payment.status)}</small>`
+                              ? `<strong>${escapeHtml(payment.provider)}</strong><small class="payment-order-status">${escapeHtml(payment.status)}</small>${paymentStatusDetails(payment)}`
                               : escapeHtml(order.checkoutStatus)}</td>
                             <td>${escapeHtml(formatMoney(order.totalCents, order.currency || "EUR"))}</td>
                             <td>${escapeHtml(formatDate(order.createdAt))}</td>
@@ -1143,7 +1206,7 @@ export function renderShopOrdersPage(orders, payments = [], errorMessage = "") {
                               <div class="table-action-row">
                                 <button type="button" class="link-button" data-order-details-toggle="${escapeHtml(order.id)}" aria-controls="order-details-${escapeHtml(order.id)}" aria-expanded="false">Details</button>
                                 ${orderAction}
-                                ${hasPermission("update", "payments") ? manualPaymentActions(payment) : ""}
+                                ${paymentActions(payment, order)}
                               </div>
                             </td>
                           </tr>

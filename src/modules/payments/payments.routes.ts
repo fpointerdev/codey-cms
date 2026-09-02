@@ -26,6 +26,7 @@ import {
   statusFromWebhook,
   type NormalizedPaymentEvent
 } from "./payment-event.service.js";
+import { createPaymentRefund } from "./payment-refund.service.js";
 import {
   paymentProviderConfigRevision,
   PaymentProviderConfigService,
@@ -37,7 +38,9 @@ import {
   createPayPalOrder,
   capturePayPalOrder,
   normalizePayPalWebhook,
+  payPalOrderReferenceForCapture,
   paymentStatusFromPayPal,
+  retrievePayPalCapture,
   retrievePayPalOrder,
   testPayPalConnection,
   verifyPayPalWebhook,
@@ -54,9 +57,11 @@ import {
 } from "./stripe-provider.js";
 import {
   capturePayPalOrderSchema,
+  createPaymentRefundSchema,
   createPaymentIntentSchema,
   manualPaymentActionSchema,
   manualPaymentParamsSchema,
+  paymentRefundParamsSchema,
   paymentProviderParamsSchema,
   updatePaymentProviderConfigSchema
 } from "./payments.schemas.js";
@@ -405,6 +410,7 @@ async function applyCompletedPayPalOrder(
     eventType: "payment.succeeded",
     providerEventId: `paypal-capture:${capture.id}`,
     providerReference: payment.providerReference!,
+    captureReference: capture.id,
     paymentId: payment.id,
     amountCents: centsFromPayPalAmount(capture.amount),
     currency: capture.amount?.currency_code?.toUpperCase(),
@@ -608,9 +614,78 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
     asyncHandler(async (_req, res) => {
       const payments = await context.prisma.payment.findMany({
         orderBy: { createdAt: "desc" },
-        take: 200
+        take: 200,
+        include: {
+          refunds: {
+            orderBy: { createdAt: "desc" },
+            take: 20
+          }
+        }
       });
       return sendSuccess(res, { payments });
+    })
+  );
+
+  router.post(
+    "/:paymentId/refunds",
+    requirePermission(context, "update", "payments"),
+    paymentLimiter,
+    validateRequest({ params: paymentRefundParamsSchema, body: createPaymentRefundSchema }),
+    asyncHandler(async (req, res) => {
+      assertRecentSensitiveAuthentication(req.user);
+      const auditPayment = await context.prisma.payment.findUnique({
+        where: { id: req.params.paymentId },
+        select: { provider: true }
+      });
+      try {
+        const result = await createPaymentRefund(context, {
+          paymentId: req.params.paymentId,
+          amountCents: req.body.amountCents,
+          reason: req.body.reason,
+          note: req.body.note,
+          idempotencyKey: req.body.idempotencyKey,
+          retryRefundId: req.body.retryRefundId,
+          supportCaseId: req.body.supportCaseId,
+          initiatedByUserId: req.user?.id
+        });
+        await providerService.writeAuditLog({
+          actorUserId: req.user?.id,
+          action: result.refund.status === "SUCCEEDED"
+            ? "payment_refund.succeeded"
+            : "payment_refund.pending",
+          provider: result.refund.provider,
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+          metadata: {
+            paymentId: result.refund.paymentId,
+            refundId: result.refund.id,
+            amountCents: result.refund.amountCents,
+            currency: result.refund.currency,
+            reason: result.refund.reason,
+            supportCaseId: result.refund.supportCaseId,
+            duplicate: result.duplicate
+          }
+        });
+
+        return result.duplicate ? sendSuccess(res, result) : sendCreated(res, result);
+      } catch (error) {
+        if (auditPayment) {
+          await providerService.writeAuditLog({
+            actorUserId: req.user?.id,
+            action: "payment_refund.failed",
+            provider: auditPayment.provider,
+            ipAddress: req.ip,
+            userAgent: req.get("user-agent"),
+            metadata: {
+              paymentId: req.params.paymentId,
+              amountCents: req.body.amountCents,
+              reason: req.body.reason,
+              error: error instanceof Error ? error.message.slice(0, 500) : "Refund failed"
+            }
+          });
+        }
+        throw error;
+      }
     })
   );
 
@@ -812,7 +887,16 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
         throw new AppError(404, "payment_not_found", "Manual payment was not found.");
       }
       const action = req.body.action as "SUCCEED" | "FAIL" | "REFUND";
-      const result = await processPaymentEvent(context, paymentEventForManualAction(payment, action));
+      if (action === "REFUND") assertRecentSensitiveAuthentication(req.user);
+      const result = action === "REFUND"
+        ? await createPaymentRefund(context, {
+            paymentId: payment.id,
+            reason: "OTHER",
+            note: "Refunded from the legacy manual payment action.",
+            idempotencyKey: `legacy-manual-refund:${payment.id}`,
+            initiatedByUserId: req.user?.id
+          })
+        : await processPaymentEvent(context, paymentEventForManualAction(payment, action));
       await providerService.writeAuditLog({
         actorUserId: req.user?.id,
         action: `manual_payment.${action.toLowerCase()}`,
@@ -869,8 +953,29 @@ export function registerPaymentRoutes(router: Router, context: ModuleContext) {
         event
       });
       await providerService.recordWebhookReceived("PAYPAL");
-      const normalized = normalizePayPalWebhook(event);
+      let normalized = normalizePayPalWebhook(event);
       if (!normalized) return sendSuccess(res, { received: true, ignored: true });
+      if (!normalized.providerReference && normalized.captureReference) {
+        const knownRefund = normalized.refundReference
+          ? await context.prisma.paymentRefund.findFirst({
+              where: {
+                provider: "PAYPAL",
+                providerReference: normalized.refundReference
+              },
+              select: { id: true }
+            })
+          : null;
+        if (!knownRefund) {
+          const capture = await retrievePayPalCapture({
+            mode: resolved.config.mode,
+            clientId: resolved.config.clientId!,
+            clientSecret: resolved.credentials.clientSecret!,
+            captureId: normalized.captureReference
+          });
+          const providerReference = payPalOrderReferenceForCapture(capture);
+          if (providerReference) normalized = { ...normalized, providerReference };
+        }
+      }
 
       return sendSuccess(res, await processPaymentEvent(context, normalized));
     })

@@ -1,6 +1,7 @@
 import type { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { Prisma } from "@prisma/client";
+import { AppError } from "../../core/errors/app-error.js";
 import type { ModuleContext } from "../../core/types/module.js";
 import { asyncHandler } from "../../core/http/async-handler.js";
 import { sendCreated, sendSuccess } from "../../core/http/response.js";
@@ -425,12 +426,62 @@ export function registerOrderRoutes(router: Router, context: ModuleContext) {
     requirePermission(context, "update", "orders"),
     validateRequest({ params: supportCaseIdParams, body: updateOrderSupportCaseSchema }),
     asyncHandler(async (req, res) => {
+      const current = await context.prisma.orderSupportCase.findUnique({
+        where: { id: req.params.caseId },
+        include: {
+          order: { select: { status: true, totalCents: true, metadata: true } },
+          refund: { select: { status: true } }
+        }
+      });
+      if (!current) {
+        throw new AppError(404, "support_case_not_found", "Buyer request was not found.");
+      }
+      if (["APPROVED", "REJECTED"].includes(req.body.status) && current.type !== "REFUND") {
+        throw new AppError(
+          422,
+          "support_case_status_invalid",
+          "Only refund requests can be approved or rejected."
+        );
+      }
+      if (
+        current.refund?.status === "SUCCEEDED" &&
+        !["RESOLVED", "CLOSED"].includes(req.body.status)
+      ) {
+        throw new AppError(
+          409,
+          "refund_request_already_paid",
+          "A completed refund request cannot be reopened."
+        );
+      }
+      if (req.body.status === "APPROVED") {
+        const metadata = current.order.metadata &&
+          typeof current.order.metadata === "object" &&
+          !Array.isArray(current.order.metadata)
+          ? current.order.metadata
+          : {};
+        const refundedCents = typeof metadata.refundedCents === "number" &&
+          Number.isInteger(metadata.refundedCents)
+          ? Math.min(current.order.totalCents, Math.max(0, metadata.refundedCents))
+          : 0;
+        const remainingCents = current.order.totalCents - refundedCents;
+        if (
+          !["PAID", "FULFILLED"].includes(current.order.status) ||
+          !current.requestedRefundCents ||
+          current.requestedRefundCents > remainingCents
+        ) {
+          throw new AppError(
+            409,
+            "refund_request_not_approvable",
+            "This refund request is no longer eligible for approval."
+          );
+        }
+      }
       const supportCase = await context.prisma.orderSupportCase.update({
         where: { id: req.params.caseId },
         data: {
           status: req.body.status,
           merchantResponse: req.body.merchantResponse,
-          resolvedAt: ["RESOLVED", "CLOSED"].includes(req.body.status) ? new Date() : null
+          resolvedAt: ["REJECTED", "RESOLVED", "CLOSED"].includes(req.body.status) ? new Date() : null
         }
       });
       return sendSuccess(res, { supportCase });

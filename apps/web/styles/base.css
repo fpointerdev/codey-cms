@@ -3957,7 +3957,8 @@ body:not([data-codey-runtime-theme="true"]) .content-block {
   font-size: 19px;
 }
 
-.buyer-cancellation-pending {
+.buyer-cancellation-pending,
+.buyer-refund-pending {
   display: inline-flex;
   align-items: center;
   min-height: 38px;
@@ -4077,6 +4078,14 @@ body:not([data-codey-runtime-theme="true"]) .content-block {
 
 .buyer-order-total strong {
   font-size: 22px;
+}
+
+.buyer-order-refund {
+  color: var(--success-text, #17633a);
+}
+
+.buyer-order-refund strong {
+  font-size: 18px;
 }
 
 .buyer-order-cases {

@@ -98,6 +98,7 @@ import {
   handleCustomerDataAction,
   openProductEditor,
   removeRepeaterRow,
+  refundPayment,
   savePaymentProvider,
   saveCommerceRule,
   saveOrderTracking,
@@ -979,6 +980,12 @@ function bindAdminClick(event) {
   const manualPaymentButton = event.target.closest("[data-manual-payment-action]");
   if (manualPaymentButton) {
     void updateManualPayment(manualPaymentButton);
+    return true;
+  }
+
+  const refundPaymentButton = event.target.closest("[data-payment-refund]");
+  if (refundPaymentButton) {
+    void refundPayment(refundPaymentButton);
     return true;
   }
 

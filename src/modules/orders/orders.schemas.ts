@@ -145,10 +145,26 @@ export const cancelBuyerOrderSchema = z.object({
 }).strict();
 
 export const createBuyerSupportCaseSchema = z.object({
-  type: z.enum(["COMPLAINT", "RETURN", "OTHER"]),
+  type: z.enum(["COMPLAINT", "REFUND", "RETURN", "OTHER"]),
   subject: z.string().trim().min(3).max(160),
-  message: z.string().trim().min(10).max(4000)
-}).strict();
+  message: z.string().trim().min(10).max(4000),
+  requestedRefundCents: z.number().int().positive().max(2_147_483_647).optional()
+}).strict().superRefine((supportCase, context) => {
+  if (supportCase.type === "REFUND" && supportCase.requestedRefundCents === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["requestedRefundCents"],
+      message: "Refund requests require an amount."
+    });
+  }
+  if (supportCase.type !== "REFUND" && supportCase.requestedRefundCents !== undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["requestedRefundCents"],
+      message: "Only refund requests may include a refund amount."
+    });
+  }
+});
 
 const publicTrackingUrlSchema = z.string().trim().url().max(2048).refine((value) => {
   try {
@@ -170,7 +186,7 @@ export const updateOrderTrackingSchema = z.object({
 }).strict();
 
 export const updateOrderSupportCaseSchema = z.object({
-  status: z.enum(["OPEN", "IN_REVIEW", "RESOLVED", "CLOSED"]),
+  status: z.enum(["OPEN", "IN_REVIEW", "APPROVED", "REJECTED", "RESOLVED", "CLOSED"]),
   merchantResponse: z.string().trim().max(4000).nullable().optional()
 }).strict();
 

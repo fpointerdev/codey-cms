@@ -26,6 +26,21 @@ export type PayPalOrder = {
   }>;
 };
 
+export type PayPalRefund = {
+  id: string;
+  status: string;
+  amount?: { currency_code?: string; value?: string };
+};
+
+export type PayPalCapture = {
+  id: string;
+  status: string;
+  amount?: { currency_code?: string; value?: string };
+  supplementary_data?: {
+    related_ids?: { order_id?: string };
+  };
+};
+
 type PayPalToken = {
   access_token: string;
 };
@@ -33,6 +48,7 @@ type PayPalToken = {
 export type PayPalWebhookEvent = {
   id: string;
   event_type: string;
+  summary?: string;
   resource?: Record<string, unknown>;
 };
 
@@ -192,6 +208,63 @@ export function completedPayPalCapture(order: PayPalOrder) {
     .find((capture) => capture.status === "COMPLETED");
 }
 
+export async function retrievePayPalCapture(input: {
+  mode: PaymentProviderMode;
+  clientId: string;
+  clientSecret: string;
+  captureId: string;
+  fetchImpl?: ProviderFetch;
+}) {
+  const accessToken = await paypalAccessToken(input);
+  return providerJsonRequest<PayPalCapture>(
+    "paypal",
+    `${paypalApiBase(input.mode)}/v2/payments/captures/${encodeURIComponent(input.captureId)}`,
+    {
+      method: "GET",
+      headers: { authorization: `Bearer ${accessToken}` }
+    },
+    input.fetchImpl
+  );
+}
+
+export function payPalOrderReferenceForCapture(capture: PayPalCapture) {
+  return capture.supplementary_data?.related_ids?.order_id;
+}
+
+export async function createPayPalRefund(input: {
+  mode: PaymentProviderMode;
+  clientId: string;
+  clientSecret: string;
+  captureId: string;
+  refundId: string;
+  amountCents: number;
+  currency: string;
+  fetchImpl?: ProviderFetch;
+}) {
+  const accessToken = await paypalAccessToken(input);
+
+  return providerJsonRequest<PayPalRefund>(
+    "paypal",
+    `${paypalApiBase(input.mode)}/v2/payments/captures/${encodeURIComponent(input.captureId)}/refund`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+        "paypal-request-id": input.refundId,
+        prefer: "return=representation"
+      },
+      body: JSON.stringify({
+        amount: {
+          currency_code: input.currency.toUpperCase(),
+          value: paypalAmount(input.amountCents)
+        }
+      })
+    },
+    input.fetchImpl
+  );
+}
+
 export async function testPayPalConnection(input: {
   mode: PaymentProviderMode;
   clientId: string;
@@ -275,6 +348,22 @@ function nestedRecord(value: unknown) {
     : {};
 }
 
+function linkedPayPalResourceId(resource: Record<string, unknown>, name: string) {
+  const links = Array.isArray(resource.links) ? resource.links : [];
+  const href = links
+    .map(nestedRecord)
+    .find((link) => link.rel === "up" && typeof link.href === "string")?.href;
+  if (typeof href !== "string") return undefined;
+
+  try {
+    const parts = new URL(href).pathname.split("/").filter(Boolean);
+    const index = parts.indexOf(name);
+    return index >= 0 && parts[index + 1] ? decodeURIComponent(parts[index + 1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function centsFromPayPalAmount(value: unknown) {
   const amount = nestedRecord(value);
   const numericValue = typeof amount.value === "string" ? Number(amount.value) : NaN;
@@ -283,7 +372,13 @@ export function centsFromPayPalAmount(value: unknown) {
 
 export function normalizePayPalWebhook(event: PayPalWebhookEvent) {
   const resource = event.resource ?? {};
-  let eventType: "payment.succeeded" | "payment.failed" | "payment.refunded" | undefined;
+  let eventType:
+    | "payment.succeeded"
+    | "payment.failed"
+    | "payment.refunded"
+    | "payment.refund_pending"
+    | "payment.refund_failed"
+    | undefined;
 
   if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
     eventType = "payment.succeeded";
@@ -295,6 +390,10 @@ export function normalizePayPalWebhook(event: PayPalWebhookEvent) {
     eventType = "payment.failed";
   } else if (event.event_type === "PAYMENT.CAPTURE.REFUNDED") {
     eventType = "payment.refunded";
+  } else if (event.event_type === "PAYMENT.REFUND.PENDING") {
+    eventType = "payment.refund_pending";
+  } else if (event.event_type === "PAYMENT.REFUND.FAILED") {
+    eventType = "payment.refund_failed";
   }
 
   if (!eventType || !event.id) return null;
@@ -304,18 +403,35 @@ export function normalizePayPalWebhook(event: PayPalWebhookEvent) {
   const providerReference = stringValue(relatedIds.order_id) ||
     stringValue(resource.order_id) ||
     (event.event_type === "CHECKOUT.ORDER.VOIDED" ? stringValue(resource.id) : undefined);
-  if (!providerReference) return null;
+  const refundEvent = eventType === "payment.refunded" ||
+    eventType === "payment.refund_pending" ||
+    eventType === "payment.refund_failed";
+  const refundReference = refundEvent ? stringValue(resource.id) : undefined;
+  const captureReference = refundEvent
+    ? stringValue(relatedIds.capture_id) || linkedPayPalResourceId(resource, "captures")
+    : stringValue(resource.id);
+  if (!providerReference && !refundReference && !captureReference) return null;
 
   const amount = nestedRecord(resource.amount);
+  const statusDetails = nestedRecord(resource.status_details);
 
   return {
     provider: "PAYPAL" as const,
     eventType,
     providerEventId: event.id,
-    providerReference,
+    ...(providerReference ? { providerReference } : {}),
     paymentId: stringValue(resource.custom_id),
+    ...(refundReference ? { refundReference } : {}),
+    ...(captureReference ? { captureReference } : {}),
     amountCents: centsFromPayPalAmount(resource.amount),
     currency: stringValue(amount.currency_code)?.toUpperCase(),
+    ...(eventType === "payment.refund_failed"
+      ? {
+          failureMessage: stringValue(statusDetails.reason) ||
+            event.summary ||
+            "PayPal reported that the refund failed."
+        }
+      : {}),
     payload: event as unknown as Record<string, unknown>
   };
 }

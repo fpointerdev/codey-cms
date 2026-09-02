@@ -111,6 +111,7 @@ test("buyer order responses expose fulfillment details without customer identity
     shippingCents: 300,
     taxCents: 0,
     totalCents: 2700,
+    metadata: { refundedCents: 500, internalNote: "Do not expose" },
     createdAt: new Date("2026-08-17T08:00:00.000Z"),
     updatedAt: new Date("2026-08-17T09:00:00.000Z"),
     items: [{
@@ -160,7 +161,15 @@ test("buyer order responses expose fulfillment details without customer identity
   assert.equal("sku" in order.items[0], false);
   assert.equal(order.tracking?.trackingUrl, null);
   assert.equal(order.supportCases[0]?.merchantResponse, "Confirmed.");
+  assert.equal(order.refundedCents, 500);
+  assert.equal("metadata" in order, false);
   assert.equal("id" in (order.supportCases[0] ?? {}), false);
+
+  assert.equal(buyerOrderDto(sampleBuyerOrder({ metadata: null }) as never).refundedCents, 0);
+  assert.equal(
+    buyerOrderDto(sampleBuyerOrder({ metadata: { refundedCents: 99_999 } }) as never).refundedCents,
+    2700
+  );
 });
 
 test("buyer actions are bounded and tracking links require HTTP or HTTPS", () => {
@@ -175,6 +184,23 @@ test("buyer actions are bounded and tracking links require HTTP or HTTPS", () =>
     type: "CANCELLATION",
     subject: "Bypass",
     message: "Cancellation must use its dedicated workflow."
+  }).success, false);
+  assert.equal(createBuyerSupportCaseSchema.safeParse({
+    type: "REFUND",
+    subject: "Item arrived damaged",
+    message: "The item cannot be used in its delivered condition.",
+    requestedRefundCents: 1200
+  }).success, true);
+  assert.equal(createBuyerSupportCaseSchema.safeParse({
+    type: "REFUND",
+    subject: "Missing amount",
+    message: "This refund request does not include an amount."
+  }).success, false);
+  assert.equal(createBuyerSupportCaseSchema.safeParse({
+    type: "RETURN",
+    subject: "Unexpected amount",
+    message: "A return request cannot include a refund amount.",
+    requestedRefundCents: 1200
   }).success, false);
   assert.equal(updateOrderTrackingSchema.safeParse({
     status: "SHIPPED",
@@ -418,6 +444,9 @@ test("support requests require ownership and cap unresolved cases", async () => 
       findFirst: async () => ({ order: sampleBuyerOrder() })
     },
     $queryRaw: async () => lockedRows,
+    order: {
+      findUniqueOrThrow: async () => sampleBuyerOrder()
+    },
     orderSupportCase: {
       count: async () => 0,
       create: async ({ data }: { data: unknown }) => {
@@ -480,6 +509,97 @@ test("support requests require ownership and cap unresolved cases", async () => 
     }),
     (error: unknown) => Boolean(
       error && typeof error === "object" && "code" in error && error.code === "order_not_found"
+    )
+  );
+});
+
+test("refund requests require an eligible balance and remain singular while active", async () => {
+  const request = { cookies: { [buyerSessionCookieName]: validBuyerToken } };
+  let order = sampleBuyerOrder({ metadata: { refundedCents: 500 } });
+  let activeRefundRequest: Record<string, unknown> | null = null;
+  let createdCase: Record<string, unknown> | null = null;
+  const transaction = {
+    buyerSessionOrder: { findFirst: async () => ({ order }) },
+    $queryRaw: async () => [{ id: "order-1" }],
+    order: { findUniqueOrThrow: async () => order },
+    payment: {
+      findFirst: async () => ({ id: "payment-1", refunds: [] })
+    },
+    orderSupportCase: {
+      findFirst: async () => activeRefundRequest,
+      count: async () => 0,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        createdCase = { id: "case-refund", status: "OPEN", ...data };
+        return createdCase;
+      }
+    }
+  };
+  const context = buyerContext({
+    buyerSession: { findFirst: async () => ({ id: "session-1" }) },
+    $transaction: async (operation: (tx: typeof transaction) => Promise<unknown>) => operation(transaction)
+  });
+
+  const supportCase = await createBuyerSupportCase(context, request, "CY-100", {
+    type: "REFUND",
+    subject: "Item arrived damaged",
+    message: "The item cannot be used in its delivered condition.",
+    requestedRefundCents: 2200
+  });
+  assert.equal(supportCase.requestedRefundCents, 2200);
+  assert.equal(createdCase?.requestedRefundCents, 2200);
+
+  activeRefundRequest = createdCase;
+  await assert.rejects(
+    () => createBuyerSupportCase(context, request, "CY-100", {
+      type: "REFUND",
+      subject: "Duplicate request",
+      message: "This order already has an active refund request.",
+      requestedRefundCents: 2200
+    }),
+    (error: unknown) => Boolean(
+      error && typeof error === "object" && "code" in error && error.code === "refund_request_in_progress"
+    )
+  );
+
+  activeRefundRequest = null;
+  await assert.rejects(
+    () => createBuyerSupportCase(context, request, "CY-100", {
+      type: "REFUND",
+      subject: "Amount too high",
+      message: "This amount exceeds the remaining refundable balance.",
+      requestedRefundCents: 2201
+    }),
+    (error: unknown) => Boolean(
+      error && typeof error === "object" && "code" in error && error.code === "refund_request_amount_invalid"
+    )
+  );
+
+  transaction.payment.findFirst = async () => ({
+    id: "payment-1",
+    refunds: [{ id: "refund-pending", status: "PENDING" }]
+  });
+  await assert.rejects(
+    () => createBuyerSupportCase(context, request, "CY-100", {
+      type: "REFUND",
+      subject: "Refund already pending",
+      message: "A provider refund is already being processed.",
+      requestedRefundCents: 100
+    }),
+    (error: unknown) => Boolean(
+      error && typeof error === "object" && "code" in error && error.code === "refund_in_progress"
+    )
+  );
+
+  order = sampleBuyerOrder({ status: "CONFIRMED" });
+  await assert.rejects(
+    () => createBuyerSupportCase(context, request, "CY-100", {
+      type: "REFUND",
+      subject: "Order not paid",
+      message: "An unpaid order cannot have a refund request.",
+      requestedRefundCents: 100
+    }),
+    (error: unknown) => Boolean(
+      error && typeof error === "object" && "code" in error && error.code === "refund_request_not_available"
     )
   );
 });

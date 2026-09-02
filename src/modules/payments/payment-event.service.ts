@@ -10,14 +10,23 @@ import { deliverQueuedOrderEmails, orderAccountUrl, queueOrderEmail } from "../o
 
 export type NormalizedPaymentEvent = {
   provider: PaymentProvider;
-  eventType: "payment.succeeded" | "payment.failed" | "payment.refunded";
+  eventType:
+    | "payment.succeeded"
+    | "payment.failed"
+    | "payment.refunded"
+    | "payment.refund_pending"
+    | "payment.refund_failed";
   providerEventId: string;
-  providerReference: string;
+  providerReference?: string;
+  refundReference?: string;
+  refundRecordId?: string;
+  captureReference?: string;
   paymentId?: string;
   amountCents?: number;
   currency?: string;
   fullRefund?: boolean;
   refundAmountIsCumulative?: boolean;
+  failureMessage?: string;
   payload: Record<string, unknown>;
 };
 
@@ -38,7 +47,10 @@ function assertPaymentMatchesEvent(
   payment: { id: string; provider: PaymentProvider; providerReference: string | null; amountCents: number; currency: string },
   input: NormalizedPaymentEvent
 ) {
-  if (payment.provider !== input.provider || payment.providerReference !== input.providerReference) {
+  if (
+    payment.provider !== input.provider ||
+    (input.providerReference && payment.providerReference !== input.providerReference)
+  ) {
     throw new AppError(409, "payment_event_mismatch", "Payment event does not match the stored payment.");
   }
 
@@ -71,7 +83,12 @@ export async function processPaymentEvent(
   try {
     const result = await context.prisma.$transaction(async (tx) => {
       const nextStatus = statusFromWebhook(input.eventType);
-      if (!nextStatus) {
+      const refundState = input.eventType === "payment.refund_pending"
+        ? "PENDING" as const
+        : input.eventType === "payment.refund_failed"
+          ? "FAILED" as const
+          : undefined;
+      if (!nextStatus && !refundState) {
         throw new AppError(422, "unsupported_payment_event", "Payment event is not supported.");
       }
 
@@ -80,18 +97,38 @@ export async function processPaymentEvent(
           provider: input.provider,
           eventType: input.eventType,
           providerEventId: input.providerEventId,
-          providerReference: input.providerReference,
+          providerReference: input.providerReference || input.refundReference || input.captureReference,
           payload: input.payload as Prisma.InputJsonValue
         }
       });
+      const referencedRefund = input.refundRecordId
+        ? await tx.paymentRefund.findFirst({
+            where: { id: input.refundRecordId, provider: input.provider }
+          })
+        : input.refundReference
+          ? await tx.paymentRefund.findFirst({
+              where: { provider: input.provider, providerReference: input.refundReference }
+            })
+          : null;
       const candidatePayment = input.paymentId
         ? await tx.payment.findUnique({ where: { id: input.paymentId } })
-        : await tx.payment.findFirst({
-            where: {
-              provider: input.provider,
-              providerReference: input.providerReference
-            }
-          });
+        : referencedRefund
+          ? await tx.payment.findUnique({ where: { id: referencedRefund.paymentId } })
+          : input.captureReference
+            ? await tx.payment.findFirst({
+                where: {
+                  provider: input.provider,
+                  metadata: { path: ["providerCaptureReference"], equals: input.captureReference }
+                }
+              })
+            : input.providerReference
+              ? await tx.payment.findFirst({
+                  where: {
+                    provider: input.provider,
+                    providerReference: input.providerReference
+                  }
+                })
+              : null;
 
       if (!candidatePayment || !candidatePayment.orderId) {
         throw new AppError(404, "payment_not_found", "Payment was not found.");
@@ -99,7 +136,7 @@ export async function processPaymentEvent(
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "Payment" WHERE "id" = ${candidatePayment.id} FOR UPDATE`
       );
-      const payment = await tx.payment.findUniqueOrThrow({
+      let payment = await tx.payment.findUniqueOrThrow({
         where: { id: candidatePayment.id }
       });
       if (!payment.orderId) {
@@ -107,8 +144,23 @@ export async function processPaymentEvent(
       }
       assertPaymentMatchesEvent(payment, input);
 
+      if (
+        input.captureReference &&
+        jsonRecord(payment.metadata).providerCaptureReference !== input.captureReference
+      ) {
+        payment = await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            metadata: {
+              ...jsonRecord(payment.metadata),
+              providerCaptureReference: input.captureReference
+            }
+          }
+        });
+      }
+
       const order = await tx.order.findUnique({
-        where: { id: payment.orderId },
+        where: { id: payment.orderId! },
         include: { items: true }
       });
       if (!order) {
@@ -119,6 +171,101 @@ export async function processPaymentEvent(
       let orderId: string | undefined;
       let partialRefund = false;
       let refundedCents: number | undefined;
+
+      if (refundState) {
+        let matchingRefund = input.refundRecordId
+          ? await tx.paymentRefund.findFirst({
+              where: {
+                id: input.refundRecordId,
+                paymentId: payment.id,
+                provider: input.provider
+              }
+            })
+          : input.refundReference
+            ? await tx.paymentRefund.findFirst({
+                where: {
+                  paymentId: payment.id,
+                  provider: input.provider,
+                  providerReference: input.refundReference
+                }
+              })
+            : null;
+        if (
+          input.amountCents !== undefined &&
+          (!Number.isInteger(input.amountCents) || input.amountCents <= 0 || input.amountCents > payment.amountCents)
+        ) {
+          throw new AppError(409, "payment_refund_amount_mismatch", "Refund event amount is invalid.");
+        }
+        if (!matchingRefund && input.refundReference && input.amountCents !== undefined) {
+          matchingRefund = await tx.paymentRefund.findFirst({
+            where: {
+              paymentId: payment.id,
+              provider: input.provider,
+              providerReference: null,
+              status: "SUCCEEDED",
+              amountCents: input.amountCents
+            },
+            orderBy: { createdAt: "desc" }
+          });
+        }
+
+        let updatedRefund = matchingRefund;
+        if (matchingRefund) {
+          if (
+            input.amountCents !== undefined && matchingRefund.amountCents !== input.amountCents ||
+            input.currency && matchingRefund.currency.toUpperCase() !== input.currency.toUpperCase()
+          ) {
+            throw new AppError(409, "payment_refund_mismatch", "Refund event does not match the stored refund.");
+          }
+          if (matchingRefund.status !== "SUCCEEDED") {
+            updatedRefund = await tx.paymentRefund.update({
+              where: { id: matchingRefund.id },
+              data: {
+                status: refundState,
+                ...(input.refundReference ? { providerReference: input.refundReference } : {}),
+                failureMessage: refundState === "FAILED"
+                  ? input.failureMessage?.slice(0, 500) || "The payment provider reported that the refund failed."
+                  : null
+              }
+            });
+          } else if (input.refundReference && !matchingRefund.providerReference) {
+            updatedRefund = await tx.paymentRefund.update({
+              where: { id: matchingRefund.id },
+              data: { providerReference: input.refundReference }
+            });
+          }
+        } else if (input.amountCents !== undefined) {
+          updatedRefund = await tx.paymentRefund.create({
+            data: {
+              paymentId: payment.id,
+              provider: input.provider,
+              status: refundState,
+              amountCents: input.amountCents,
+              currency: input.currency || payment.currency,
+              reason: "OTHER",
+              idempotencyKey: `webhook:${input.provider}:${input.providerEventId}`,
+              providerReference: input.refundReference,
+              failureMessage: refundState === "FAILED"
+                ? input.failureMessage?.slice(0, 500) || "The payment provider reported that the refund failed."
+                : null
+            }
+          });
+        }
+
+        const processedWebhook = await tx.paymentWebhook.update({
+          where: { id: webhook.id },
+          data: { processedAt: new Date() }
+        });
+        return {
+          webhook: processedWebhook,
+          payment,
+          refund: updatedRefund,
+          status: payment.status,
+          partialRefund: false,
+          refundedCents: undefined,
+          orderId: undefined
+        };
+      }
 
       if (nextStatus === "SUCCEEDED") {
         if (payment.status === "REFUNDED") {
@@ -203,18 +350,77 @@ export async function processPaymentEvent(
         const previousRefundedCents = typeof metadata.refundedCents === "number"
           ? metadata.refundedCents
           : 0;
+        let matchingRefund = input.refundRecordId
+          ? await tx.paymentRefund.findFirst({
+              where: {
+                id: input.refundRecordId,
+                paymentId: payment.id,
+                provider: input.provider
+              }
+            })
+          : input.refundReference
+            ? await tx.paymentRefund.findFirst({
+                where: {
+                  provider: input.provider,
+                  providerReference: input.refundReference
+                }
+              })
+            : null;
+        if (
+          matchingRefund?.providerReference &&
+          input.refundReference &&
+          matchingRefund.providerReference !== input.refundReference
+        ) {
+          throw new AppError(409, "payment_refund_mismatch", "Refund event does not match the stored refund.");
+        }
         if (!input.fullRefund && input.amountCents === undefined) {
           throw new AppError(422, "payment_refund_amount_missing", "Refund event amount is missing.");
         }
-        refundedCents = input.fullRefund
+        if (
+          input.amountCents !== undefined &&
+          (!Number.isInteger(input.amountCents) || input.amountCents <= 0 || input.amountCents > payment.amountCents)
+        ) {
+          throw new AppError(409, "payment_refund_amount_mismatch", "Refund event amount is invalid.");
+        }
+        const eventRefundedCents = input.fullRefund
           ? payment.amountCents
           : input.refundAmountIsCumulative
-            ? Math.max(previousRefundedCents, input.amountCents ?? 0)
+            ? input.amountCents ?? 0
             : previousRefundedCents + (input.amountCents ?? 0);
-        refundedCents = Math.min(payment.amountCents, refundedCents);
+        if (eventRefundedCents > payment.amountCents) {
+          throw new AppError(409, "payment_refund_amount_mismatch", "Refund event exceeds the payment amount.");
+        }
+        const eventAppliedCents = Math.max(0, eventRefundedCents - previousRefundedCents);
+        if (!matchingRefund && input.refundReference && input.amountCents !== undefined) {
+          matchingRefund = await tx.paymentRefund.findFirst({
+            where: {
+              paymentId: payment.id,
+              provider: input.provider,
+              providerReference: null,
+              status: "SUCCEEDED",
+              amountCents: input.amountCents
+            },
+            orderBy: { createdAt: "desc" }
+          });
+        }
+        if (!matchingRefund && !input.refundReference && eventAppliedCents > 0) {
+          matchingRefund = await tx.paymentRefund.findFirst({
+            where: {
+              paymentId: payment.id,
+              provider: input.provider,
+              status: "PENDING",
+              amountCents: eventAppliedCents
+            }
+          });
+        }
+        const refundAlreadyApplied = matchingRefund?.status === "SUCCEEDED";
+        refundedCents = refundAlreadyApplied
+          ? previousRefundedCents
+          : Math.max(previousRefundedCents, eventRefundedCents);
         partialRefund = refundedCents < payment.amountCents;
+        const appliedRefundCents = Math.max(0, refundedCents - previousRefundedCents);
 
-        if (partialRefund) {
+        if (appliedRefundCents > 0 && partialRefund) {
           updatedPayment = await tx.payment.update({
             where: { id: payment.id },
             data: {
@@ -224,7 +430,7 @@ export async function processPaymentEvent(
               }
             }
           });
-        } else {
+        } else if (appliedRefundCents > 0) {
           updatedPayment = payment.status === "REFUNDED"
             ? payment
             : await tx.payment.update({
@@ -238,18 +444,68 @@ export async function processPaymentEvent(
                 }
               });
 
-          if (order.status !== "REFUNDED") {
-            const refundedOrder = await tx.order.update({
-              where: { id: order.id },
-              data: { status: "REFUNDED" },
-              include: { items: true }
+        }
+
+        if (matchingRefund) {
+          await tx.paymentRefund.update({
+            where: { id: matchingRefund.id },
+            data: {
+              status: "SUCCEEDED",
+              ...(input.refundReference ? { providerReference: input.refundReference } : {}),
+              failureMessage: null,
+              completedAt: matchingRefund.completedAt ?? new Date()
+            }
+          });
+          if (matchingRefund.supportCaseId) {
+            const supportCase = await tx.orderSupportCase.findUnique({
+              where: { id: matchingRefund.supportCaseId }
             });
-            await queueOrderEmail(tx, refundedOrder, {
-              eventType: "ORDER_REFUNDED",
-              accountUrl: orderAccountUrl(context)
-            });
-            orderId = refundedOrder.id;
+            if (supportCase?.type === "REFUND") {
+              await tx.orderSupportCase.update({
+                where: { id: supportCase.id },
+                data: {
+                  status: "RESOLVED",
+                  merchantResponse: supportCase.merchantResponse || "Your refund has been issued.",
+                  resolvedAt: supportCase.resolvedAt ?? new Date()
+                }
+              });
+            }
           }
+        } else if (appliedRefundCents > 0) {
+          await tx.paymentRefund.create({
+            data: {
+              paymentId: payment.id,
+              provider: input.provider,
+              status: "SUCCEEDED",
+              amountCents: appliedRefundCents,
+              currency: payment.currency,
+              reason: "OTHER",
+              idempotencyKey: `webhook:${input.provider}:${input.providerEventId}`,
+              providerReference: input.refundReference,
+              completedAt: new Date()
+            }
+          });
+        }
+
+        if (appliedRefundCents > 0) {
+          const orderMetadata = jsonRecord(order.metadata);
+          const refundedOrder = await tx.order.update({
+            where: { id: order.id },
+            data: {
+              ...(partialRefund ? {} : { status: "REFUNDED" as const }),
+              metadata: {
+                ...orderMetadata,
+                refundedCents
+              }
+            },
+            include: { items: true }
+          });
+          await queueOrderEmail(tx, refundedOrder, {
+            eventType: "ORDER_REFUNDED",
+            refundedCents: appliedRefundCents,
+            accountUrl: orderAccountUrl(context)
+          });
+          orderId = refundedOrder.id;
         }
       }
 

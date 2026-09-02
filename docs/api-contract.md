@@ -134,7 +134,7 @@ Stable `/api/v1` endpoint families:
 - `cms`: pages, posts, sections, blocks, revisions, menus, redirects, media, forms, sitemap, robots.
 - `products`: catalog, product media, options, variants, and public storefront settings.
 - `orders`: orders, carts, checkout, shipping, tax, coupons, order notifications.
-- `payments`: site payment-provider configuration, public provider discovery, Stripe intents, PayPal orders/capture, manual settlement, and verified idempotent webhooks.
+- `payments`: site payment-provider configuration, public provider discovery, Stripe intents, PayPal orders/capture, manual settlement, durable full/partial refunds, and verified idempotent webhooks.
 - `health`: minimal public liveness/readiness plus authenticated operational diagnostics and metrics.
 
 Runtime configuration is split by audience:
@@ -161,6 +161,8 @@ POST  /api/v1/config/email/test
 The email provider API key is write-only and encrypted at rest. Endpoint or credential changes require `manage:secrets` and a recent authenticated session; MFA-enabled accounts must have completed MFA recently. Resend and Postmark use native request contracts; a generic HTTP adapter remains available. Production generic endpoints connect only to the public addresses approved during validation and cannot redirect. Owners can enable account recovery in the same dashboard form. The test endpoint records provider success or failure for readiness checks.
 
 Stripe and PayPal configuration and connection tests also require `update:payments`, `manage:secrets`, and recent authentication. Manual-payment instructions require only `update:payments`. Connection-test results are applied only when the tested configuration revision is still current.
+
+Buyers request refunds through the device-scoped order portal. Requests are limited to paid or fulfilled orders and cannot exceed the remaining unrefunded balance. Staff review them through the existing order-support workflow; approval does not move money. The authenticated refund endpoint requires `update:payments`, recent authentication, and an idempotency key. Passing an approved `supportCaseId` binds the provider refund to that request and resolves it only after provider confirmation. Provider credentials remain write-only; the refund ledger exposes status, amount, reason, provider reference, and bounded failure details to authorized payment managers.
 
 Storefront customization is site-owned and public rendering reads the same validated settings:
 

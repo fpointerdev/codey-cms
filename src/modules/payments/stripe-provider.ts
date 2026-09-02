@@ -15,6 +15,16 @@ type StripePaymentIntent = {
   metadata?: Record<string, string>;
 };
 
+export type StripeRefund = {
+  id: string;
+  object: "refund";
+  amount: number;
+  currency: string;
+  payment_intent?: string | null;
+  status?: string | null;
+  failure_reason?: string | null;
+};
+
 type StripeAccount = {
   id: string;
   business_profile?: { name?: string | null } | null;
@@ -93,6 +103,38 @@ export async function retrieveStripePaymentIntent(input: {
   );
 }
 
+export async function createStripeRefund(input: {
+  secretKey: string;
+  paymentIntentId: string;
+  paymentId: string;
+  refundId: string;
+  amountCents: number;
+  reason?: "duplicate" | "fraudulent" | "requested_by_customer";
+  fetchImpl?: ProviderFetch;
+}) {
+  const body = new URLSearchParams({
+    payment_intent: input.paymentIntentId,
+    amount: String(input.amountCents),
+    "metadata[paymentId]": input.paymentId,
+    "metadata[refundId]": input.refundId
+  });
+  if (input.reason) body.set("reason", input.reason);
+
+  return providerJsonRequest<StripeRefund>(
+    "stripe",
+    `${stripeApiBase}/refunds`,
+    {
+      method: "POST",
+      headers: stripeHeaders(input.secretKey, {
+        "content-type": "application/x-www-form-urlencoded",
+        "idempotency-key": input.refundId
+      }),
+      body
+    },
+    input.fetchImpl
+  );
+}
+
 export async function testStripeConnection(secretKey: string, fetchImpl?: ProviderFetch) {
   const account = await providerJsonRequest<StripeAccount>(
     "stripe",
@@ -165,8 +207,47 @@ function integerValue(value: unknown) {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
+function recordValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 export function normalizeStripeWebhook(event: StripeWebhookEvent) {
   const object = event.data?.object ?? {};
+  const metadata = recordValue(object.metadata);
+  if (["refund.created", "refund.updated", "refund.failed"].includes(event.type)) {
+    const status = stringValue(object.status);
+    const eventType = event.type === "refund.failed" || ["failed", "canceled"].includes(status || "")
+      ? "payment.refund_failed" as const
+      : status === "succeeded"
+        ? "payment.refunded" as const
+        : "payment.refund_pending" as const;
+    const providerReference = stringValue(object.payment_intent);
+    const refundReference = stringValue(object.id);
+    const refundRecordId = stringValue(metadata.refundId);
+    const paymentId = stringValue(metadata.paymentId);
+    if (!event.id || !refundReference || (!providerReference && !refundRecordId && !paymentId)) return null;
+
+    return {
+      provider: "STRIPE" as const,
+      eventType,
+      providerEventId: event.id,
+      ...(providerReference ? { providerReference } : {}),
+      refundReference,
+      ...(refundRecordId ? { refundRecordId } : {}),
+      ...(paymentId ? { paymentId } : {}),
+      amountCents: integerValue(object.amount),
+      currency: stringValue(object.currency)?.toUpperCase(),
+      fullRefund: false,
+      refundAmountIsCumulative: false,
+      ...(eventType === "payment.refund_failed"
+        ? { failureMessage: stringValue(object.failure_reason) || "Stripe reported that the refund failed." }
+        : {}),
+      payload: event as unknown as Record<string, unknown>
+    };
+  }
+
   let eventType: "payment.succeeded" | "payment.failed" | "payment.refunded" | undefined;
   let providerReference: string | undefined;
 
@@ -176,16 +257,12 @@ export function normalizeStripeWebhook(event: StripeWebhookEvent) {
   } else if (event.type === "payment_intent.canceled") {
     eventType = "payment.failed";
     providerReference = stringValue(object.id);
-  } else if (event.type === "charge.refunded" && object.refunded === true) {
+  } else if (event.type === "charge.refunded") {
     eventType = "payment.refunded";
     providerReference = stringValue(object.payment_intent);
   }
 
   if (!eventType || !providerReference || !event.id) return null;
-
-  const metadata = object.metadata && typeof object.metadata === "object"
-    ? object.metadata as Record<string, unknown>
-    : {};
 
   return {
     provider: "STRIPE" as const,
@@ -195,7 +272,7 @@ export function normalizeStripeWebhook(event: StripeWebhookEvent) {
     paymentId: stringValue(metadata.paymentId),
     amountCents: integerValue(eventType === "payment.refunded" ? object.amount_refunded : object.amount),
     currency: stringValue(object.currency)?.toUpperCase(),
-    fullRefund: eventType === "payment.refunded",
+    fullRefund: eventType === "payment.refunded" && object.refunded === true,
     refundAmountIsCumulative: eventType === "payment.refunded",
     payload: event as unknown as Record<string, unknown>
   };

@@ -206,7 +206,7 @@ function buyerTrackingMarkup(tracking) {
   `;
 }
 
-function buyerCasesMarkup(cases = []) {
+function buyerCasesMarkup(cases = [], currency = "EUR") {
   if (!cases.length) return "";
 
   return `
@@ -216,6 +216,9 @@ function buyerCasesMarkup(cases = []) {
         <article>
           <div><strong>${escapeHtml(supportCase.subject)}</strong><span class="status-pill">${escapeHtml(statusLabel(supportCase.status))}</span></div>
           <p>${escapeHtml(supportCase.message)}</p>
+          ${supportCase.type === "REFUND" && supportCase.requestedRefundCents
+            ? `<p><strong>Requested refund:</strong> ${escapeHtml(money(supportCase.requestedRefundCents, currency))}</p>`
+            : ""}
           ${supportCase.merchantResponse ? `<blockquote><strong>Shop response</strong><p>${escapeHtml(supportCase.merchantResponse)}</p></blockquote>` : ""}
           <small>${escapeHtml(statusLabel(supportCase.type))} · ${escapeHtml(dateLabel(supportCase.createdAt))}</small>
         </article>
@@ -229,6 +232,11 @@ function buyerOrderMarkup(order) {
   const openCancellation = order.supportCases?.some((supportCase) => (
     supportCase.type === "CANCELLATION" && ["OPEN", "IN_REVIEW"].includes(supportCase.status)
   ));
+  const activeRefundRequest = order.supportCases?.find((supportCase) => (
+    supportCase.type === "REFUND" && ["OPEN", "IN_REVIEW", "APPROVED"].includes(supportCase.status)
+  ));
+  const remainingRefundCents = Math.max(0, order.totalCents - (order.refundedCents || 0));
+  const canRequestRefund = ["PAID", "FULFILLED"].includes(order.status) && remainingRefundCents > 0;
   const visibleStatus = order.tracking?.status || order.status;
   return `
     <article class="buyer-order-card" data-buyer-order="${escapeHtml(order.orderNumber)}">
@@ -247,8 +255,16 @@ function buyerOrderMarkup(order) {
       </div>
       ${buyerTrackingMarkup(order.tracking)}
       <div class="buyer-order-total"><span>Total</span><strong>${escapeHtml(money(order.totalCents, order.currency))}</strong></div>
-      ${buyerCasesMarkup(order.supportCases)}
+      ${order.refundedCents > 0
+        ? `<div class="buyer-order-total buyer-order-refund"><span>Refunded</span><strong>${escapeHtml(money(order.refundedCents, order.currency))}</strong></div>`
+        : ""}
+      ${buyerCasesMarkup(order.supportCases, order.currency)}
       <footer>
+        ${canRequestRefund
+          ? activeRefundRequest
+            ? `<span class="buyer-refund-pending">Refund request ${escapeHtml(statusLabel(activeRefundRequest.status).toLowerCase())}</span>`
+            : `<button type="button" class="secondary-button" data-buyer-refund="${escapeHtml(order.orderNumber)}" data-refund-max-cents="${escapeHtml(remainingRefundCents)}" data-refund-currency="${escapeHtml(order.currency)}">Request refund</button>`
+          : ""}
         ${inactive
           ? ""
           : openCancellation
@@ -299,6 +315,20 @@ function supportCaseMarkup(orderNumber) {
       <label><span>What happened?</span><textarea name="message" rows="7" minlength="10" maxlength="4000" required></textarea></label>
       <p class="commerce-message" data-commerce-message aria-live="polite"></p>
       <button type="submit">Send request</button>
+    </form>
+  `;
+}
+
+function refundRequestMarkup(orderNumber, maxCents, currency) {
+  return `
+    <form class="commerce-dialog-shell" data-buyer-refund-form data-order-number="${escapeHtml(orderNumber)}" data-refund-max-cents="${escapeHtml(maxCents)}">
+      <header class="commerce-dialog-header"><div><p>Order ${escapeHtml(orderNumber)}</p><h2>Request a refund</h2></div>${closeButton()}</header>
+      <p>Tell the shop why you are requesting a refund. The shop will review this request before any money is returned.</p>
+      <label><span>Amount (${escapeHtml(currency)})</span><input name="amount" type="number" value="${escapeHtml((maxCents / 100).toFixed(2))}" min="0.01" max="${escapeHtml((maxCents / 100).toFixed(2))}" step="0.01" required /></label>
+      <label><span>Reason</span><select name="reason"><option value="Changed my mind">Changed my mind</option><option value="Item not received">Item not received</option><option value="Item arrived damaged">Item arrived damaged</option><option value="Wrong item received">Wrong item received</option><option value="Other refund reason">Other</option></select></label>
+      <label><span>Details</span><textarea name="message" rows="6" minlength="10" maxlength="4000" required></textarea></label>
+      <p class="commerce-message" data-commerce-message aria-live="polite"></p>
+      <button type="submit">Send refund request</button>
     </form>
   `;
 }
@@ -745,6 +775,16 @@ function bindCommerceEvents() {
       dialog.innerHTML = supportCaseMarkup(supportButton.dataset.buyerSupport);
       return;
     }
+    const refundButton = event.target.closest("[data-buyer-refund]");
+    if (refundButton) {
+      openDialog();
+      dialog.innerHTML = refundRequestMarkup(
+        refundButton.dataset.buyerRefund,
+        Number.parseInt(refundButton.dataset.refundMaxCents || "0", 10),
+        refundButton.dataset.refundCurrency || "EUR"
+      );
+      return;
+    }
     if (event.target.closest("[data-commerce-close]")) {
       dialog?.close();
       return;
@@ -898,6 +938,39 @@ function bindCommerceEvents() {
       }).then(() => {
         dialog.close();
         return loadBuyerOrders("Your request was sent to the shop.");
+      }).catch((error) => {
+        message.textContent = error.message;
+        message.classList.add("error");
+        submit.disabled = false;
+      });
+      return;
+    }
+    const refundForm = event.target.closest("[data-buyer-refund-form]");
+    if (refundForm) {
+      event.preventDefault();
+      const data = new FormData(refundForm);
+      const message = refundForm.querySelector("[data-commerce-message]");
+      const submit = refundForm.querySelector('button[type="submit"]');
+      const requestedRefundCents = Math.round(Number(String(data.get("amount") || "0").replace(",", ".")) * 100);
+      const maxCents = Number.parseInt(refundForm.dataset.refundMaxCents || "0", 10);
+      if (!Number.isInteger(requestedRefundCents) || requestedRefundCents <= 0 || requestedRefundCents > maxCents) {
+        message.textContent = "Enter a refund amount within the available balance.";
+        message.classList.add("error");
+        return;
+      }
+      submit.disabled = true;
+      message.textContent = "Sending refund request...";
+      void request(`/orders/buyer/orders/${encodeURIComponent(refundForm.dataset.orderNumber)}/cases`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "REFUND",
+          subject: String(data.get("reason") || "Refund request"),
+          message: String(data.get("message") || "").trim(),
+          requestedRefundCents
+        })
+      }).then(() => {
+        dialog.close();
+        return loadBuyerOrders("Your refund request was sent to the shop.");
       }).catch((error) => {
         message.textContent = error.message;
         message.classList.add("error");

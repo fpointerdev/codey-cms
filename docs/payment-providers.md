@@ -19,7 +19,7 @@ Losing or changing `CMS_CREDENTIAL_ENCRYPTION_KEY` makes existing encrypted cred
 
 1. Select Sandbox and save a matching `pk_test_...` plus `sk_test_...` or restricted `rk_test_...` key.
 2. Create a Stripe webhook using the endpoint shown in the dashboard.
-3. Subscribe to `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.canceled`, and `charge.refunded`.
+3. Subscribe to `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.canceled`, `refund.created`, `refund.updated`, `refund.failed`, and `charge.refunded`.
 4. Save the endpoint signing secret (`whsec_...`).
 5. Run **Test connection**, then enable Stripe.
 6. Repeat with matching live keys when moving to Live mode.
@@ -28,7 +28,7 @@ Losing or changing `CMS_CREDENTIAL_ENCRYPTION_KEY` makes existing encrypted cred
 
 1. Select Sandbox and save the PayPal REST app client ID and client secret.
 2. Create a PayPal webhook using the endpoint shown in the dashboard.
-3. Subscribe to `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.DENIED`, `CHECKOUT.ORDER.VOIDED`, and `PAYMENT.CAPTURE.REFUNDED`.
+3. Subscribe to `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.DENIED`, `CHECKOUT.ORDER.VOIDED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.REFUND.PENDING`, and `PAYMENT.REFUND.FAILED`.
 4. Save the PayPal webhook ID.
 5. Run **Test connection**, then enable PayPal.
 6. Use a live PayPal app and live webhook ID when moving to Live mode.
@@ -37,7 +37,7 @@ The Stripe test validates account access. The PayPal test validates OAuth access
 
 ### Manual
 
-Save customer-facing instructions and enable the method. A manual payment stays pending until a user with `update:payments` marks it paid or failed from the Orders screen. A successful manual payment can later be marked refunded.
+Save customer-facing instructions and enable the method. A manual payment stays pending until a user with `update:payments` marks it paid or failed from the Orders screen. Successful manual, Stripe, and PayPal payments can be refunded from the same screen.
 
 ## API Flow
 
@@ -46,6 +46,7 @@ Save customer-facing instructions and enable the method. A manual payment stays 
 - Stripe response: `clientSecret`, `publishableKey`, provider reference, and provider status.
 - PayPal response: approval URL, client ID, provider reference, and provider status.
 - `POST /api/v1/payments/paypal/capture`: captures an approved PayPal order. It first retrieves provider state, so a retry after a lost capture response remains safe.
+- `POST /api/v1/payments/:paymentId/refunds`: issues a full or partial refund. It requires `update:payments`, recent authentication, and a caller-generated `idempotencyKey`. An optional `supportCaseId` must reference an approved buyer refund request for the exact amount.
 - `POST /api/v1/payments/webhooks/stripe`: verifies the raw body against `Stripe-Signature` with a five-minute tolerance.
 - `POST /api/v1/payments/webhooks/paypal`: verifies transmission headers through PayPal's verification API and the saved webhook ID.
 
@@ -60,6 +61,10 @@ Shop runtimes include Stripe.js, Stripe frame, and Stripe API origins in the Con
 - Lost provider-create response: the pending local payment is retried with the same provider idempotency key.
 - Lost PayPal capture response: capture first retrieves the PayPal order and applies an existing completed capture.
 - Duplicate webhook: `providerEventId` returns the prior result without applying order state twice.
+- Duplicate refund: reuse the same refund `idempotencyKey`. Failed provider calls are retried against the same durable refund record and provider request ID.
+- Refund in progress: only one provider refund can be pending for a payment. A later verified webhook completes the same record.
+- Provider failure: verified Stripe and PayPal failure events move the matching pending refund to `FAILED` without changing the paid order or refunded balance.
+- Buyer request: the order portal accepts one active refund request up to the remaining paid balance. Staff approval is non-financial; a linked request resolves only after the provider confirms the refund.
 - Provider disabled: no new intents are created, but retained credentials continue to verify webhooks for payments already in flight.
 - Credential or mode change: the dashboard disables that provider and clears its connection-test status until it passes again.
 - Failed connection retest: an enabled provider is disabled automatically.
@@ -67,8 +72,9 @@ Shop runtimes include Stripe.js, Stripe frame, and Stripe API origins in the Con
 - Failed or cancelled payment: inventory and coupon reservations are released atomically.
 - Late success after reservation expiry: the event is rejected instead of overselling released inventory and requires operator reconciliation.
 - Amount or currency mismatch: the event is rejected and the order remains unpaid.
-- Partial PayPal refund: cumulative refunded cents are recorded in payment metadata; the payment and order become `REFUNDED` only when the full amount has been refunded.
-- Full Stripe refund: `charge.refunded` marks the payment and order refunded.
+- Partial refund: the applied amount is recorded in the refund ledger and shown in the buyer order page; payment and order become `REFUNDED` only when the full amount has been refunded.
+- External provider refund: verified Stripe and PayPal webhooks create or reconcile the same refund ledger and notify the buyer only when a new amount is applied.
+- Refund credentials: retained encrypted provider credentials remain usable for refunds and webhook verification even when the provider is disabled for new checkouts.
 
 ## Release Checklist
 

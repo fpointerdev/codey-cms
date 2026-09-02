@@ -17,6 +17,19 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum PaymentRefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum PaymentRefundReason {
+  CUSTOMER_REQUEST
+  DUPLICATE
+  FRAUDULENT
+  OTHER
+}
+
 model Payment {
   id                  String          @id @default(cuid())
   provider            PaymentProvider @default(STRIPE)
@@ -29,10 +42,36 @@ model Payment {
   metadata            Json?
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
+  refunds             PaymentRefund[]
 
   @@index([orderId])
   @@index([providerReference])
   @@index([provider, status])
+}
+
+model PaymentRefund {
+  id                  String              @id @default(cuid())
+  paymentId           String
+  payment             Payment             @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  provider            PaymentProvider
+  status              PaymentRefundStatus @default(PENDING)
+  amountCents         Int
+  currency            String
+  reason              PaymentRefundReason @default(CUSTOMER_REQUEST)
+  note                String?
+  idempotencyKey      String              @unique
+  providerReference   String?
+  failureMessage      String?
+  initiatedByUserId   String?
+  supportCaseId       String?             @unique
+  supportCase         OrderSupportCase?   @relation(fields: [supportCaseId], references: [id], onDelete: SetNull)
+  completedAt         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@unique([provider, providerReference])
+  @@index([paymentId, createdAt])
+  @@index([status, updatedAt])
 }
 
 model PaymentWebhook {

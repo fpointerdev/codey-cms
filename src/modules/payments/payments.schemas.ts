@@ -74,3 +74,17 @@ export const manualPaymentParamsSchema = z.object({
 export const manualPaymentActionSchema = z.object({
   action: z.enum(["SUCCEED", "FAIL", "REFUND"])
 });
+
+export const paymentRefundParamsSchema = z.object({
+  paymentId: z.string().cuid()
+});
+
+export const createPaymentRefundSchema = z.object({
+  amountCents: z.number().int().positive().max(2_147_483_647).optional(),
+  reason: z.enum(["CUSTOMER_REQUEST", "DUPLICATE", "FRAUDULENT", "OTHER"])
+    .default("CUSTOMER_REQUEST"),
+  note: z.string().trim().max(500).optional(),
+  idempotencyKey: z.string().trim().min(8).max(120),
+  retryRefundId: z.string().cuid().optional(),
+  supportCaseId: z.string().cuid().optional()
+}).strict();

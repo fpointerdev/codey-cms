@@ -512,6 +512,101 @@ test("read-only dashboard views hide mutation controls", async () => {
   assert.match(page.innerHTML, /\/dashboard\/shop\/orders/);
   assert.doesNotMatch(page.innerHTML, /\/dashboard\/shop\/products/);
 
+  state.user.permissions.push({ action: "update", subject: "payments" });
+  const refundableOrder = {
+    id: "order-1",
+    orderNumber: "CY-100",
+    customerEmail: "buyer@example.com",
+    status: "PAID",
+    checkoutStatus: "COMPLETE",
+    totalCents: 2500,
+    currency: "EUR",
+    items: [],
+    supportCases: [],
+    notifications: [],
+    createdAt: new Date().toISOString()
+  };
+  const refundablePayment = {
+    id: "cm1234567890123456789012",
+    orderId: "order-1",
+    provider: "STRIPE",
+    status: "SUCCEEDED",
+    amountCents: 2500,
+    currency: "EUR",
+    metadata: { refundedCents: 500 },
+    refunds: []
+  };
+  renderShopOrdersPage([refundableOrder], [refundablePayment]);
+  assert.match(page.innerHTML, /data-payment-refund="cm1234567890123456789012"/);
+  assert.match(page.innerHTML, /data-refund-max-cents="2000"/);
+  assert.match(page.innerHTML, /Refunded/);
+
+  state.user.permissions.push({ action: "update", subject: "orders" });
+  renderShopOrdersPage([{
+    ...refundableOrder,
+    supportCases: [{
+      id: "cm1234567890123456789013",
+      type: "REFUND",
+      status: "APPROVED",
+      subject: "Item arrived damaged",
+      message: "The item cannot be used in its delivered condition.",
+      requestedRefundCents: 1200,
+      merchantResponse: "Approved.",
+      createdAt: new Date().toISOString()
+    }]
+  }], [refundablePayment]);
+  assert.match(page.innerHTML, /Issue approved refund/);
+  assert.match(page.innerHTML, /data-refund-support-case-id="cm1234567890123456789013"/);
+  assert.match(page.innerHTML, /data-refund-amount-cents="1200"/);
+  assert.match(page.innerHTML, /Review refund request/);
+  assert.match(page.innerHTML, /Buyer request/);
+
+  renderShopOrdersPage([refundableOrder], [{
+    ...refundablePayment,
+    refunds: [{ status: "PENDING", amountCents: 2000, currency: "EUR" }]
+  }]);
+  assert.doesNotMatch(page.innerHTML, /data-payment-refund=/);
+  assert.match(page.innerHTML, /Refund pending/);
+
+  renderShopOrdersPage([refundableOrder], [{
+    ...refundablePayment,
+    refunds: [{
+      id: "external-failure",
+      status: "FAILED",
+      amountCents: 500,
+      currency: "EUR",
+      initiatedByUserId: null
+    }]
+  }]);
+  assert.doesNotMatch(page.innerHTML, /Retry refund/);
+  assert.match(page.innerHTML, />Refund</);
+
+  renderShopOrdersPage([{
+    ...refundableOrder,
+    supportCases: [{
+      id: "rejected-request",
+      type: "REFUND",
+      status: "REJECTED",
+      subject: "Refund request",
+      message: "This refund request was rejected.",
+      requestedRefundCents: 500,
+      createdAt: new Date().toISOString()
+    }]
+  }], [{
+    ...refundablePayment,
+    refunds: [{
+      id: "failed-linked-refund",
+      status: "FAILED",
+      reason: "CUSTOMER_REQUEST",
+      amountCents: 500,
+      currency: "EUR",
+      initiatedByUserId: "owner-1",
+      supportCaseId: "rejected-request"
+    }]
+  }]);
+  assert.doesNotMatch(page.innerHTML, /Retry refund/);
+  assert.doesNotMatch(page.innerHTML, /data-refund-support-case-id=/);
+
   state.user.permissions = [
     { action: "read", subject: "modules" },
     { action: "read", subject: "payments" }
