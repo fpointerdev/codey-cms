@@ -447,6 +447,84 @@ export class AuthService {
     }, { isolationLevel: "Serializable" });
   }
 
+  async listSessions(userId: string, currentRefreshToken?: string) {
+    const currentTokenHash = currentRefreshToken ? hashToken(currentRefreshToken) : null;
+    const sessions = await this.prisma.refreshToken.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        tokenHash: true,
+        familyId: true,
+        userAgent: true,
+        ipAddress: true,
+        authenticatedAt: true,
+        mfaVerifiedAt: true,
+        createdAt: true,
+        expiresAt: true
+      }
+    });
+
+    return {
+      sessions: sessions.map(({ tokenHash, familyId, createdAt, ...session }) => ({
+        id: familyId,
+        current: tokenHash === currentTokenHash,
+        lastActiveAt: createdAt,
+        ...session
+      }))
+    };
+  }
+
+  async revokeSession(
+    userId: string,
+    familyId: string,
+    currentRefreshToken: string | undefined,
+    meta: RequestMeta
+  ) {
+    const currentTokenHash = currentRefreshToken ? hashToken(currentRefreshToken) : null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const session = await tx.refreshToken.findFirst({
+        where: {
+          userId,
+          familyId,
+          revokedAt: null,
+          expiresAt: { gt: new Date() }
+        },
+        select: { tokenHash: true }
+      });
+      if (!session) {
+        throw new AppError(404, "session_not_found", "This session is no longer active.");
+      }
+
+      const revoked = await tx.refreshToken.updateMany({
+        where: { userId, familyId, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+      if (revoked.count === 0) {
+        throw new AppError(404, "session_not_found", "This session is no longer active.");
+      }
+
+      const current = session.tokenHash === currentTokenHash;
+      await writeAuditLog(tx, {
+        actorUserId: userId,
+        action: "sessions.revoke",
+        subject: "session",
+        subjectId: familyId,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+        requestId: meta.requestId,
+        metadata: { current, refreshTokensRevoked: revoked.count }
+      });
+
+      return { revoked: true, current, refreshTokensRevoked: revoked.count };
+    }, { isolationLevel: "Serializable" });
+  }
+
   async mfaStatus(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

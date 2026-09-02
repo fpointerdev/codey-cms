@@ -30,6 +30,10 @@ export const refreshSchema = z.object({
 
 export const logoutSchema = refreshSchema;
 
+export const sessionIdParams = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{10,64}$/, "Session ID is invalid.")
+});
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8).max(128)

@@ -359,6 +359,7 @@ test("user administration views expose list, onboarding, edit, and delete contro
   });
   assert.match(page.innerHTML, /data-change-password-form/);
   assert.match(page.innerHTML, /data-revoke-all-sessions/);
+  assert.match(page.innerHTML, /Signed-in devices/);
 });
 
 test("admin navigation hides user and settings pages from content editors", async () => {

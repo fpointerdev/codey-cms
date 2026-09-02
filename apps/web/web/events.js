@@ -78,6 +78,7 @@ import {
   disableMfa,
   requestPasswordResetFromLogin,
   revokeAllSessions,
+  revokeSession,
   submitContactForm
 } from "./session-actions.js";
 import {
@@ -1028,6 +1029,12 @@ function bindAdminClick(event) {
 
   if (event.target.closest("[data-revoke-all-sessions]")) {
     void revokeAllSessions();
+    return true;
+  }
+
+  const revokeSessionButton = event.target.closest("[data-revoke-session]");
+  if (revokeSessionButton) {
+    void revokeSession(revokeSessionButton);
     return true;
   }
 

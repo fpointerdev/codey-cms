@@ -131,6 +131,46 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const accessToken = String(refreshBody.data?.tokens.accessToken);
     const authorization = { authorization: `Bearer ${accessToken}` };
 
+    const secondaryLogin = await request("/api/v1/auth/login", {
+      method: "POST",
+      headers: { "user-agent": "CodeY integration secondary device" },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword })
+    });
+    const secondaryLoginBody = await responseJson(secondaryLogin);
+    assert.equal(secondaryLogin.status, 200, JSON.stringify(secondaryLoginBody));
+    const secondaryLoginCookie = cookieFrom(secondaryLogin);
+
+    const sessionInventory = await request("/api/v1/auth/sessions", {
+      headers: { ...authorization, cookie: refreshCookie }
+    });
+    const sessionInventoryBody = await responseJson(sessionInventory);
+    const activeSessions = sessionInventoryBody.data?.sessions as Array<Record<string, unknown>>;
+    assert.equal(sessionInventory.status, 200, JSON.stringify(sessionInventoryBody));
+    assert.equal(activeSessions.filter((session) => session.current).length, 1);
+    assert.equal(activeSessions.some((session) => "tokenHash" in session), false);
+    const secondarySession = activeSessions.find((session) => (
+      session.userAgent === "CodeY integration secondary device"
+    ));
+    assert.equal(typeof secondarySession?.id, "string");
+
+    const revokeSecondarySession = await request(
+      `/api/v1/auth/sessions/${encodeURIComponent(String(secondarySession?.id))}`,
+      {
+        method: "DELETE",
+        headers: { ...authorization, cookie: refreshCookie }
+      }
+    );
+    const revokeSecondarySessionBody = await responseJson(revokeSecondarySession);
+    assert.equal(revokeSecondarySession.status, 200, JSON.stringify(revokeSecondarySessionBody));
+    assert.equal(revokeSecondarySessionBody.data?.current, false);
+
+    const revokedSecondaryRefresh = await request("/api/v1/auth/refresh", {
+      method: "POST",
+      headers: { cookie: secondaryLoginCookie },
+      body: "{}"
+    });
+    assert.equal(revokedSecondaryRefresh.status, 401);
+
     const generation = await request("/api/v1/config/generation/contract", { headers: authorization });
     const generationBody = await responseJson(generation);
     const generationWorkflow = generationBody.data?.automation.workflow as Array<Record<string, unknown>>;

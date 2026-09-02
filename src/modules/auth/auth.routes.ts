@@ -21,7 +21,8 @@ import {
   refreshSchema,
   registerSchema,
   requestEmailVerificationSchema,
-  requestPasswordResetSchema
+  requestPasswordResetSchema,
+  sessionIdParams
 } from "./auth.schemas.js";
 import { requireAuth, requirePermission } from "./auth.middleware.js";
 import {
@@ -221,6 +222,34 @@ export function registerAuthRoutes(router: Router, context: ModuleContext) {
     asyncHandler(async (req, res) => {
       const result = await authService.revokeAllSessions(req.user!.id, requestMeta(req));
       clearRefreshTokenCookie(res, context.config);
+      return sendSuccess(res, result);
+    })
+  );
+
+  router.get(
+    "/sessions",
+    requireAuth(context),
+    asyncHandler(async (req, res) => {
+      const result = await authService.listSessions(
+        req.user!.id,
+        refreshTokenFromRequest(req) ?? undefined
+      );
+      return sendSuccess(res, result);
+    })
+  );
+
+  router.delete(
+    "/sessions/:id",
+    requireAuth(context),
+    validateRequest({ params: sessionIdParams }),
+    asyncHandler(async (req, res) => {
+      const result = await authService.revokeSession(
+        req.user!.id,
+        req.params.id,
+        refreshTokenFromRequest(req) ?? undefined,
+        requestMeta(req)
+      );
+      if (result.current) clearRefreshTokenCookie(res, context.config);
       return sendSuccess(res, result);
     })
   );
