@@ -72,6 +72,15 @@ test("release manifests reject unsafe artifact names and compare stable versions
   assert.equal(compareSemver("1.0.0-beta.1", "1.0.0"), -1);
 });
 
+test("release manifests advertise only the supported generation automation contract", () => {
+  const payload: any = releasePayload();
+  payload.contracts.generationAutomation = "1.0";
+
+  assert.doesNotThrow(() => createUnsignedRelease(payload));
+  payload.contracts.generationAutomation = "2.0";
+  assert.throws(() => createUnsignedRelease(payload), /generation automation contract/);
+});
+
 test("hardened release manifests require source, image, and SBOM provenance", () => {
   const payload: any = releasePayload();
   payload.contracts = {

@@ -72,6 +72,12 @@ export function assertReleasePayload(payload) {
   ) {
     throw new Error("Release payload has an unsupported runtime contract.");
   }
+  if (
+    payload.contracts.generationAutomation !== undefined &&
+    payload.contracts.generationAutomation !== "1.0"
+  ) {
+    throw new Error("Release payload has an unsupported generation automation contract.");
+  }
   if (payload.contracts.supplyChain !== undefined) {
     if (
       payload.contracts.supplyChain !== "1.0" ||

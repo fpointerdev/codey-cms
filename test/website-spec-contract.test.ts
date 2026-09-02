@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { websiteSpecProductSchema } from "../src/modules/config/website-spec.schemas.js";
-import { buildWebsiteGenerationPlan } from "../src/modules/config/website-spec.service.js";
+import {
+  websiteSpecProductSchema,
+  websiteSpecSchema
+} from "../src/modules/config/website-spec.schemas.js";
+import {
+  buildWebsiteGenerationPlan,
+  generationContract
+} from "../src/modules/config/website-spec.service.js";
 
 test("WebsiteSpec products default to online purchase and can request a quote", () => {
   const baseProduct = {
@@ -18,6 +24,34 @@ test("WebsiteSpec products default to online purchase and can request a quote", 
 
   assert.equal(websiteSpecProductSchema.parse(baseProduct).purchaseMode, "buy");
   assert.equal(websiteSpecProductSchema.parse({ ...baseProduct, purchaseMode: "quote" }).purchaseMode, "quote");
+});
+
+test("generation contract gives agents one deterministic WebsiteSpec workflow", () => {
+  const contract = generationContract();
+  const workflow = new Map(contract.automation.workflow.map((operation) => [operation.id, operation]));
+  const apply = workflow.get("apply") as {
+    path?: string;
+    authentication?: string;
+    permission?: { action: string; subject: string };
+    writes?: boolean;
+    atomic?: boolean;
+  };
+
+  assert.equal(contract.name, "codey-cms.website-generation");
+  assert.equal(contract.version, "1.0");
+  assert.equal(contract.automation.version, "1.0");
+  assert.equal(contract.automation.release.selection, "latest-signed-stable");
+  assert.equal(contract.automation.release.customerVersionChoice, false);
+  assert.equal(workflow.get("readiness")?.path, "/api/v1/health/ready");
+  assert.equal(workflow.get("login")?.path, "/api/v1/auth/login");
+  assert.deepEqual(apply.permission, { action: "manage", subject: "modules" });
+  assert.equal(apply.path, "/api/v1/config/generation/apply");
+  assert.equal(apply.authentication, "bearer");
+  assert.equal(apply.writes, true);
+  assert.equal(apply.atomic, true);
+  assert.deepEqual(websiteSpecSchema.parse(contract.websiteSpec.example), contract.websiteSpec.example);
+  assert.equal(contract.publicRuntime.serverRendered, true);
+  assert.equal(contract.publicRuntime.commerce.cart, "in-context-dialog");
 });
 
 test("CodeY CMS accepts and maps the platform WebsiteSpec contract", () => {

@@ -83,6 +83,7 @@ try {
     contracts: {
       websiteSpec: "1.0",
       builder: "1.0",
+      generationAutomation: "1.0",
       exportedSiteAcceptance: "1.0",
       operationalDiagnostics: "1.0",
       offsiteBackupReadiness: "1.0",

@@ -131,6 +131,18 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     const accessToken = String(refreshBody.data?.tokens.accessToken);
     const authorization = { authorization: `Bearer ${accessToken}` };
 
+    const generation = await request("/api/v1/config/generation/contract", { headers: authorization });
+    const generationBody = await responseJson(generation);
+    const generationWorkflow = generationBody.data?.automation.workflow as Array<Record<string, unknown>>;
+    assert.equal(generation.status, 200, JSON.stringify(generationBody));
+    assert.equal(generationBody.data?.name, "codey-cms.website-generation");
+    assert.equal(generationBody.data?.automation.version, "1.0");
+    assert.equal(generationBody.data?.websiteSpec.example.version, "1.0");
+    assert.equal(
+      generationWorkflow.find((operation) => operation.id === "apply")?.atomic,
+      true
+    );
+
     const diagnostics = await request("/api/v1/health/diagnostics", { headers: authorization });
     const diagnosticsBody = await responseJson(diagnostics);
     assert.equal(diagnostics.status, 200, JSON.stringify(diagnosticsBody));
