@@ -347,7 +347,72 @@ function renderMfaPanel(mfa = {}) {
   `;
 }
 
-export function renderProfilePage(profile, mfa = {}) {
+function sessionDeviceName(userAgent = "") {
+  const browser = userAgent.includes("Edg/")
+    ? "Edge"
+    : userAgent.includes("Firefox/")
+      ? "Firefox"
+      : userAgent.includes("Chrome/")
+        ? "Chrome"
+        : userAgent.includes("Safari/")
+          ? "Safari"
+          : "Browser";
+  const device = /iPhone|iPad/.test(userAgent)
+    ? "iPhone or iPad"
+    : /Android/.test(userAgent)
+      ? "Android"
+      : /Macintosh|Mac OS X/.test(userAgent)
+        ? "Mac"
+        : /Windows/.test(userAgent)
+          ? "Windows"
+          : /Linux/.test(userAgent)
+            ? "Linux"
+            : "device";
+
+  return `${browser} on ${device}`;
+}
+
+function sessionIpAddress(ipAddress = "") {
+  return ipAddress.startsWith("::ffff:") ? ipAddress.slice(7) : ipAddress;
+}
+
+function renderSessions(sessions = []) {
+  return `
+    <div class="admin-card profile-sessions" data-session-actions>
+      <div class="section-heading-row">
+        <div><strong>Signed-in devices</strong><span>Remove a device you do not recognize.</span></div>
+        <span class="status-pill">${sessions.length} active</span>
+      </div>
+      ${renderFormMessage()}
+      <div class="profile-session-list">
+        ${sessions.length
+          ? sessions.map((session) => `
+              <div class="profile-session-row">
+                <div>
+                  <strong>${escapeHtml(sessionDeviceName(session.userAgent || ""))}${session.current ? ' <span class="status-pill success">This browser</span>' : ""}</strong>
+                  <span>${session.ipAddress ? `IP ${escapeHtml(sessionIpAddress(session.ipAddress))} · ` : ""}Last active ${escapeHtml(formatDate(session.lastActiveAt))}</span>
+                  <small>Signed in ${escapeHtml(formatDate(session.authenticatedAt))}${session.mfaVerifiedAt ? " with two-step verification" : ""}</small>
+                </div>
+                <button
+                  type="button"
+                  class="secondary-button danger"
+                  data-revoke-session="${escapeHtml(session.id)}"
+                  data-current-session="${session.current ? "true" : "false"}"
+                  data-session-label="${escapeHtml(sessionDeviceName(session.userAgent || ""))}"
+                >${session.current ? "Sign out" : "Remove"}</button>
+              </div>
+            `).join("")
+          : '<p class="dashboard-copy">No refreshable sessions are active.</p>'}
+      </div>
+      <div class="user-danger-zone">
+        <div><strong>Sign out everywhere</strong><span>Immediately invalidates access for this browser and every other signed-in device.</span></div>
+        <button type="button" class="secondary-button danger" data-revoke-all-sessions>Sign out all</button>
+      </div>
+    </div>
+  `;
+}
+
+export function renderProfilePage(profile, mfa = {}, sessions = []) {
   renderAdminShell(
     { view: "profile" },
     `
@@ -380,10 +445,7 @@ export function renderProfilePage(profile, mfa = {}) {
           <div class="form-actions"><button type="submit">Update password</button></div>
         </form>
         ${renderMfaPanel(mfa)}
-        <div class="user-danger-zone" data-session-actions>
-          <div><strong>Active sessions</strong><span>Revoke access for this browser and every other signed-in device.</span>${renderFormMessage()}</div>
-          <button type="button" class="secondary-button danger" data-revoke-all-sessions>Sign out all sessions</button>
-        </div>
+        ${renderSessions(sessions)}
       </section>
     `
   );

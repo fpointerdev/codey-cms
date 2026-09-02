@@ -11,6 +11,7 @@ Use this checklist before a generated site is published.
 - PostgreSQL connection and mutation logs are retained off-host when audit evidence must survive a server compromise.
 - Audit records show `Verified`; `Changed` indicates a broken signature or missing predecessor link, while `Key unavailable` means a required previous audit key is absent.
 - Owners and administrators enable two-step verification under **Profile** and store recovery codes outside the server.
+- **Profile > Signed-in devices** is reviewed and unfamiliar sessions are removed.
 - **Settings > Security** is reviewed for denied actions or changed audit records.
 - `JWT_ACCESS_SECRET` is unique per copied site and at least 32 characters.
 - `AUTH_RECOVERY_TOKEN_DELIVERY=email` when password recovery or email verification is enabled, and when invitations should be delivered automatically.

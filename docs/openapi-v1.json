@@ -56,7 +56,7 @@
         ],
         "operationId": "auth_post_auth_email_verification_confirm",
         "summary": "POST /auth/email-verification/confirm",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:133",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:134",
         "x-codey-validation": {
           "body": "confirmEmailVerificationSchema"
         },
@@ -106,7 +106,7 @@
         ],
         "operationId": "auth_post_auth_email_verification_request",
         "summary": "POST /auth/email-verification/request",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:124",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:125",
         "x-codey-validation": {
           "body": "requestEmailVerificationSchema"
         },
@@ -156,7 +156,7 @@
         ],
         "operationId": "auth_get_auth_invites",
         "summary": "GET /auth/invites",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:156",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:157",
         "x-codey-validation": {
           "query": "listInvitesQuery"
         },
@@ -206,7 +206,7 @@
         ],
         "operationId": "auth_post_auth_invites",
         "summary": "POST /auth/invites",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:142",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:143",
         "x-codey-validation": {
           "body": "createInviteSchema"
         },
@@ -270,7 +270,7 @@
         ],
         "operationId": "auth_delete_auth_invites_id",
         "summary": "DELETE /auth/invites/{id}",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:185",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:186",
         "x-codey-validation": {
           "params": "inviteIdParams"
         },
@@ -333,7 +333,7 @@
         ],
         "operationId": "auth_post_auth_invites_id_resend",
         "summary": "POST /auth/invites/{id}/resend",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:171",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:172",
         "x-codey-validation": {
           "params": "inviteIdParams"
         },
@@ -396,7 +396,7 @@
         ],
         "operationId": "auth_post_auth_invites_accept",
         "summary": "POST /auth/invites/accept",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:199",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:200",
         "x-codey-validation": {
           "body": "acceptInviteSchema"
         },
@@ -446,7 +446,7 @@
         ],
         "operationId": "auth_post_auth_login",
         "summary": "POST /auth/login",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:71",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:72",
         "x-codey-validation": {
           "body": "loginSchema"
         },
@@ -496,7 +496,7 @@
         ],
         "operationId": "auth_post_auth_logout",
         "summary": "POST /auth/logout",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:94",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:95",
         "x-codey-validation": {
           "body": "logoutSchema"
         },
@@ -546,7 +546,7 @@
         ],
         "operationId": "auth_get_auth_me",
         "summary": "GET /auth/me",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:266",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:295",
         "security": [
           {
             "bearerAuth": []
@@ -591,7 +591,7 @@
         ],
         "operationId": "auth_delete_auth_mfa",
         "summary": "DELETE /auth/mfa",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:256",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:285",
         "x-codey-validation": {
           "body": "mfaDisableSchema"
         },
@@ -649,7 +649,7 @@
         ],
         "operationId": "auth_get_auth_mfa",
         "summary": "GET /auth/mfa",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:228",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:257",
         "security": [
           {
             "bearerAuth": []
@@ -694,7 +694,7 @@
         ],
         "operationId": "auth_post_auth_mfa_confirm",
         "summary": "POST /auth/mfa/confirm",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:246",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:275",
         "x-codey-validation": {
           "body": "mfaConfirmSchema"
         },
@@ -754,7 +754,7 @@
         ],
         "operationId": "auth_post_auth_mfa_setup",
         "summary": "POST /auth/mfa/setup",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:236",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:265",
         "x-codey-validation": {
           "body": "mfaSetupSchema"
         },
@@ -814,7 +814,7 @@
         ],
         "operationId": "auth_patch_auth_password",
         "summary": "PATCH /auth/password",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:208",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:209",
         "x-codey-validation": {
           "body": "changePasswordSchema"
         },
@@ -874,7 +874,7 @@
         ],
         "operationId": "auth_post_auth_password_reset_confirm",
         "summary": "POST /auth/password-reset/confirm",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:114",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:115",
         "x-codey-validation": {
           "body": "confirmPasswordResetSchema"
         },
@@ -924,7 +924,7 @@
         ],
         "operationId": "auth_post_auth_password_reset_request",
         "summary": "POST /auth/password-reset/request",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:105",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:106",
         "x-codey-validation": {
           "body": "requestPasswordResetSchema"
         },
@@ -974,7 +974,7 @@
         ],
         "operationId": "auth_post_auth_refresh",
         "summary": "POST /auth/refresh",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:80",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:81",
         "x-codey-validation": {
           "body": "refreshSchema"
         },
@@ -1024,7 +1024,7 @@
         ],
         "operationId": "auth_post_auth_register",
         "summary": "POST /auth/register",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:62",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:63",
         "x-codey-validation": {
           "body": "registerSchema"
         },
@@ -1074,10 +1074,112 @@
         ],
         "operationId": "auth_delete_auth_sessions",
         "summary": "DELETE /auth/sessions",
-        "x-codey-source": "src/modules/auth/auth.routes.ts:218",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:219",
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_get_auth_sessions",
+        "summary": "GET /auth/sessions",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:229",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/auth/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "auth_delete_auth_sessions_id",
+        "summary": "DELETE /auth/sessions/{id}",
+        "x-codey-source": "src/modules/auth/auth.routes.ts:241",
+        "x-codey-validation": {
+          "params": "sessionIdParams"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         ],
         "responses": {

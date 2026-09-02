@@ -107,11 +107,12 @@ export async function loadAdminRoute(route) {
 
   if (route.view === "profile") {
     const { renderProfilePage } = await adminViews();
-    const [{ user }, { mfa }] = await Promise.all([
+    const [{ user }, { mfa }, { sessions }] = await Promise.all([
       api("/users/me"),
-      api("/auth/mfa")
+      api("/auth/mfa"),
+      api("/auth/sessions")
     ]);
-    renderProfilePage(user, mfa);
+    renderProfilePage(user, mfa, sessions);
     return;
   }
 

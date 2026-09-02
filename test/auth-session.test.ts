@@ -11,8 +11,9 @@ import {
   refreshTokenCookieName,
   refreshTokenFromRequest
 } from "../src/modules/auth/auth-session-cookie.js";
-import { changePasswordSchema, refreshSchema } from "../src/modules/auth/auth.schemas.js";
+import { changePasswordSchema, refreshSchema, sessionIdParams } from "../src/modules/auth/auth.schemas.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
+import { hashToken } from "../src/modules/auth/auth-token.js";
 import { hashMfaRecoveryCode } from "../src/modules/auth/mfa.js";
 
 const config = {
@@ -121,6 +122,11 @@ test("password schema rejects reuse and accepts a distinct strong password", () 
 
 test("cookie-backed refresh and logout accept an empty request body", () => {
   assert.deepEqual(refreshSchema.parse(undefined), {});
+});
+
+test("session IDs accept current token families and reject path injection", () => {
+  assert.equal(sessionIdParams.safeParse({ id: "family_1234567890-safe" }).success, true);
+  assert.equal(sessionIdParams.safeParse({ id: "../../other-user" }).success, false);
 });
 
 test("access tokens stop working after the user session version changes", async () => {
@@ -375,6 +381,126 @@ test("revoking every session increments the user version and audits the action",
   assert.equal(calls.versionUpdates, 1);
   assert.equal(calls.revoked, 1);
   assert.deepEqual(calls.audits, ["sessions.revoke_all"]);
+});
+
+test("active sessions are scoped to the user and never expose token hashes", async () => {
+  const currentRefreshToken = "current-refresh-token-with-enough-entropy";
+  let query: Record<string, unknown> | undefined;
+  const service = new AuthService({
+    refreshToken: {
+      findMany: async (args: Record<string, unknown>) => {
+        query = args;
+        return [{
+          tokenHash: hashToken(currentRefreshToken),
+          familyId: "family_1234567890-safe",
+          userAgent: "Test Browser",
+          ipAddress: "127.0.0.1",
+          authenticatedAt: new Date("2026-01-01T00:00:00.000Z"),
+          mfaVerifiedAt: null,
+          createdAt: new Date("2026-01-02T00:00:00.000Z"),
+          expiresAt: new Date("2026-02-01T00:00:00.000Z")
+        }];
+      }
+    }
+  } as unknown as PrismaClient, config);
+
+  const result = await service.listSessions("user-1", currentRefreshToken);
+
+  assert.equal(result.sessions[0]?.current, true);
+  assert.equal(result.sessions[0]?.id, "family_1234567890-safe");
+  assert.equal("tokenHash" in (result.sessions[0] || {}), false);
+  assert.deepEqual((query?.where as { userId?: string }).userId, "user-1");
+  assert.equal(query?.take, 50);
+
+  const apiSessionList = await service.listSessions("user-1");
+  assert.equal(apiSessionList.sessions[0]?.current, false);
+});
+
+test("one session family can be revoked only for its authenticated owner", async () => {
+  const currentRefreshToken = "current-refresh-token-with-enough-entropy";
+  const calls = {
+    lookup: undefined as unknown,
+    update: undefined as unknown,
+    audits: [] as Array<{ action: string; subjectId?: string }>
+  };
+  const tx = {
+    refreshToken: {
+      findFirst: async (args: Record<string, unknown>) => {
+        calls.lookup = args;
+        return { tokenHash: hashToken(currentRefreshToken) };
+      },
+      updateMany: async (args: Record<string, unknown>) => {
+        calls.update = args;
+        return { count: 1 };
+      }
+    },
+    auditLog: {
+      create: async ({ data }: { data: { action: string; subjectId?: string } }) => {
+        calls.audits.push(data);
+        return data;
+      }
+    }
+  };
+  const service = new AuthService({
+    $transaction: async (callback: (database: typeof tx) => Promise<unknown>) => callback(tx)
+  } as unknown as PrismaClient, config);
+
+  const result = await service.revokeSession(
+    "user-1",
+    "family_1234567890-safe",
+    currentRefreshToken,
+    { ipAddress: "127.0.0.1" }
+  );
+
+  assert.deepEqual(result, { revoked: true, current: true, refreshTokensRevoked: 1 });
+  assert.deepEqual((calls.lookup as { where: unknown }).where, {
+    userId: "user-1",
+    familyId: "family_1234567890-safe",
+    revokedAt: null,
+    expiresAt: { gt: (calls.lookup as { where: { expiresAt: { gt: Date } } }).where.expiresAt.gt }
+  });
+  assert.deepEqual((calls.update as { where: unknown }).where, {
+    userId: "user-1",
+    familyId: "family_1234567890-safe",
+    revokedAt: null
+  });
+  assert.deepEqual(calls.audits.map(({ action, subjectId }) => ({ action, subjectId })), [{
+    action: "sessions.revoke",
+    subjectId: "family_1234567890-safe"
+  }]);
+
+  const otherDevice = await service.revokeSession(
+    "user-1",
+    "family_1234567890-safe",
+    "different-refresh-token-with-enough-entropy",
+    {}
+  );
+  assert.equal(otherDevice.current, false);
+});
+
+test("individual session revocation handles expired sessions and concurrent removal", async () => {
+  const unavailableService = new AuthService({
+    $transaction: async (callback: (database: unknown) => Promise<unknown>) => callback({
+      refreshToken: { findFirst: async () => null }
+    })
+  } as unknown as PrismaClient, config);
+  await assert.rejects(
+    () => unavailableService.revokeSession("user-1", "family_1234567890-safe", undefined, {}),
+    (error) => error instanceof AppError && error.code === "session_not_found"
+  );
+
+  const racedService = new AuthService({
+    $transaction: async (callback: (database: unknown) => Promise<unknown>) => callback({
+      refreshToken: {
+        findFirst: async () => ({ tokenHash: "stored-hash" }),
+        updateMany: async () => ({ count: 0 })
+      }
+    })
+  } as unknown as PrismaClient, config);
+  await assert.rejects(
+    () => racedService.revokeSession("user-1", "family_1234567890-safe", undefined, {}),
+    (error) => error instanceof AppError && error.code === "session_not_found"
+  );
 });
 
 test("requesting a password reset invalidates earlier reset links", async () => {

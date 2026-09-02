@@ -255,6 +255,9 @@ test("account protection stays discoverable without interrupting normal login", 
   await expect(page.getByText("Two-step verification", { exact: true })).toBeVisible();
   await expect(page.locator("[data-mfa-setup-form]")).toBeVisible();
   await expect(page.getByText("Recommended", { exact: true })).toBeVisible();
+  await expect(page.getByText("Signed-in devices", { exact: true })).toBeVisible();
+  await expect(page.getByText("This browser", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-revoke-session][data-current-session='true']")).toBeVisible();
 
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/\/dashboard\/settings$/);
@@ -265,6 +268,7 @@ test("account protection stays discoverable without interrupting normal login", 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("link", { name: "Account security" }).click();
   await expect(page.locator("[data-mfa-panel]")).toBeVisible();
+  await expect(page.locator("[data-session-actions]")).toBeVisible();
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 });

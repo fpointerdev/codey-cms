@@ -575,6 +575,64 @@
   gap: 16px;
 }
 
+.profile-sessions {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.profile-mfa-card .section-heading-row > div,
+.profile-sessions .section-heading-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-mfa-card .section-heading-row > div > span,
+.profile-sessions .section-heading-row > div > span {
+  color: var(--admin-muted);
+  font-size: 0.82rem;
+}
+
+.profile-session-list {
+  display: grid;
+  border-block: 1px solid var(--admin-line);
+}
+
+.profile-session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+}
+
+.profile-session-row + .profile-session-row {
+  border-top: 1px solid var(--admin-line);
+}
+
+.profile-session-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.profile-session-row strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-session-row span,
+.profile-session-row small {
+  overflow-wrap: anywhere;
+  color: var(--admin-muted);
+}
+
+.profile-session-row .secondary-button {
+  flex: 0 0 auto;
+}
+
 .mfa-setup-key {
   display: grid;
   gap: 6px;
@@ -1429,8 +1487,13 @@
   }
 
   .admin-pagination,
+  .profile-session-row,
   .user-danger-zone {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .profile-session-row .secondary-button {
+    align-self: flex-start;
   }
 }

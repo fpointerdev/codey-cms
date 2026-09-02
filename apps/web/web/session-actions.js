@@ -277,6 +277,43 @@ export async function revokeAllSessions() {
   renderAdminLogin("All sessions have been signed out.");
 }
 
+export async function revokeSession(button) {
+  const sessionId = String(button?.dataset.revokeSession || "");
+  const current = button?.dataset.currentSession === "true";
+  const sessionLabel = String(button?.dataset.sessionLabel || "this device");
+  if (!sessionId) return;
+
+  const confirmed = await getModalFormHandler()({
+    label: "Account security",
+    title: current ? "Sign out this browser" : "Remove signed-in device",
+    description: current
+      ? "Sign out this browser now?"
+      : `Remove ${sessionLabel}? Its current access ends shortly and it cannot refresh the session.`,
+    fields: [],
+    submitLabel: current ? "Sign out" : "Remove device",
+    destructive: true
+  });
+  if (!confirmed) return;
+
+  const sessionActions = button.closest?.("[data-session-actions]") || document;
+  try {
+    await api(`/auth/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  } catch (error) {
+    setFormMessage(sessionActions, error.message || "Unable to remove this session.", true);
+    return;
+  }
+
+  if (current) {
+    clearBrowserSession();
+    window.history.pushState({}, "", "/cy-admin");
+    renderAdminLogin("This browser has been signed out.");
+    return;
+  }
+
+  const { bootstrap } = await import("./controller.js");
+  await bootstrap();
+}
+
 export async function requestPasswordResetFromLogin(form) {
   const emailInput = form?.querySelector?.('input[name="email"]') || document.querySelector?.('input[name="email"]');
   const currentEmail = typeof emailInput?.value === "string" ? emailInput.value : "";
