@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.fpointerdev/codey-cms",
+  "title": "CodeY CMS",
+  "description": "Discover, evaluate, install, and validate generated websites for the self-hosted CodeY CMS.",
+  "version": "0.1.0",
+  "websiteUrl": "https://usecodey.com/cms",
+  "repository": {
+    "id": "1286093970",
+    "url": "https://github.com/fpointerdev/codey-cms",
+    "source": "github",
+    "subfolder": "integrations/codey-cms-mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "codey-cms-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

@@ -113,6 +113,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build MCP distribution image
+        run: docker build -f integrations/codey-cms-mcp/Dockerfile -t codey-cms-mcp:qualification .
       - name: Build local qualification package
         env:
           CODEY_RELEASE_ALLOW_UNSIGNED: "true"

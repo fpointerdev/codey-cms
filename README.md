@@ -65,8 +65,15 @@ Integration and browser tests refuse database names that do not contain `test`, 
 
 AI agents should use this repository as the CMS reference when building client websites. Generated work must map content into editable CMS records and registered builder elements, not hard-coded dashboard-only output.
 
+For agent discovery, CodeY CMS includes a read-only MCP server package. It can explain current capabilities, evaluate project fit, return the signed installation workflow, expose the builder registry, and validate WebsiteSpec 1.0 without connecting to customer data.
+
+```bash
+npx -y codey-cms-mcp
+```
+
 Useful docs:
 
+- `docs/ai-agent-integration.md`
 - `docs/generated-site-contract.md`
 - `docs/content-modeling.md`
 - `docs/extensions.md`

@@ -1,0 +1,38 @@
+{
+  "name": "codey-cms-mcp",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for discovering, evaluating, installing, and generating sites with CodeY CMS.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "mcpName": "io.github.fpointerdev/codey-cms",
+  "bin": {
+    "codey-cms-mcp": "dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "server.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fpointerdev/codey-cms.git",
+    "directory": "integrations/codey-cms-mcp"
+  },
+  "homepage": "https://usecodey.com/cms",
+  "bugs": "https://github.com/fpointerdev/codey-cms/issues",
+  "keywords": [
+    "codey",
+    "cms",
+    "mcp",
+    "model-context-protocol",
+    "self-hosted",
+    "website-generator"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

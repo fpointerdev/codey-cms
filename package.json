@@ -31,7 +31,7 @@
     "audit:load": "node scripts/audit-load.mjs",
     "audit:quality": "node scripts/run-public-quality-audits.mjs",
     "test:release": "pnpm run validate && pnpm run test:installation && pnpm run test:integration && pnpm run test:recovery && pnpm run test:e2e",
-    "validate": "pnpm run release:containers && pnpm run lint && pnpm run extension:catalog -- --check && pnpm run extension:validate && pnpm run api:check && pnpm run typecheck && pnpm run test:coverage && pnpm run db:validate && pnpm run build",
+    "validate": "pnpm run release:containers && pnpm run lint && pnpm run extension:catalog -- --check && pnpm run extension:validate && pnpm run api:check && pnpm run typecheck && pnpm run test:coverage && pnpm run db:validate && pnpm run build && pnpm run mcp:build",
     "runtime:start": "pnpm db:deploy && node dist/src/server.js",
     "runtime:bootstrap": "pnpm db:deploy && pnpm db:seed",
     "setup:admin": "pnpm prisma:generate && node scripts/setup-admin.mjs",
@@ -60,7 +60,10 @@
     "db:seed": "pnpm prisma:generate && tsx prisma/seed.ts",
     "extension:create": "node scripts/create-extension.mjs",
     "extension:catalog": "node --import tsx scripts/generate-extension-catalog.ts",
-    "extension:validate": "node --import tsx scripts/validate-extensions.ts"
+    "extension:validate": "node --import tsx scripts/validate-extensions.ts",
+    "mcp:build": "node scripts/build-mcp-package.mjs",
+    "mcp:test": "node --import tsx --test test/mcp-server.test.ts",
+    "mcp:pack": "pnpm run mcp:build && pnpm --dir integrations/codey-cms-mcp pack --pack-destination ../../.release"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -84,6 +87,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@lhci/cli": "^0.15.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@playwright/test": "^1.62.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.8.1",
