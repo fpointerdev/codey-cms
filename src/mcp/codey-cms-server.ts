@@ -19,7 +19,7 @@ import {
 declare const CODEY_CMS_MCP_VERSION: string;
 
 const mcpVersion =
-  typeof CODEY_CMS_MCP_VERSION === "string" ? CODEY_CMS_MCP_VERSION : "0.1.0";
+  typeof CODEY_CMS_MCP_VERSION === "string" ? CODEY_CMS_MCP_VERSION : "0.1.1";
 
 const product = {
   name: "CodeY CMS",

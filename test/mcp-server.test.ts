@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -17,6 +18,18 @@ function textResult(result: Awaited<ReturnType<Client["callTool"]>>) {
   assert.equal(block?.type, "text");
   return JSON.parse(block.text) as Record<string, unknown>;
 }
+
+test("MCP release publishes the local package directory explicitly", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/publish-mcp.yml", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    workflow,
+    /npm publish \.\/integrations\/codey-cms-mcp --access public --provenance/
+  );
+});
 
 test("CodeY CMS MCP exposes only bounded read-only discovery tools", async () => {
   const { client, server } = await connectedClient();
