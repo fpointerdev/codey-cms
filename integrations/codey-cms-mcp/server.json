@@ -3,7 +3,7 @@
   "name": "io.github.fpointerdev/codey-cms",
   "title": "CodeY CMS",
   "description": "Discover, evaluate, install, and validate generated websites for the self-hosted CodeY CMS.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "websiteUrl": "https://usecodey.com/cms",
   "repository": {
     "id": "1286093970",
@@ -15,7 +15,7 @@
     {
       "registryType": "npm",
       "identifier": "codey-cms-mcp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "stdio"
       }

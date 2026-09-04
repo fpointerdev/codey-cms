@@ -1,6 +1,6 @@
 {
   "name": "codey-cms-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read-only MCP server for discovering, evaluating, installing, and generating sites with CodeY CMS.",
   "license": "GPL-2.0-or-later",
   "type": "module",
