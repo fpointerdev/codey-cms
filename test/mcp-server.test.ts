@@ -19,7 +19,7 @@ function textResult(result: Awaited<ReturnType<Client["callTool"]>>) {
   return JSON.parse(block.text) as Record<string, unknown>;
 }
 
-test("MCP release publishes the local package directory explicitly", async () => {
+test("MCP release publishes locally through trusted OIDC", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/publish-mcp.yml", import.meta.url),
     "utf8"
@@ -29,6 +29,8 @@ test("MCP release publishes the local package directory explicitly", async () =>
     workflow,
     /npm publish \.\/integrations\/codey-cms-mcp --access public --provenance/
   );
+  assert.match(workflow, /id-token: write/);
+  assert.doesNotMatch(workflow, /NPM_TOKEN|NODE_AUTH_TOKEN/);
 });
 
 test("CodeY CMS MCP exposes only bounded read-only discovery tools", async () => {
