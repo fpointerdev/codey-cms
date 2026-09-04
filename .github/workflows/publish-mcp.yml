@@ -35,8 +35,6 @@ jobs:
       - run: pnpm run mcp:build
       - name: Publish npm package with provenance
         run: npm publish ./integrations/codey-cms-mcp --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Install pinned MCP publisher
         run: |
           curl --fail --location --silent --show-error \

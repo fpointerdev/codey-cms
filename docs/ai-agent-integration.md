@@ -75,14 +75,14 @@ Build and inspect the package before publication:
 pnpm mcp:test
 pnpm mcp:build
 pnpm mcp:pack
-npm publish integrations/codey-cms-mcp --access public --provenance
+npm publish ./integrations/codey-cms-mcp --access public --provenance
 ```
 
 The package name is `codey-cms-mcp`. Its MCP Registry identity is `io.github.fpointerdev/codey-cms`; both values are versioned in `integrations/codey-cms-mcp/package.json` and `server.json`.
 
 After npm publication, authenticate with the official `mcp-publisher` and publish `integrations/codey-cms-mcp/server.json`. Verify the resulting registry record before advertising availability.
 
-The protected `Publish MCP` workflow performs both publications for a matching `mcp-v<package-version>` tag. It requires an `NPM_TOKEN` in the `mcp-release` GitHub environment; MCP Registry authentication uses GitHub OIDC and does not require a separate registry secret.
+The protected `Publish MCP` workflow performs both publications for a matching `mcp-v<package-version>` tag. npm trusted publishing must bind `fpointerdev/codey-cms`, `publish-mcp.yml`, and the `mcp-release` GitHub environment. Both npm and MCP Registry publication use GitHub OIDC and require no long-lived publication secret.
 
 ## Directory submissions
 
