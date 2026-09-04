@@ -28,10 +28,20 @@
       "branches": 84.62,
       "functions": 100
     },
+    "src/modules/auth/auth-token.ts": {
+      "lines": 90.32,
+      "branches": 85.71,
+      "functions": 100
+    },
+    "src/modules/auth/auth-user.ts": {
+      "lines": 100,
+      "branches": 85.71,
+      "functions": 100
+    },
     "src/modules/auth/auth.middleware.ts": {
-      "lines": 54.46,
-      "branches": 88.89,
-      "functions": 28.57
+      "lines": 71.29,
+      "branches": 94.44,
+      "functions": 60
     },
     "src/modules/auth/auth.module.ts": {
       "lines": 0,
@@ -49,24 +59,14 @@
       "functions": 100
     },
     "src/modules/auth/auth.service.ts": {
-      "lines": 69.37,
-      "branches": 62.6,
-      "functions": 75.76
-    },
-    "src/modules/auth/auth-token.ts": {
-      "lines": 90.32,
-      "branches": 85.71,
-      "functions": 100
+      "lines": 72.16,
+      "branches": 66.07,
+      "functions": 78.26
     },
     "src/modules/auth/auth.types.ts": {
       "lines": 0,
       "branches": 0,
       "functions": 0
-    },
-    "src/modules/auth/auth-user.ts": {
-      "lines": 100,
-      "branches": 85.71,
-      "functions": 100
     },
     "src/modules/auth/login-protection.service.ts": {
       "lines": 99.29,
@@ -79,39 +79,39 @@
       "functions": 66.67
     },
     "src/modules/orders/buyer-account.service.ts": {
-      "lines": 97.16,
-      "branches": 83.93,
+      "lines": 95.96,
+      "branches": 89.66,
       "functions": 100
     },
     "src/modules/orders/checkout.service.ts": {
-      "lines": 54.61,
-      "branches": 57.38,
-      "functions": 43.24
+      "lines": 54.96,
+      "branches": 58.06,
+      "functions": 45.95
     },
     "src/modules/orders/commerce-abuse.service.ts": {
-      "lines": 38.37,
-      "branches": 75,
-      "functions": 22.22
+      "lines": 40.7,
+      "branches": 100,
+      "functions": 44.44
     },
     "src/modules/orders/commerce-rate-limit.middleware.ts": {
-      "lines": 50,
+      "lines": 62.5,
       "branches": 100,
-      "functions": 50
+      "functions": 66.67
     },
     "src/modules/orders/customer-data.service.ts": {
-      "lines": 78.19,
-      "branches": 76.92,
-      "functions": 81.82
+      "lines": 95.65,
+      "branches": 95.83,
+      "functions": 92.86
     },
     "src/modules/orders/inventory-reservation.service.ts": {
-      "lines": 33.98,
-      "branches": 62.5,
-      "functions": 21.05
+      "lines": 35.03,
+      "branches": 60,
+      "functions": 25
     },
     "src/modules/orders/order-email.service.ts": {
-      "lines": 60.06,
-      "branches": 48.15,
-      "functions": 85.71
+      "lines": 77.72,
+      "branches": 76.79,
+      "functions": 94.44
     },
     "src/modules/orders/order-lookup.ts": {
       "lines": 100,
@@ -129,9 +129,9 @@
       "functions": 0
     },
     "src/modules/orders/orders.schemas.ts": {
-      "lines": 95.36,
+      "lines": 96.03,
       "branches": 100,
-      "functions": 83.33
+      "functions": 87.5
     },
     "src/modules/payments/payment-credentials.ts": {
       "lines": 97.37,
@@ -139,18 +139,23 @@
       "functions": 100
     },
     "src/modules/payments/payment-event.service.ts": {
-      "lines": 40,
-      "branches": 100,
-      "functions": 40
+      "lines": 77.49,
+      "branches": 58.76,
+      "functions": 100
     },
     "src/modules/payments/payment-provider-config.service.ts": {
-      "lines": 43.64,
-      "branches": 75,
-      "functions": 11.11
+      "lines": 51.42,
+      "branches": 78.57,
+      "functions": 43.48
     },
     "src/modules/payments/payment-provider-http.ts": {
       "lines": 54.17,
       "branches": 50,
+      "functions": 66.67
+    },
+    "src/modules/payments/payment-refund.service.ts": {
+      "lines": 68.92,
+      "branches": 73.97,
       "functions": 66.67
     },
     "src/modules/payments/payments.module.ts": {
@@ -159,9 +164,9 @@
       "functions": 0
     },
     "src/modules/payments/payments.routes.ts": {
-      "lines": 29.31,
+      "lines": 35.81,
       "branches": 100,
-      "functions": 6.25
+      "functions": 13.33
     },
     "src/modules/payments/payments.schemas.ts": {
       "lines": 100,
@@ -169,17 +174,17 @@
       "functions": 66.67
     },
     "src/modules/payments/paypal-provider.ts": {
-      "lines": 73.21,
-      "branches": 51.72,
-      "functions": 68.75
+      "lines": 81.01,
+      "branches": 67.21,
+      "functions": 76.19
     },
     "src/modules/payments/stripe-provider.ts": {
-      "lines": 81.19,
-      "branches": 61.76,
-      "functions": 81.25
+      "lines": 89.25,
+      "branches": 85.71,
+      "functions": 88.89
     },
     "src/runtime/release.ts": {
-      "lines": 96.55,
+      "lines": 96.67,
       "branches": 50,
       "functions": 100
     },

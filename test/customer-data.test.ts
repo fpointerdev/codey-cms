@@ -4,7 +4,8 @@ import { Prisma } from "@prisma/client";
 import type { ModuleContext } from "../src/core/types/module.js";
 import {
   anonymizeCustomerData,
-  anonymizedCustomerEmail
+  anonymizedCustomerEmail,
+  exportCustomerData
 } from "../src/modules/orders/customer-data.service.js";
 import {
   customerDataAnonymizeSchema,
@@ -33,6 +34,97 @@ test("customer data operations require a valid email and explicit destructive co
   }).success, false);
 });
 
+test("customer exports include the durable refund history", async () => {
+  let paymentQuery: Record<string, unknown> | undefined;
+  const refund = { id: "refund-1", amountCents: 500, currency: "EUR", status: "SUCCEEDED" };
+  const context = {
+    prisma: {
+      order: { findMany: async () => [{ id: "order-1", notifications: [] }] },
+      cart: { findMany: async () => [] },
+      payment: {
+        findMany: async (query: Record<string, unknown>) => {
+          paymentQuery = query;
+          return [{
+            id: "payment-1",
+            provider: "STRIPE",
+            providerReference: "pi_customer",
+            refunds: [refund]
+          }];
+        }
+      },
+      paymentWebhook: { findMany: async () => [] }
+    }
+  } as unknown as ModuleContext;
+
+  const result = await exportCustomerData(context, "customer@example.com");
+
+  assert.equal(result.schemaVersion, 3);
+  assert.deepEqual(result.payments[0]?.refunds, [refund]);
+  assert.deepEqual(paymentQuery?.include, {
+    refunds: { orderBy: { createdAt: "asc" } }
+  });
+});
+
+test("customer exports avoid unrelated payment and webhook queries", async () => {
+  let paymentQueried = false;
+  let webhookQueried = false;
+  const context = {
+    prisma: {
+      order: { findMany: async () => [] },
+      cart: { findMany: async () => [] },
+      payment: {
+        findMany: async () => {
+          paymentQueried = true;
+          return [];
+        }
+      },
+      paymentWebhook: {
+        findMany: async () => {
+          webhookQueried = true;
+          return [];
+        }
+      }
+    }
+  } as unknown as ModuleContext;
+
+  const result = await exportCustomerData(context, "missing@example.com");
+
+  assert.deepEqual(result.payments, []);
+  assert.deepEqual(result.paymentWebhooks, []);
+  assert.equal(paymentQueried, false);
+  assert.equal(webhookQueried, false);
+});
+
+test("customer exports do not query webhooks for payments without provider references", async () => {
+  let webhookQueried = false;
+  const context = {
+    prisma: {
+      order: { findMany: async () => [{ id: "order-1", notifications: [] }] },
+      cart: { findMany: async () => [] },
+      payment: {
+        findMany: async () => [{
+          id: "payment-1",
+          provider: "MANUAL",
+          providerReference: null,
+          refunds: []
+        }]
+      },
+      paymentWebhook: {
+        findMany: async () => {
+          webhookQueried = true;
+          return [];
+        }
+      }
+    }
+  } as unknown as ModuleContext;
+
+  const result = await exportCustomerData(context, "customer@example.com");
+
+  assert.equal(result.payments.length, 1);
+  assert.deepEqual(result.paymentWebhooks, []);
+  assert.equal(webhookQueried, false);
+});
+
 test("customer anonymization clears linked commerce metadata and webhook payloads", async () => {
   const calls: Record<string, unknown> = {};
   const transaction = {
@@ -47,6 +139,9 @@ test("customer anonymization clears linked commerce metadata and webhook payload
     payment: {
       findMany: async () => [{ provider: "STRIPE", providerReference: "pi_customer" }],
       updateMany: async (args: unknown) => { calls.payment = args; }
+    },
+    paymentRefund: {
+      updateMany: async (args: unknown) => { calls.paymentRefund = args; }
     },
     paymentWebhook: {
       updateMany: async (args: unknown) => {
@@ -106,6 +201,10 @@ test("customer anonymization clears linked commerce metadata and webhook payload
   assert.deepEqual(calls.tracking, {
     where: { orderId: { in: ["order-1"] } },
     data: { trackingNumber: null, trackingUrl: null, note: null }
+  });
+  assert.deepEqual(calls.paymentRefund, {
+    where: { payment: { orderId: { in: ["order-1"] } } },
+    data: { note: null, failureMessage: null }
   });
   const webhookUpdate = calls.paymentWebhook as {
     where: unknown;

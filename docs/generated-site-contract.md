@@ -268,9 +268,10 @@ never list orders from an email address alone.
 - `DELETE /orders/buyer/session` removes the current device-scoped session and clears its HTTP-only cookie.
 - `POST /orders/buyer/orders/claim` accepts `orderNumber` and `lookupToken`, then adds that order to the session.
 - `POST /orders/buyer/orders/:orderNumber/cancel` cancels an unpaid order only when no payment attempt exists; otherwise it creates an idempotent cancellation request for staff review.
-- `POST /orders/buyer/orders/:orderNumber/cases` creates a bounded complaint, return, or other support request.
+- `POST /orders/buyer/orders/:orderNumber/cases` creates a bounded complaint, return, refund, or other support request. Refund requests require `requestedRefundCents`, are limited to the remaining paid balance, and remain non-financial until staff approval.
 - `PATCH /orders/:id/tracking` and `PATCH /orders/cases/:caseId` are authenticated staff APIs. Tracking URLs must be HTTP(S).
-- `[data-commerce-account-root]`, `[data-buyer-orders]`, `[data-buyer-claim-form]`, and `[data-buyer-forget]` are the default storefront runtime hooks.
+- Approved requests may be linked to `POST /payments/:paymentId/refunds` with `supportCaseId`; the request resolves only after the provider refund succeeds.
+- `[data-commerce-account-root]`, `[data-buyer-orders]`, `[data-buyer-claim-form]`, `[data-buyer-refund]`, and `[data-buyer-forget]` are the default storefront runtime hooks.
 
 Custom storefronts should link to `/account/orders` after checkout. The CMS owns
 that route even when `CUSTOM_STOREFRONT_DIR` is configured, so a generated theme

@@ -671,6 +671,90 @@ export async function updateManualPayment(button) {
   }
 }
 
+function refundRequestKey() {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  return `refund-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export async function refundPayment(button) {
+  const paymentId = button?.dataset?.paymentRefund;
+  const maxCents = Number.parseInt(button?.dataset?.refundMaxCents || "0", 10);
+  const amountCents = Number.parseInt(button?.dataset?.refundAmountCents || "0", 10);
+  const currency = button?.dataset?.refundCurrency || "EUR";
+  if (!paymentId || !Number.isInteger(maxCents) || maxCents <= 0) return;
+
+  const values = await getModalFormHandler()({
+    label: "Payment refund",
+    title: button.dataset.retryRefundId ? "Retry refund" : "Refund payment",
+    description: `Send a full or partial refund through ${button.dataset.paymentProvider || "the payment provider"}. This cannot be undone in CodeY CMS.`,
+    fields: [
+      {
+        name: "amount",
+        label: `Amount (${currency})`,
+        type: "number",
+        value: ((amountCents || maxCents) / 100).toFixed(2),
+        min: "0.01",
+        max: (maxCents / 100).toFixed(2),
+        step: "0.01"
+      },
+      {
+        name: "reason",
+        label: "Reason",
+        type: "select",
+        value: button.dataset.refundReason || "CUSTOMER_REQUEST",
+        options: [
+          { value: "CUSTOMER_REQUEST", label: "Customer request" },
+          { value: "DUPLICATE", label: "Duplicate payment" },
+          { value: "FRAUDULENT", label: "Fraudulent payment" },
+          { value: "OTHER", label: "Other" }
+        ]
+      },
+      {
+        name: "note",
+        label: "Internal note",
+        type: "textarea",
+        value: button.dataset.refundNote || "",
+        rows: 3,
+        required: false,
+        help: "Stored in CodeY CMS for the shop team."
+      }
+    ],
+    submitLabel: button.dataset.retryRefundId ? "Retry refund" : "Issue refund",
+    destructive: true
+  });
+  if (!values) return;
+
+  const requestedCents = normalizePriceCents(values.amount);
+  if (requestedCents <= 0 || requestedCents > maxCents) {
+    setStatus(`Refund amount must be between 0.01 and ${(maxCents / 100).toFixed(2)} ${currency}.`, true);
+    return;
+  }
+
+  const idempotencyKey = button.dataset.refundRequestKey || refundRequestKey();
+  button.dataset.refundRequestKey = idempotencyKey;
+  button.disabled = true;
+  try {
+    const result = await api(`/payments/${encodeURIComponent(paymentId)}/refunds`, {
+      method: "POST",
+      body: JSON.stringify({
+        amountCents: requestedCents,
+        reason: String(values.reason || "CUSTOMER_REQUEST"),
+        note: String(values.note || "").trim() || undefined,
+        idempotencyKey,
+        retryRefundId: button.dataset.retryRefundId || undefined,
+        supportCaseId: button.dataset.refundSupportCaseId || undefined
+      })
+    });
+    await loadAdminRoute({ view: "shop-orders" });
+    setStatus(result.refund?.status === "SUCCEEDED"
+      ? "Refund completed and the customer was notified."
+      : "Refund submitted. CodeY CMS will update it when the provider confirms it.");
+  } catch (error) {
+    button.disabled = false;
+    setStatus(error.message || "Unable to refund the payment.", true);
+  }
+}
+
 export async function updateOrderStatus(button) {
   const orderId = button?.dataset?.orderId;
   const status = button?.dataset?.orderStatusAction;
@@ -739,9 +823,10 @@ export async function updateOrderSupportCase(button) {
   const caseId = button?.dataset?.orderCaseUpdate;
   if (!caseId) return;
 
+  const refundRequest = button.dataset.orderCaseType === "REFUND";
   const values = await getModalFormHandler()({
     label: "Buyer request",
-    title: "Update support request",
+    title: refundRequest ? "Review refund request" : "Update support request",
     description: "The response and status are visible in the buyer's order dashboard.",
     fields: [
       {
@@ -752,6 +837,10 @@ export async function updateOrderSupportCase(button) {
         options: [
           { value: "OPEN", label: "Open" },
           { value: "IN_REVIEW", label: "In review" },
+          ...(refundRequest ? [
+            { value: "APPROVED", label: "Approved - ready to refund" },
+            { value: "REJECTED", label: "Rejected" }
+          ] : []),
           { value: "RESOLVED", label: "Resolved" },
           { value: "CLOSED", label: "Closed" }
         ]

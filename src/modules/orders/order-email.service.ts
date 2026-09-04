@@ -18,6 +18,7 @@ type QueueOrderEmailOptions = {
   previousStatus?: OrderStatus;
   secretEnvelope?: string;
   accountUrl?: string;
+  refundedCents?: number;
 };
 
 type DeliverQueuedOrderEmailsOptions = {
@@ -122,19 +123,21 @@ function buildOrderEmail(order: OrderForEmail, options: QueueOrderEmailOptions) 
   }
 
   if (options.eventType === "ORDER_REFUNDED") {
+    const refunded = formatMoney(options.refundedCents ?? order.totalCents, order.currency);
+    const fullyRefunded = options.refundedCents === undefined || order.status === "REFUNDED";
     return {
-      subject: `Order ${order.orderNumber} was refunded`,
+      subject: `${fullyRefunded ? "Order" : "Refund for order"} ${order.orderNumber}${fullyRefunded ? " was refunded" : ""}`,
       body: [
-        `Order ${order.orderNumber} was refunded.`,
+        `${refunded} was refunded for order ${order.orderNumber}.`,
         "",
-        `Total: ${total}`,
+        `Refund: ${refunded}`,
         "",
         accountEmailText(options),
         "",
         "Items:",
         itemsText
       ].join("\n"),
-      htmlBody: `<p>Order <strong>${escapeHtml(order.orderNumber)}</strong> was refunded.</p><p>Total: ${escapeHtml(total)}</p>${accountEmailHtml(options)}<ul>${itemsHtml}</ul>`
+      htmlBody: `<p><strong>${escapeHtml(refunded)}</strong> was refunded for order <strong>${escapeHtml(order.orderNumber)}</strong>.</p><p>Refund: ${escapeHtml(refunded)}</p>${accountEmailHtml(options)}<ul>${itemsHtml}</ul>`
     };
   }
 

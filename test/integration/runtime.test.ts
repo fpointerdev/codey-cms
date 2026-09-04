@@ -839,6 +839,85 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(inventoryAfterSuccess.stockQuantity, inventoryBeforePayment.stockQuantity - 1);
     assert.equal(inventoryAfterSuccess.reservedQuantity, reservedBeforePayment);
 
+    const refundRequest = await request(`/api/v1/orders/buyer/orders/${orderNumber}/cases`, {
+      method: "POST",
+      headers: { cookie: buyerCookie },
+      body: JSON.stringify({
+        type: "REFUND",
+        subject: "Item arrived damaged",
+        message: "The item cannot be used in its delivered condition.",
+        requestedRefundCents: 1
+      })
+    });
+    const refundRequestBody = await responseJson(refundRequest);
+    assert.equal(refundRequest.status, 201, JSON.stringify(refundRequestBody));
+    assert.equal(refundRequestBody.data?.supportCase.requestedRefundCents, 1);
+    const ordersWithRefundRequest = await request("/api/v1/orders", { headers: authorization });
+    const ordersWithRefundRequestBody = await responseJson(ordersWithRefundRequest);
+    const refundCase = ordersWithRefundRequestBody.data?.orders
+      .find((order: { id: string }) => order.id === orderId)
+      ?.supportCases.find((supportCase: { type: string }) => supportCase.type === "REFUND");
+    assert.ok(refundCase?.id);
+    const approveRefundRequest = await request(`/api/v1/orders/cases/${String(refundCase.id)}`, {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({
+        status: "APPROVED",
+        merchantResponse: "Approved. The refund will now be issued."
+      })
+    });
+    assert.equal(
+      approveRefundRequest.status,
+      200,
+      JSON.stringify(await responseJson(approveRefundRequest))
+    );
+
+    const partialRefund = await request(`/api/v1/payments/${retryPaymentId}/refunds`, {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({
+        amountCents: 1,
+        reason: "CUSTOMER_REQUEST",
+        note: "Integration refund",
+        idempotencyKey: `manual-refund-${runId}`,
+        supportCaseId: String(refundCase.id)
+      })
+    });
+    const partialRefundBody = await responseJson(partialRefund);
+    assert.equal(partialRefund.status, 201, JSON.stringify(partialRefundBody));
+    assert.equal(partialRefundBody.data?.refund.status, "SUCCEEDED");
+    assert.equal(partialRefundBody.data?.refund.amountCents, 1);
+
+    const duplicateRefund = await request(`/api/v1/payments/${retryPaymentId}/refunds`, {
+      method: "POST",
+      headers: authorization,
+      body: JSON.stringify({
+        amountCents: 1,
+        reason: "CUSTOMER_REQUEST",
+        note: "Integration refund",
+        idempotencyKey: `manual-refund-${runId}`,
+        supportCaseId: String(refundCase.id)
+      })
+    });
+    assert.equal(duplicateRefund.status, 200, JSON.stringify(await responseJson(duplicateRefund)));
+    assert.equal(await prisma.paymentRefund.count({ where: { paymentId: retryPaymentId } }), 1);
+    const reopenPaidRefundRequest = await request(`/api/v1/orders/cases/${String(refundCase.id)}`, {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({ status: "APPROVED" })
+    });
+    const reopenPaidRefundRequestBody = await responseJson(reopenPaidRefundRequest);
+    assert.equal(reopenPaidRefundRequest.status, 409, JSON.stringify(reopenPaidRefundRequestBody));
+    assert.equal(reopenPaidRefundRequestBody.error?.code, "refund_request_already_paid");
+    const refundedBuyerOrders = await request("/api/v1/orders/buyer/orders", {
+      headers: { cookie: buyerCookie }
+    });
+    const refundedBuyerOrdersBody = await responseJson(refundedBuyerOrders);
+    assert.equal(refundedBuyerOrdersBody.data?.orders[0].refundedCents, 1);
+    const buyerRefundCase = refundedBuyerOrdersBody.data?.orders[0].supportCases
+      .find((supportCase: { type: string }) => supportCase.type === "REFUND");
+    assert.equal(buyerRefundCase?.status, "RESOLVED");
+
     const cancellationRequest = await request(`/api/v1/orders/buyer/orders/${orderNumber}/cancel`, {
       method: "POST",
       headers: { cookie: buyerCookie },
@@ -992,6 +1071,7 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
       await prisma.cmsTemplate.deleteMany({ where: { id: reusableTemplateId } });
     }
     if (commerceOrderId) {
+      await prisma.payment.deleteMany({ where: { orderId: commerceOrderId } });
       await prisma.order.deleteMany({ where: { id: commerceOrderId } });
     }
     if (commerceCartId) {

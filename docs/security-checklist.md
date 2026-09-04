@@ -46,6 +46,9 @@ Use this checklist before a generated site is published.
 - PayPal webhook signatures are verified with PayPal using the configured webhook ID.
 - Provider webhook endpoints use HTTPS and subscribe only to the documented payment events.
 - Payment status changes are idempotent through `providerEventId`.
+- Admin refunds require `update:payments`, recent authentication, a durable refund record, and a provider idempotency key.
+- Buyer refund requests require ownership through the HTTP-only buyer session, a paid balance, and merchant approval before they can be linked to a refund.
+- Only one refund may be pending per payment; retries reuse the original provider request ID.
 - Provider amount and currency must match the stored server-side order before payment succeeds.
 
 ## Launch

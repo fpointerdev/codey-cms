@@ -280,6 +280,44 @@ Rollback notes:
 - The previous runtime ignores the installation table and existing content remains usable.
 - Preserve the table if a later upgrade should retain installed-version history; dropping it disconnects every extension but does not delete collections or entries.
 
+### `20260902000000_payment_refunds`
+
+Purpose:
+
+- Adds the durable Stripe, PayPal, and manual refund ledger.
+- Keeps provider calls idempotent and reconciles direct requests with signed webhooks.
+
+Risk:
+
+- Low. The migration adds a new table and does not rewrite existing payments or orders.
+
+Forward deploy notes:
+
+- Deploy before issuing refunds from the Orders dashboard.
+- Existing provider credentials remain encrypted and are reused for payments already completed.
+
+Rollback notes:
+
+- Preserve refund rows for financial reconciliation before running an older runtime.
+
+### `20260902010000_buyer_refund_requests`
+
+Purpose:
+
+- Adds buyer refund requests, requested amounts, merchant approval states, and optional links to completed refunds.
+
+Risk:
+
+- Low. Existing support cases remain unchanged; the new amount and refund link columns are nullable.
+
+Forward deploy notes:
+
+- Apply after `20260902000000_payment_refunds` and before exposing the refund-request action in the buyer portal.
+
+Rollback notes:
+
+- Preserve refund support cases and their linked refund records before running an older runtime.
+
 ## Clean Clone Migration Smoke
 
 For a copied runtime smoke test:

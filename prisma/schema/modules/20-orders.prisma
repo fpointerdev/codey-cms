@@ -64,6 +64,7 @@ enum OrderTrackingStatus {
 enum OrderSupportCaseType {
   CANCELLATION
   COMPLAINT
+  REFUND
   RETURN
   OTHER
 }
@@ -71,6 +72,8 @@ enum OrderSupportCaseType {
 enum OrderSupportCaseStatus {
   OPEN
   IN_REVIEW
+  APPROVED
+  REJECTED
   RESOLVED
   CLOSED
 }
@@ -160,10 +163,12 @@ model OrderSupportCase {
   status           OrderSupportCaseStatus @default(OPEN)
   subject          String
   message          String
+  requestedRefundCents Int?
   merchantResponse String?
   resolvedAt       DateTime?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
+  refund           PaymentRefund?
 
   @@index([orderId, status, createdAt])
   @@index([status, createdAt])

@@ -426,6 +426,17 @@ test("customers can complete the real storefront journey", async ({ page }) => {
   const orderBody = await orderResponse.json();
   const order = orderBody.data.orders.find((item: { customerEmail: string }) => item.customerEmail === buyerEmail);
   expect(order).toBeTruthy();
+  const paymentsResponse = await page.request.get("/api/v1/payments", {
+    headers: { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` }
+  });
+  const paymentsBody = await paymentsResponse.json();
+  const payment = paymentsBody.data.payments.find((item: { orderId: string }) => item.orderId === order.id);
+  expect(payment).toBeTruthy();
+  const settlePayment = await page.request.post(`/api/v1/payments/manual/${payment.id}/action`, {
+    headers: { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` },
+    data: { action: "SUCCEED" }
+  });
+  expect(settlePayment.ok()).toBeTruthy();
   const trackingResponse = await page.request.patch(`/api/v1/orders/${order.id}/tracking`, {
     headers: { authorization: `Bearer ${apiLoginBody.data.tokens.accessToken}` },
     data: {
@@ -444,8 +455,19 @@ test("customers can complete the real storefront journey", async ({ page }) => {
   await expect(page.getByText("Browser Parcel", { exact: false })).toBeVisible();
   await expect(page.getByRole("link", { name: "Track parcel" })).toHaveAttribute("href", "https://tracking.example/browser");
 
-  await page.getByRole("button", { name: "Get help" }).click();
+  await page.getByRole("button", { name: "Request refund" }).click();
   let buyerDialog = page.locator("[data-commerce-dialog]");
+  await expect(buyerDialog.getByRole("heading", { name: "Request a refund" })).toBeVisible();
+  await buyerDialog.getByLabel(/Amount/).fill("0.01");
+  await buyerDialog.getByLabel("Reason").selectOption({ label: "Item arrived damaged" });
+  await buyerDialog.getByLabel("Details").fill("The item cannot be used in its delivered condition.");
+  await buyerDialog.getByRole("button", { name: "Send refund request" }).click();
+  await expect(page.getByText("Your refund request was sent to the shop.")).toBeVisible();
+  await expect(page.locator("[data-buyer-order]").getByText("Item arrived damaged", { exact: true })).toBeVisible();
+  await expect(page.getByText("Refund request open", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Get help" }).click();
+  buyerDialog = page.locator("[data-commerce-dialog]");
   await buyerDialog.getByLabel("Subject").fill("Product question");
   await buyerDialog.getByLabel("What happened?").fill("Please confirm the delivery instructions for this order.");
   await buyerDialog.getByRole("button", { name: "Send request" }).click();

@@ -70,11 +70,22 @@ function buyerSupportCaseDto(supportCase: BuyerOrder["supportCases"][number]) {
     status: supportCase.status,
     subject: supportCase.subject,
     message: supportCase.message,
+    requestedRefundCents: supportCase.requestedRefundCents,
     merchantResponse: supportCase.merchantResponse,
     resolvedAt: supportCase.resolvedAt,
     createdAt: supportCase.createdAt,
     updatedAt: supportCase.updatedAt
   };
+}
+
+function buyerRefundedCents(order: BuyerOrder) {
+  const metadata = order.metadata && typeof order.metadata === "object" && !Array.isArray(order.metadata)
+    ? order.metadata
+    : {};
+  const value = metadata.refundedCents;
+  return typeof value === "number" && Number.isInteger(value)
+    ? Math.min(order.totalCents, Math.max(0, value))
+    : 0;
 }
 
 export function buyerOrderDto(order: BuyerOrder) {
@@ -88,6 +99,7 @@ export function buyerOrderDto(order: BuyerOrder) {
     shippingCents: order.shippingCents,
     taxCents: order.taxCents,
     totalCents: order.totalCents,
+    refundedCents: buyerRefundedCents(order),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     items: order.items.map((item) => ({
@@ -274,7 +286,12 @@ export async function createBuyerSupportCase(
   context: ModuleContext,
   req: BuyerRequest,
   orderNumber: string,
-  input: { type: "COMPLAINT" | "RETURN" | "OTHER"; subject: string; message: string }
+  input: {
+    type: "COMPLAINT" | "REFUND" | "RETURN" | "OTHER";
+    subject: string;
+    message: string;
+    requestedRefundCents?: number;
+  }
 ) {
   const session = await requiredBuyerSession(context, req);
   return context.prisma.$transaction(async (tx) => {
@@ -285,10 +302,72 @@ export async function createBuyerSupportCase(
     if (locked.length !== 1) {
       throw new AppError(404, "order_not_found", "Order not found.");
     }
+    const current = await tx.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: buyerOrderInclude
+    });
+    if (input.type === "REFUND") {
+      if (!["PAID", "FULFILLED"].includes(current.status)) {
+        throw new AppError(
+          409,
+          "refund_request_not_available",
+          "A refund can only be requested for a paid or fulfilled order."
+        );
+      }
+      const remainingCents = current.totalCents - buyerRefundedCents(current);
+      if (
+        input.requestedRefundCents === undefined ||
+        input.requestedRefundCents <= 0 ||
+        input.requestedRefundCents > remainingCents
+      ) {
+        throw new AppError(
+          422,
+          "refund_request_amount_invalid",
+          `Refund request amount must be between 1 and ${remainingCents} cents.`
+        );
+      }
+      const refundablePayment = await tx.payment.findFirst({
+        where: { orderId: current.id, status: "SUCCEEDED" },
+        include: {
+          refunds: {
+            where: { status: "PENDING" },
+            take: 1
+          }
+        }
+      });
+      if (!refundablePayment) {
+        throw new AppError(
+          409,
+          "refund_request_not_available",
+          "No refundable payment is available for this order."
+        );
+      }
+      if (refundablePayment.refunds.length > 0) {
+        throw new AppError(
+          409,
+          "refund_in_progress",
+          "A refund is already being processed for this order."
+        );
+      }
+      const activeRefundRequest = await tx.orderSupportCase.findFirst({
+        where: {
+          orderId: current.id,
+          type: "REFUND",
+          status: { in: ["OPEN", "IN_REVIEW", "APPROVED"] }
+        }
+      });
+      if (activeRefundRequest) {
+        throw new AppError(
+          409,
+          "refund_request_in_progress",
+          "A refund request for this order is already in progress."
+        );
+      }
+    }
     const openCases = await tx.orderSupportCase.count({
       where: {
-        orderId: order.id,
-        status: { in: ["OPEN", "IN_REVIEW"] }
+        orderId: current.id,
+        status: { in: ["OPEN", "IN_REVIEW", "APPROVED"] }
       }
     });
     if (openCases >= maximumOpenCasesPerOrder) {
@@ -301,10 +380,11 @@ export async function createBuyerSupportCase(
 
     const supportCase = await tx.orderSupportCase.create({
       data: {
-        orderId: order.id,
+        orderId: current.id,
         type: input.type,
         subject: input.subject,
-        message: input.message
+        message: input.message,
+        ...(input.type === "REFUND" ? { requestedRefundCents: input.requestedRefundCents } : {})
       }
     });
     return buyerSupportCaseDto(supportCase);
