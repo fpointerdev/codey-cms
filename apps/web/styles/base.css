@@ -538,6 +538,14 @@ body:not(.auth-enabled):not(.dashboard-enabled) [data-page]:empty {
   will-change: opacity, transform, filter;
 }
 
+.codey-scroll-motion {
+  translate: 0 var(--codey-scroll-offset, 0px);
+}
+
+.codey-scroll-motion[data-scroll-motion-enhanced="true"] {
+  will-change: translate;
+}
+
 .codey-animation-fade-in {
   animation-name: codeyFadeIn;
 }
@@ -568,6 +576,10 @@ body:not(.auth-enabled):not(.dashboard-enabled) [data-page]:empty {
 
 .codey-animation-reveal-up {
   animation-name: codeyRevealUp;
+}
+
+.codey-animation-stagger-up {
+  animation-name: codeyFadeUp;
 }
 
 .codey-animation-bounce-in {
@@ -733,6 +745,13 @@ body:not(.auth-enabled):not(.dashboard-enabled) [data-page]:empty {
     filter: none;
     opacity: 1;
     transform: var(--codey-base-transform);
+  }
+
+  .codey-scroll-motion,
+  .codey-scroll-motion[data-scroll-motion-enhanced="true"] {
+    --codey-scroll-offset: 0px;
+    translate: none;
+    will-change: auto;
   }
 
   .structured-interaction-lift .structured-card,

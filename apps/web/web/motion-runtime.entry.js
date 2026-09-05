@@ -1,4 +1,4 @@
-import { animate, inView } from "motion";
+import { animate, inView, scroll } from "motion";
 
 const supportedEffects = new Set([
   "fade-in",
@@ -9,6 +9,7 @@ const supportedEffects = new Set([
   "zoom-in",
   "blur-in",
   "reveal-up",
+  "stagger-up",
   "bounce-in",
   "swing-in",
   "flip-in"
@@ -34,7 +35,7 @@ function motionKeyframes(effect, element) {
     transform: values.map((value) => `${base} ${value}`.trim() || "none")
   });
 
-  if (effect === "fade-up") return transformed("translate3d(0, 28px, 0)", "translate3d(0, 0, 0)");
+  if (effect === "fade-up" || effect === "stagger-up") return transformed("translate3d(0, 28px, 0)", "translate3d(0, 0, 0)");
   if (effect === "fade-down") return transformed("translate3d(0, -28px, 0)", "translate3d(0, 0, 0)");
   if (effect === "slide-left") return transformed("translate3d(44px, 0, 0)", "translate3d(0, 0, 0)");
   if (effect === "slide-right") return transformed("translate3d(-44px, 0, 0)", "translate3d(0, 0, 0)");
@@ -57,8 +58,33 @@ function cssDuration(element, property, fallback) {
   return value.endsWith("ms") ? amount / 1000 : amount;
 }
 
+function enhanceScrollMotion(root, reducedMotion) {
+  root.querySelectorAll(".codey-scroll-motion:not([data-scroll-motion-enhanced])").forEach((element) => {
+    element.dataset.scrollMotionEnhanced = "true";
+    if (reducedMotion) return;
+
+    let stop = () => undefined;
+    stop = scroll((progress) => {
+      if (!element.isConnected) {
+        stop();
+        return;
+      }
+
+      const configuredDistance = element.classList.contains("codey-scroll-parallax-deep") ? 36 : 18;
+      const distance = window.innerWidth <= 720 ? configuredDistance * 0.55 : configuredDistance;
+      const offset = (0.5 - progress) * distance * 2;
+      element.style.setProperty("--codey-scroll-offset", `${offset.toFixed(2)}px`);
+    }, {
+      target: element,
+      offset: ["start end", "end start"]
+    });
+  });
+}
+
 export function enhanceMotion(root = document) {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  enhanceScrollMotion(root, reducedMotion);
 
   root.querySelectorAll(".codey-animate:not([data-motion-enhanced])").forEach((element) => {
     element.dataset.motionEnhanced = "true";
@@ -71,16 +97,27 @@ export function enhanceMotion(root = document) {
 
       const duration = cssDuration(element, "--codey-animation-duration", 0.7);
       const delay = cssDuration(element, "--codey-animation-delay", 0);
-      const controls = animate(element, motionKeyframes(animationEffect(element), element), {
-        delay,
-        duration,
-        ease: [0.2, 0.8, 0.2, 1]
-      });
-      void controls.then(() => {
-        controls.stop();
-        for (const property of ["opacity", "transform", "filter", "clip-path"]) {
-          element.style.removeProperty(property);
+      const effect = animationEffect(element);
+      const targets = effect === "stagger-up"
+        ? [...element.children].filter((child) => child instanceof HTMLElement).slice(0, 8)
+        : [element];
+      const animatedTargets = targets.length ? targets : [element];
+      const controls = animatedTargets.map((target, index) => animate(
+        target,
+        motionKeyframes(effect, target),
+        {
+          delay: delay + (effect === "stagger-up" ? index * 0.08 : 0),
+          duration,
+          ease: [0.2, 0.8, 0.2, 1]
         }
+      ));
+      void Promise.all(controls).then(() => {
+        controls.forEach((control) => control.stop());
+        animatedTargets.forEach((target) => {
+          for (const property of ["opacity", "transform", "filter", "clip-path"]) {
+            target.style.removeProperty(property);
+          }
+        });
       });
     }, { amount: 0.18 });
   });

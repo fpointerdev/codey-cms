@@ -1,3 +1,5 @@
+import { enhanceMotionWhenPresent, loadThreeRuntimeNearScene } from "./premium-visuals.js";
+
 function setFormMessage(form, message, error = false) {
   const element = form.querySelector("[data-form-message]");
   if (!element) return;
@@ -69,33 +71,6 @@ async function submitContactForm(form) {
   }
 }
 
-function loadThreeRuntimeNearScene(page) {
-  const scenes = [...document.querySelectorAll("[data-three-scene]")];
-  if (!scenes.length) return;
-
-  let loading = false;
-  const load = () => {
-    if (loading) return;
-    loading = true;
-    void import("../vendor/three-runtime.js")
-      .then(({ enhanceThreeScenes }) => enhanceThreeScenes(page))
-      .catch(() => undefined);
-  };
-
-  if (!("IntersectionObserver" in window)) {
-    load();
-    return;
-  }
-
-  const observer = new IntersectionObserver((entries) => {
-    if (!entries.some((entry) => entry.isIntersecting)) return;
-    observer.disconnect();
-    load();
-  }, { rootMargin: "320px" });
-
-  scenes.forEach((scene) => observer.observe(scene));
-}
-
 export async function startPublicRuntime() {
   const page = document.querySelector("[data-page]");
   let sliderRuntimePromise = document.querySelector("[data-slider]")
@@ -108,13 +83,8 @@ export async function startPublicRuntime() {
   const loadTabsRuntime = () => tabsRuntimePromise ??= import("./structured-tabs.js");
 
   const premiumRuntimes = [];
-  if (document.querySelector(".codey-animate")) {
-    premiumRuntimes.push(
-      import("../vendor/motion-runtime.js")
-        .then(({ enhanceMotion }) => enhanceMotion(page))
-        .catch(() => undefined)
-    );
-  }
+  const motionRuntime = enhanceMotionWhenPresent(page);
+  if (motionRuntime) premiumRuntimes.push(motionRuntime);
   loadThreeRuntimeNearScene(page);
 
   if (document.querySelector("[data-commerce-root], [data-commerce-account-root]")) {

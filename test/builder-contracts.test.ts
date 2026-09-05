@@ -27,6 +27,24 @@ const {
 } = await import("../apps/web/web/core.js");
 const { structuredContentEditor } = await import("../apps/web/web/structured-content-editor.js");
 const { mediaKindForMimeType } = await import("../apps/web/web/content-actions.js");
+const {
+  advancedClassList,
+  advancedSettingsFromValues,
+  sanitizeAnimationSettings
+} = await import("../apps/web/web/custom-css.js");
+
+test("element motion keeps parallax bounded and independent from entrance motion", () => {
+  const settings = advancedSettingsFromValues({
+    animationEffect: "reveal-up",
+    animationScrollEffect: "parallax-deep"
+  });
+
+  assert.equal(settings.animation.effect, "reveal-up");
+  assert.equal(settings.animation.scrollEffect, "parallax-deep");
+  assert.match(advancedClassList(settings), /codey-animation-reveal-up/);
+  assert.match(advancedClassList(settings), /codey-scroll-parallax-deep/);
+  assert.equal(sanitizeAnimationSettings({ scrollEffect: "unbounded" }).scrollEffect, "none");
+});
 
 test("frontend builder templates match the registered editor elements", () => {
   const editorIds = builderElementRegistry
@@ -422,8 +440,16 @@ test("video elements expose hover playback and poster settings", () => {
   });
 
   assert.ok(editor?.fields.some((field) => field.name === "structuredVideoPlayback"));
-  assert.ok(editor?.fields.some((field) => field.name === "structuredVideoPosterUrl"));
+  assert.equal(editor?.fields.find((field) => field.name === "structuredVideoPosterFile")?.type, "file");
+  assert.equal(editor?.fields.find((field) => field.name === "structuredVideoPosterFile")?.previewUrl, "/uploads/campaign.webp");
+  assert.ok(editor?.fields.some((field) => field.name === "structuredVideoPosterRemove"));
   assert.ok(editor?.fields.some((field) => field.name === "structuredPresentation" && field.value === "hero"));
+  const updated = editor?.valueFrom({}, null, {}, { poster: { id: "poster-2", url: "/uploads/replacement.webp" } });
+  assert.equal(updated?.posterUrl, "/uploads/replacement.webp");
+  assert.equal(updated?.posterAssetId, "poster-2");
+  const removed = editor?.valueFrom({ structuredVideoPosterRemove: true });
+  assert.equal(removed?.posterUrl, "");
+  assert.equal(removed?.posterAssetId, undefined);
 });
 
 test("3D elements expose focused scene, panorama, and secure model-upload controls", () => {
@@ -463,11 +489,17 @@ test("3D elements expose focused scene, panorama, and secure model-upload contro
   });
 
   assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreePreset" && field.value === "crystal"));
+  assert.equal(sceneEditor?.fields.find((field) => field.name === "structuredThreePreset")?.type, "choice");
+  assert.ok(sceneEditor?.fields.find((field) => field.name === "structuredThreePreset")?.options?.some((option) => option.value === "kinetic-rings"));
+  assert.ok(sceneEditor?.fields.find((field) => field.name === "structuredThreePreset")?.options?.some((option) => option.value === "monolith"));
   assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeMotion" && field.value === "gentle"));
+  assert.equal(sceneEditor?.fields.find((field) => field.name === "structuredThreeMotion")?.type, "choice");
+  assert.equal(sceneEditor?.fields.find((field) => field.name === "structuredThreeAccent")?.type, "color");
   assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeCamera" && field.value === "close"));
   assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeLighting" && field.value === "dramatic"));
   assert.ok(sceneEditor?.fields.some((field) => field.name === "structuredThreeFinish" && field.value === "chrome"));
   assert.equal(modelEditor?.fields.find((field) => field.name === "structuredModelFile")?.accept, "model/gltf-binary,.glb");
+  assert.equal(modelEditor?.fields.some((field) => field.name === "structuredThreePreset"), false);
   assert.equal(modelEditor?.fields.find((field) => field.name === "structuredImageFile")?.imagePicker, true);
   assert.equal(panoramaEditor?.fields.find((field) => field.name === "structuredImageFile")?.label, "Panorama image");
   assert.ok(panoramaEditor?.fields.some((field) => field.name === "structuredThreeStartView" && field.value === "left"));
@@ -481,7 +513,7 @@ test("3D elements expose focused scene, panorama, and secure model-upload contro
     structuredThreeInteractive: false,
     structuredThreeRatio: "4 / 3",
     structuredThreeTone: "brand",
-    structuredThreeAccent: "#ff8066",
+    structuredThreeAccent: "#123abc",
     structuredThreeCamera: "front",
     structuredThreeLighting: "soft",
     structuredThreeFinish: "clay"
@@ -490,6 +522,7 @@ test("3D elements expose focused scene, panorama, and secure model-upload contro
   assert.equal(updated?.modelUrl, "/uploads/replacement.glb");
   assert.equal(updated?.modelAssetId, "model-2");
   assert.equal(updated?.display.motion, "none");
+  assert.equal(updated?.display.accent, "#123abc");
   assert.equal(updated?.display.interactive, false);
   assert.equal(updated?.display.camera, "front");
   assert.equal(updated?.display.lighting, "soft");

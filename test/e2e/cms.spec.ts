@@ -218,9 +218,9 @@ test("admin settings and builder controls complete their primary workflows", asy
   await containerDialog.getByText("Surface", { exact: true }).click();
   await expect(containerDialog.locator('select[name="borderWidth"]')).toBeVisible();
   await containerDialog.getByText("Motion", { exact: true }).click();
-  const sectionEffect = containerDialog.locator('select[name="animationEffect"]');
+  const sectionEffect = containerDialog.locator('input[name="animationEffect"][value="stagger-up"]');
   await expect(sectionEffect).toBeVisible();
-  await expect(sectionEffect.locator("option[value='reveal-up']")).toHaveCount(1);
+  await expect(containerDialog.locator('input[name="animationEffect"][value="reveal-up"]')).toBeVisible();
   await containerDialog.getByRole("tab", { name: "Advanced" }).click();
   await expect(containerDialog.getByLabel("Show on mobile")).toBeChecked();
   await containerDialog.getByRole("tab", { name: "Layout" }).click();
@@ -629,7 +629,9 @@ test("builder discovery, structure navigation, and responsive preview stay usabl
   await expect(editorDialog.getByLabel("Corner style")).toBeVisible();
   await expect(editorDialog.getByLabel("Hover effect")).toBeVisible();
   await editorDialog.getByText("Motion", { exact: true }).click();
-  await expect(editorDialog.locator('select[name="animationEffect"]')).toBeVisible();
+  await expect(editorDialog.locator('input[name="animationEffect"][value="fade-up"]')).toBeVisible();
+  await editorDialog.getByText("Scroll movement", { exact: true }).click();
+  await expect(editorDialog.locator('input[name="animationScrollEffect"][value="parallax-soft"]')).toBeVisible();
   await editorDialog.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Undo last canvas change" }).click();
   await expect(page.locator("[data-builder-block-key]")).toHaveCount(blockCount);
@@ -1181,6 +1183,46 @@ test("custom code executes in a sandbox without access to the CMS page", async (
   }
 });
 
+test("parallax responds to scrolling and respects reduced motion", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium", "Scroll motion acceptance runs once in Chromium.");
+
+  await page.goto("/");
+  await page.evaluate(async () => {
+    document.body.innerHTML = `
+      <main style="min-height: 2600px; padding-top: 900px">
+        <div id="parallax" class="content-block codey-scroll-motion codey-scroll-parallax-soft" style="height: 160px">
+          Parallax accent
+        </div>
+      </main>
+    `;
+    const { enhanceMotion } = await import("/vendor/motion-runtime.js");
+    enhanceMotion(document);
+  });
+
+  const parallax = page.locator("#parallax");
+  await expect(parallax).toHaveAttribute("data-scroll-motion-enhanced", "true");
+  await expect.poll(() => parallax.evaluate((element) => element.style.getPropertyValue("--codey-scroll-offset"))).not.toBe("");
+  const firstOffset = await parallax.evaluate((element) => element.style.getPropertyValue("--codey-scroll-offset"));
+  await page.evaluate(() => window.scrollTo(0, 1000));
+  await expect.poll(() => parallax.evaluate((element) => element.style.getPropertyValue("--codey-scroll-offset"))).not.toBe(firstOffset);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(async () => {
+    const reduced = document.createElement("div");
+    reduced.id = "reduced-parallax";
+    reduced.className = "content-block codey-scroll-motion codey-scroll-parallax-deep";
+    reduced.textContent = "Reduced motion accent";
+    document.querySelector("main")?.append(reduced);
+    const { enhanceMotion } = await import("/vendor/motion-runtime.js");
+    enhanceMotion(document);
+  });
+
+  const reduced = page.locator("#reduced-parallax");
+  await expect(reduced).toHaveAttribute("data-scroll-motion-enhanced", "true");
+  await expect(reduced).toHaveCSS("translate", "none");
+  await expect(reduced).toHaveCSS("will-change", "auto");
+});
+
 test("premium 3D scenes and 360 panoramas render, move, pause, and remain framed", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium", "Canvas pixel acceptance runs once in Chromium.");
   const visualOutput = process.env.CODEY_VISUAL_OUTPUT?.replace(/\/$/, "");
@@ -1253,7 +1295,7 @@ test("premium 3D scenes and 360 panoramas render, move, pause, and remain framed
           layout: "full-bleed",
           container: "wide",
           spacing: "lg",
-          animation: { effect: "fade-up", durationMs: 320, delayMs: 0 }
+          animation: { effect: "stagger-up", durationMs: 320, delayMs: 0 }
         },
         blocks: [{
           key: "three-scene",
@@ -1264,7 +1306,7 @@ test("premium 3D scenes and 360 panoramas render, move, pause, and remain framed
             title: "Form in motion",
             body: "A responsive Three.js scene with a semantic server-rendered introduction.",
             display: {
-              preset: "product-stage",
+              preset: "kinetic-rings",
               tone: "dark",
               accent: "#c9ff67",
               motion: "dynamic",
@@ -1459,6 +1501,25 @@ test("premium 3D scenes and 360 panoramas render, move, pause, and remain framed
       body: await page.screenshot({ path: visualOutput ? `${visualOutput}/codey-panorama-mobile.png` : undefined }),
       contentType: "image/png"
     });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/dashboard/pages/${encodeURIComponent(slug)}/builder`);
+    const pageBuilder = page.locator("[data-page-builder]");
+    const adminLogin = page.locator("[data-admin-login-form]");
+    await expect.poll(async () => {
+      return await adminLogin.isVisible() || await pageBuilder.isVisible();
+    }).toBeTruthy();
+    if (await adminLogin.isVisible()) {
+      await login(page);
+      await page.goto(`/dashboard/pages/${encodeURIComponent(slug)}/builder`);
+    }
+    await expect(pageBuilder).toBeVisible();
+    await page.locator("[data-builder-canvas-view='preview']").click();
+    const builderPreview = page.locator("[data-builder-preview-frame]").contentFrame();
+    const previewStage = builderPreview.locator("[data-three-scene]").first();
+    await previewStage.scrollIntoViewIfNeeded();
+    await expect(previewStage).toHaveAttribute("data-three-status", "ready");
+    await expect(previewStage.locator("canvas[data-three-canvas]")).toBeVisible();
   } finally {
     await page.request.delete(`/api/v1/cms/pages/${slug}`, { headers: authorization });
     await page.request.delete(`/api/v1/cms/media/${modelAsset.id}`, { headers: authorization });

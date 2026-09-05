@@ -36,6 +36,8 @@ test("public shell includes an accessible mobile navigation control", async () =
   assert.match(shell, /data-site-nav-toggle/);
   assert.match(shell, /aria-controls="site-navigation"/);
   assert.match(shell, /<nav id="site-navigation"/);
+  assert.match(shell, /href="\.\/site\.css"/);
+  assert.equal((shell.match(/rel="stylesheet"/g) || []).length, 1);
 });
 
 test("public page markup renders meaningful sanitized content without editor controls", () => {
@@ -679,7 +681,7 @@ test("3D elements server-render descriptive content and resilient poster fallbac
             variant: "three-scene",
             title: "Material study",
             body: "Explore form, light, and movement.",
-            display: { preset: "crystal", tone: "dark", accent: "#48c9e8", motion: "gentle", interactive: true, ratio: "16 / 10", camera: "close", lighting: "dramatic", finish: "chrome" }
+            display: { preset: "kinetic-rings", tone: "dark", accent: "#3b82f6", motion: "gentle", interactive: true, ratio: "16 / 10", camera: "close", lighting: "dramatic", finish: "chrome" }
           },
           settings: { elementId: "three-scene" },
           editable: true
@@ -717,7 +719,8 @@ test("3D elements server-render descriptive content and resilient poster fallbac
 
   assert.match(html, /<h3>Material study<\/h3>/);
   assert.match(html, /data-three-scene/);
-  assert.match(html, /data-three-preset="crystal"/);
+  assert.match(html, /data-three-preset="kinetic-rings"/);
+  assert.match(html, /data-three-accent="#3b82f6"/);
   assert.match(html, /data-three-camera="close"/);
   assert.match(html, /data-three-lighting="dramatic"/);
   assert.match(html, /data-three-finish="chrome"/);
@@ -1106,6 +1109,36 @@ test("sidebar, liquid, and motion section choices survive public rendering", () 
   assert.match(html, /section-style-liquid/);
   assert.match(html, /codey-animation-reveal-up/);
   assert.match(html, /--codey-animation-duration: 640ms/);
+});
+
+test("element parallax survives public rendering without replacing entrance motion", () => {
+  const html = renderPageContent({
+    title: "Layered page",
+    content: { hideTitle: true },
+    sections: [{
+      id: "layered-visual",
+      key: "layered-visual",
+      settings: {},
+      blocks: [{
+        key: "accent-image",
+        type: "IMAGE",
+        value: { url: "/uploads/accent.webp", alt: "Floating product accent", width: 640, height: 640 },
+        settings: {
+          animation: {
+            effect: "fade-up",
+            durationMs: 700,
+            delayMs: 0,
+            scrollEffect: "parallax-soft"
+          }
+        },
+        editable: true
+      }]
+    }]
+  });
+
+  assert.match(html, /codey-animate codey-animation-fade-up/);
+  assert.match(html, /codey-scroll-motion codey-scroll-parallax-soft/);
+  assert.match(html, /alt="Floating product accent"/);
 });
 
 test("unsafe section background URLs never reach public markup", () => {

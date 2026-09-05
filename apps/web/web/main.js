@@ -13,7 +13,7 @@ function loadAdminStyles() {
   return new Promise((resolve) => {
     const stylesheet = document.createElement("link");
     stylesheet.rel = "stylesheet";
-    stylesheet.href = "/admin.css";
+    stylesheet.href = "/admin-bundle.css";
     stylesheet.dataset.adminStyles = "";
     stylesheet.addEventListener("load", resolve, { once: true });
     stylesheet.addEventListener("error", resolve, { once: true });

@@ -95,9 +95,61 @@ function addWave(group, palette, finish) {
   group.add(mesh);
 }
 
+function addKineticRings(group, palette, finish) {
+  const rotations = [
+    [Math.PI / 2, 0, 0],
+    [Math.PI / 3, Math.PI / 4, 0.18],
+    [Math.PI / 2.7, -Math.PI / 4, -0.2]
+  ];
+
+  rotations.forEach(([x, y, z], index) => {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.72 + index * 0.28, 0.055 + index * 0.012, 16, 96),
+      visualMaterial(palette, finish, { metalness: 0.36, roughness: 0.2 })
+    );
+    ring.rotation.set(x, y, z);
+    ring.castShadow = true;
+    group.add(ring);
+  });
+
+  const center = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.48, 2),
+    visualMaterial(palette, finish, { clearcoat: 1, roughness: 0.16 })
+  );
+  center.castShadow = true;
+  group.add(center);
+}
+
+function addMonolith(group, palette, finish) {
+  addPedestal(group, palette);
+  const forms = [
+    { position: [-0.62, -0.22, 0.1], scale: [0.52, 1.75, 0.44], rotation: -0.16 },
+    { position: [0.08, 0.08, -0.08], scale: [0.62, 2.25, 0.52], rotation: 0.08 },
+    { position: [0.72, -0.34, 0.18], scale: [0.42, 1.42, 0.38], rotation: 0.2 }
+  ];
+
+  forms.forEach((form, index) => {
+    const slab = new THREE.Mesh(
+      new THREE.BoxGeometry(...form.scale),
+      visualMaterial(palette, finish, {
+        clearcoat: 0.72,
+        metalness: 0.12 + index * 0.08,
+        roughness: 0.2 + index * 0.08
+      })
+    );
+    slab.position.set(...form.position);
+    slab.rotation.y = form.rotation;
+    slab.castShadow = true;
+    slab.receiveShadow = true;
+    group.add(slab);
+  });
+}
+
 function addProceduralScene(group, preset, palette, finish) {
   if (preset === "crystal") addCrystal(group, palette, finish);
   else if (preset === "wave") addWave(group, palette, finish);
+  else if (preset === "kinetic-rings") addKineticRings(group, palette, finish);
+  else if (preset === "monolith") addMonolith(group, palette, finish);
   else addProductStage(group, palette, finish);
 }
 
@@ -288,7 +340,7 @@ async function initializeScene(stage) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setClearColor(palette.background, 1);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   stage.append(canvas);
 
@@ -429,6 +481,11 @@ async function initializeScene(stage) {
 
 export function enhanceThreeScenes(root = document) {
   const stages = root.querySelectorAll("[data-three-scene]:not([data-three-status])");
+  if (!("IntersectionObserver" in window)) {
+    stages.forEach((stage) => void initializeScene(stage));
+    return;
+  }
+
   const observer = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return;

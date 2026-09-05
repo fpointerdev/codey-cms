@@ -1,6 +1,8 @@
 import {
   advancedSettingsFromValues,
-  animationEffectOptions,
+  motionDelayOptions,
+  motionDurationOptions,
+  motionStyleOptions,
   sanitizeAnimationSettings
 } from "./custom-css.js";
 
@@ -363,10 +365,11 @@ export function sectionControlFields(section = {}, mediaAssets = []) {
     { name: "decorationColor", label: "Decoration color", type: "color", value: decoration.color || "#5b5cff", required: false, group: "Style" },
     { name: "decorationOpacity", label: "Decoration opacity", type: "range", value: decoration.opacity ?? 0.35, min: 0, max: 0.9, step: 0.05, required: false, group: "Style" },
 
-    { type: "section", label: "Motion", help: "Optional entrance effect. Reduced-motion preferences are always respected.", group: "Style" },
-    { name: "animationEffect", label: "Effect", type: "select", value: animation.effect, options: animationEffectOptions, required: false, group: "Style" },
-    { name: "animationDuration", label: "Duration ms", type: "number", value: animation.durationMs, min: 120, max: 3000, step: 10, required: false, group: "Style" },
-    { name: "animationDelay", label: "Delay ms", type: "number", value: animation.delayMs, min: 0, max: 5000, step: 50, required: false, group: "Style" },
+    { type: "section", label: "Motion", help: "Choose one entrance style. Visitor reduced-motion preferences are always respected.", open: animation.effect !== "none", group: "Style" },
+    { name: "animationEffect", label: "Entrance style", type: "choice", value: animation.effect, options: motionStyleOptions(animation.effect), compact: true, required: false, group: "Style" },
+    { type: "section", label: "Motion timing", help: "Optional fine tuning for the selected entrance style.", group: "Style" },
+    { name: "animationDuration", label: "Speed", type: "select", value: String(animation.durationMs), options: motionDurationOptions(animation.durationMs), required: false, group: "Style" },
+    { name: "animationDelay", label: "Start", type: "select", value: String(animation.delayMs), options: motionDelayOptions(animation.delayMs), required: false, group: "Style" },
 
     { type: "section", label: "Device visibility", help: "Keep content available only on the screens where it belongs.", open: true, group: "Advanced" },
     { name: "visibilityDesktop", label: "Show on desktop", type: "checkbox", checked: design.visibility.desktop, group: "Advanced" },

@@ -58,7 +58,10 @@ test("section editor exposes one consistent three-tab control model", () => {
   assert.equal(fields.find((field) => field.name === "borderWidth")?.value, "0");
   assert.equal(fields.find((field) => field.name === "visibilityMobile")?.checked, true);
   assert.equal(fields.find((field) => field.name === "animationEffect")?.group, "Style");
+  assert.equal(fields.find((field) => field.name === "animationEffect")?.type, "choice");
   assert.ok(fields.find((field) => field.name === "animationEffect")?.options?.some((option) => option.value === "reveal-up"));
+  assert.ok(fields.find((field) => field.name === "animationEffect")?.options?.some((option) => option.value === "stagger-up"));
+  assert.equal(fields.find((field) => field.name === "animationDuration")?.type, "select");
   assert.ok(fields.find((field) => field.name === "layout")?.options?.some((option) => option.value === "sidebar-left"));
   assert.ok(fields.find((field) => field.name === "stylePreset")?.options?.some((option) => option.value === "liquid"));
 
@@ -81,6 +84,11 @@ test("section editor exposes one consistent three-tab control model", () => {
     newSectionFields.find((field) => field.name === "backgroundAssetId")?.options?.[0]?.label,
     "Choose from media library"
   );
+
+  const legacyMotion = sectionControlFields({ settings: { animation: { effect: "flip-in" } } })
+    .find((field) => field.name === "animationEffect");
+  assert.equal(legacyMotion?.value, "flip-in");
+  assert.ok(legacyMotion?.options?.some((option) => option.value === "flip-in"));
 });
 
 test("modern banner design switches without changing unrelated section settings", () => {
@@ -140,7 +148,7 @@ test("section settings synchronize background, border, responsive, and visibilit
     visibilityDesktop: true,
     visibilityTablet: true,
     visibilityMobile: false,
-    animationEffect: "fade-up",
+    animationEffect: "stagger-up",
     animationDuration: "600",
     animationDelay: "100",
     htmlId: "premium-hero",
@@ -156,7 +164,7 @@ test("section settings synchronize background, border, responsive, and visibilit
   assert.equal(settings.style.borderWidth, 2);
   assert.equal(settings.responsive.tablet.layout, "two-column");
   assert.equal(settings.visibility.mobile, false);
-  assert.equal(settings.animation.effect, "fade-up");
+  assert.equal(settings.animation.effect, "stagger-up");
   assert.equal(settings.htmlId, "premium-hero");
 });
 

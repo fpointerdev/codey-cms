@@ -353,7 +353,20 @@ function selectedValue(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback;
 }
 
+function selectedColor(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value).toLowerCase() : fallback;
+}
+
+const threeScenePresetOptions = [
+  { value: "product-stage", label: "Product stage", description: "A polished object on a pedestal.", preview: "three-product-stage" },
+  { value: "crystal", label: "Crystal", description: "A faceted brand centerpiece.", preview: "three-crystal" },
+  { value: "wave", label: "Wave", description: "An architectural field of forms.", preview: "three-wave" },
+  { value: "kinetic-rings", label: "Kinetic rings", description: "Layered rings with controlled movement.", preview: "three-rings" },
+  { value: "monolith", label: "Monolith", description: "A minimal sculptural composition.", preview: "three-monolith" }
+];
+
 function structuredDisplayEditor(variant, value) {
+  const threeProcedural = variant === "three-scene";
   const threeObject = variant === "three-scene" || variant === "three-model";
   const threePanorama = variant === "three-panorama";
   const threeVisual = threeObject || threePanorama;
@@ -432,17 +445,15 @@ function structuredDisplayEditor(variant, value) {
       }
     );
   } else if (threeVisual) {
-    if (threeObject) {
+    if (threeProcedural) {
       fields.push({
         name: "structuredThreePreset",
         label: "Scene",
-        type: "select",
-        value: selectedValue(display.preset, ["product-stage", "crystal", "wave"], "product-stage"),
-        options: [
-          { value: "product-stage", label: "Product stage" },
-          { value: "crystal", label: "Crystal form" },
-          { value: "wave", label: "Architectural wave" }
-        ],
+        type: "choice",
+        value: selectedValue(display.preset, threeScenePresetOptions.map((option) => option.value), "product-stage"),
+        options: threeScenePresetOptions,
+        compact: true,
+        help: "Choose the composition first, then fine-tune its appearance in Style.",
         group: "Settings"
       });
     }
@@ -451,13 +462,14 @@ function structuredDisplayEditor(variant, value) {
       {
         name: "structuredThreeMotion",
         label: "Motion",
-        type: "select",
+        type: "choice",
         value: selectedValue(display.motion, ["none", "gentle", "dynamic"], "gentle"),
         options: [
-          { value: "none", label: "Still" },
-          { value: "gentle", label: "Gentle" },
-          { value: "dynamic", label: "Dynamic" }
+          { value: "none", label: "Still", description: "No automatic movement.", preview: "motion-none" },
+          { value: "gentle", label: "Gentle", description: "Slow, quiet rotation.", preview: "motion-soft" },
+          { value: "dynamic", label: "Dynamic", description: "More visible movement.", preview: "motion-sequence" }
         ],
+        compact: true,
         group: "Settings"
       },
       {
@@ -483,13 +495,14 @@ function structuredDisplayEditor(variant, value) {
       {
         name: "structuredThreeTone",
         label: "Stage tone",
-        type: "select",
+        type: "choice",
         value: selectedValue(display.tone, ["dark", "light", "brand"], variant === "three-model" ? "light" : "dark"),
         options: [
-          { value: "dark", label: "Dark" },
-          { value: "light", label: "Light" },
-          { value: "brand", label: "Deep green" }
+          { value: "dark", label: "Dark", preview: "tone-dark" },
+          { value: "light", label: "Light", preview: "tone-light" },
+          { value: "brand", label: "Brand", preview: "tone-brand" }
         ],
+        compact: true,
         group: "Style"
       }
     );
@@ -509,16 +522,10 @@ function structuredDisplayEditor(variant, value) {
           ];
       fields.push({
         name: "structuredThreeAccent",
-        label: "Object color",
-        type: "select",
-        value: selectedValue(display.accent, ["#c9ff67", "#ff8066", "#48c9e8", "#f2c94c", "#087f76"], variant === "three-model" ? "#087f76" : "#c9ff67"),
-        options: [
-          { value: "#c9ff67", label: "Lime" },
-          { value: "#ff8066", label: "Coral" },
-          { value: "#48c9e8", label: "Sky" },
-          { value: "#f2c94c", label: "Gold" },
-          { value: "#087f76", label: "Teal" }
-        ],
+        label: "Accent color",
+        type: "color",
+        value: selectedColor(display.accent, variant === "three-model" ? "#087f76" : "#c9ff67"),
+        help: "Use the website accent or choose a color for this scene.",
         group: "Style"
       }, {
         name: "structuredThreeCamera",
@@ -701,8 +708,10 @@ function structuredDisplayEditor(variant, value) {
         );
         next.tone = selectedValue(values.structuredThreeTone, ["dark", "light", "brand"], variant === "three-model" ? "light" : "dark");
         if (threeObject) {
-          next.preset = selectedValue(values.structuredThreePreset, ["product-stage", "crystal", "wave"], "product-stage");
-          next.accent = selectedValue(values.structuredThreeAccent, ["#c9ff67", "#ff8066", "#48c9e8", "#f2c94c", "#087f76"], variant === "three-model" ? "#087f76" : "#c9ff67");
+          if (threeProcedural) {
+            next.preset = selectedValue(values.structuredThreePreset, threeScenePresetOptions.map((option) => option.value), "product-stage");
+          }
+          next.accent = selectedColor(values.structuredThreeAccent, variant === "three-model" ? "#087f76" : "#c9ff67");
           next.camera = selectedValue(values.structuredThreeCamera, ["front", "angled", "close"], "angled");
           next.lighting = selectedValue(values.structuredThreeLighting, ["soft", "studio", "dramatic"], "studio");
           next.finish = selectedValue(
@@ -1130,12 +1139,26 @@ export function structuredContentEditor(block) {
         : "Upload an MP4 or WebM file within the site upload limit."
     });
     addField(fields, {
-      name: "structuredVideoPosterUrl",
-      label: "Poster image URL",
-      value: firstText(value, ["posterUrl"]),
+      name: "structuredVideoPosterFile",
+      label: value.posterUrl ? "Replace poster image" : "Poster image",
+      type: "file",
+      accept: "image/*",
+      imagePicker: true,
+      previewUrl: firstText(value, ["posterUrl"]),
+      previewAlt: firstText(value, ["title"]) || "Video poster",
       required: false,
-      help: "Optional still image shown before playback."
+      help: value.posterUrl
+        ? "The current poster stays published until you upload a replacement."
+        : "Optional still image shown before playback."
     });
+    if (value.posterUrl) {
+      addField(fields, {
+        name: "structuredVideoPosterRemove",
+        label: "Remove current poster",
+        type: "checkbox",
+        checked: false
+      });
+    }
   }
 
   if (variant === "three-model") {
@@ -1251,7 +1274,9 @@ export function structuredContentEditor(block) {
         next.mediaAssetId = mediaAsset.id;
       }
       if (variant === "video") {
-        next.posterUrl = values.structuredVideoPosterUrl || "";
+        const removePoster = values.structuredVideoPosterRemove === true && !auxiliaryMedia.poster?.url;
+        next.posterUrl = removePoster ? "" : auxiliaryMedia.poster?.url || value.posterUrl || "";
+        next.posterAssetId = removePoster ? undefined : auxiliaryMedia.poster?.id || value.posterAssetId;
       }
       if (variant === "three-model" && auxiliaryMedia.model?.url) {
         next.modelUrl = auxiliaryMedia.model.url;
