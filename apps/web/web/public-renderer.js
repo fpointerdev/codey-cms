@@ -755,7 +755,7 @@ function structuredDisplay(value, fallbackVariant = "") {
     preload: oneOf(display.preload, ["metadata", "none"], "metadata"),
     loop: display.loop === true,
     playback: oneOf(display.playback, ["controls", "hover-focus"], "controls"),
-    preset: oneOf(display.preset, ["product-stage", "crystal", "wave"], "product-stage"),
+    preset: oneOf(display.preset, ["product-stage", "crystal", "wave", "kinetic-rings", "monolith"], "product-stage"),
     tone: oneOf(display.tone, ["dark", "light", "brand"], variant === "three-model" ? "light" : "dark"),
     accent: safeHex(display.accent),
     motion: oneOf(display.motion, ["none", "gentle", "dynamic"], "gentle"),

@@ -13,10 +13,12 @@ const animationEffects = new Set([
   "zoom-in",
   "blur-in",
   "reveal-up",
+  "stagger-up",
   "bounce-in",
   "swing-in",
   "flip-in"
 ]);
+const scrollMotionEffects = new Set(["none", "parallax-soft", "parallax-deep"]);
 const reservedClassPatterns = [
   /^page-section$/,
   /^content-block$/,
@@ -40,10 +42,84 @@ export const animationEffectOptions = [
   { value: "zoom-in", label: "Zoom in" },
   { value: "blur-in", label: "Soft blur" },
   { value: "reveal-up", label: "Reveal up" },
+  { value: "stagger-up", label: "Stagger items" },
   { value: "bounce-in", label: "Gentle bounce" },
   { value: "swing-in", label: "Swing in" },
   { value: "flip-in", label: "Flip in" }
 ];
+
+const motionStylePresets = [
+  { value: "none", label: "Still", description: "No entrance motion.", preview: "motion-none" },
+  { value: "fade-up", label: "Soft", description: "A calm fade with a small lift.", preview: "motion-soft" },
+  { value: "reveal-up", label: "Reveal", description: "Content opens into view.", preview: "motion-reveal" },
+  { value: "stagger-up", label: "Sequence", description: "Items appear in a short rhythm.", preview: "motion-sequence" },
+  { value: "zoom-in", label: "Focus", description: "A restrained scale-in effect.", preview: "motion-focus" },
+  { value: "slide-left", label: "Glide", description: "Content enters from the side.", preview: "motion-glide" }
+];
+
+export function motionStyleOptions(currentEffect = "none") {
+  const effect = sanitizeAnimationEffect(currentEffect);
+  if (motionStylePresets.some((option) => option.value === effect)) return motionStylePresets;
+
+  const current = animationEffectOptions.find((option) => option.value === effect);
+  return [
+    ...motionStylePresets,
+    {
+      value: effect,
+      label: current?.label || "Current effect",
+      description: "Preserves the existing effect.",
+      preview: "motion-custom"
+    }
+  ];
+}
+
+export function motionDurationOptions(currentDuration = 700) {
+  const duration = clampMotionNumber(currentDuration, 700, 120, 3000);
+  const options = [
+    { value: "450", label: "Quick" },
+    { value: "700", label: "Smooth" },
+    { value: "1000", label: "Relaxed" }
+  ];
+  if (options.some((option) => Number(option.value) === duration)) return options;
+
+  return [...options, { value: String(duration), label: `Current (${duration} ms)` }];
+}
+
+export function motionDelayOptions(currentDelay = 0) {
+  const delay = clampMotionNumber(currentDelay, 0, 0, 5000);
+  const options = [
+    { value: "0", label: "Immediately" },
+    { value: "100", label: "Short pause" },
+    { value: "200", label: "Medium pause" },
+    { value: "400", label: "Long pause" }
+  ];
+  if (options.some((option) => Number(option.value) === delay)) return options;
+
+  return [...options, { value: String(delay), label: `Current (${delay} ms)` }];
+}
+
+export function scrollMotionOptions() {
+  return [
+    {
+      value: "none",
+      label: "None",
+      description: "Keep the element fixed while scrolling.",
+      preview: "scroll-none"
+    },
+    {
+      value: "parallax-soft",
+      label: "Gentle parallax",
+      description: "A small scroll shift for images and visual accents.",
+      preview: "scroll-soft"
+    },
+    {
+      value: "parallax-deep",
+      label: "Deep parallax",
+      description: "A stronger shift for spacious visual layouts.",
+      preview: "scroll-deep"
+    }
+  ];
+}
 
 export function sanitizeInlineCss(value = "") {
   const css = String(value || "").replace(/\/\*[\s\S]*?\*\//g, "").trim();
@@ -116,6 +192,11 @@ export function sanitizeAnimationEffect(value = "") {
   return animationEffects.has(effect) ? effect : "none";
 }
 
+export function sanitizeScrollMotionEffect(value = "") {
+  const effect = String(value || "none").trim();
+  return scrollMotionEffects.has(effect) ? effect : "none";
+}
+
 function clampMotionNumber(value, fallback, min, max) {
   if (value === "" || value === null || value === undefined) return fallback;
   const number = Number(value);
@@ -132,7 +213,8 @@ export function advancedSettingsFromValues(values = {}, currentSettings = {}) {
     animation: {
       effect: sanitizeAnimationEffect(values.animationEffect ?? currentAnimation.effect),
       durationMs: clampMotionNumber(values.animationDuration ?? currentAnimation.durationMs, 700, 120, 3000),
-      delayMs: clampMotionNumber(values.animationDelay ?? currentAnimation.delayMs, 0, 0, 5000)
+      delayMs: clampMotionNumber(values.animationDelay ?? currentAnimation.delayMs, 0, 0, 5000),
+      scrollEffect: sanitizeScrollMotionEffect(values.animationScrollEffect ?? currentAnimation.scrollEffect)
     }
   };
 }
@@ -141,7 +223,8 @@ export function sanitizeAnimationSettings(animation = {}) {
   return {
     effect: sanitizeAnimationEffect(animation.effect),
     durationMs: clampMotionNumber(animation.durationMs, 700, 120, 3000),
-    delayMs: clampMotionNumber(animation.delayMs, 0, 0, 5000)
+    delayMs: clampMotionNumber(animation.delayMs, 0, 0, 5000),
+    scrollEffect: sanitizeScrollMotionEffect(animation.scrollEffect)
   };
 }
 
@@ -156,8 +239,11 @@ export function advancedClassList(settings = {}) {
   const animationClasses = animation.effect === "none"
     ? ""
     : `codey-animate codey-animation-${animation.effect}`;
+  const scrollClasses = animation.scrollEffect === "none"
+    ? ""
+    : `codey-scroll-motion codey-scroll-${animation.scrollEffect}`;
 
-  return [classes, animationClasses].filter(Boolean).join(" ");
+  return [classes, animationClasses, scrollClasses].filter(Boolean).join(" ");
 }
 
 export function animationCssVariables(settings = {}) {

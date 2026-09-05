@@ -24,7 +24,10 @@ import { structuredContentEditor } from "./structured-content-editor.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
 import {
   advancedSettingsFromValues,
-  animationEffectOptions,
+  motionDelayOptions,
+  motionDurationOptions,
+  motionStyleOptions,
+  scrollMotionOptions,
   sanitizeAnimationSettings
 } from "./custom-css.js";
 import { designSystemFromForm } from "./design-system.js";
@@ -290,6 +293,69 @@ function withCustomCssField(block, fields, options = {}) {
   return [
     ...fields,
     {
+      type: "section",
+      label: "Motion",
+      help: "Choose one entrance style. Visitor reduced-motion preferences are always respected.",
+      open: animation.effect !== "none",
+      group: animationGroup
+    },
+    {
+      name: "animationEffect",
+      label: "Entrance style",
+      type: "choice",
+      value: animation.effect,
+      options: motionStyleOptions(animation.effect),
+      compact: true,
+      required: false,
+      group: animationGroup
+    },
+    {
+      type: "section",
+      label: "Motion timing",
+      help: "Optional fine tuning for the selected entrance style.",
+      group: animationGroup
+    },
+    {
+      name: "animationDuration",
+      label: "Speed",
+      type: "select",
+      value: String(animation.durationMs),
+      options: motionDurationOptions(animation.durationMs),
+      required: false,
+      group: animationGroup
+    },
+    {
+      name: "animationDelay",
+      label: "Start",
+      type: "select",
+      value: String(animation.delayMs),
+      options: motionDelayOptions(animation.delayMs),
+      required: false,
+      group: animationGroup
+    },
+    {
+      type: "section",
+      label: "Scroll movement",
+      help: "Optional depth for images and visual accents. Distance is reduced on phones.",
+      group: animationGroup
+    },
+    {
+      name: "animationScrollEffect",
+      label: "Parallax",
+      type: "choice",
+      value: animation.scrollEffect,
+      options: scrollMotionOptions(),
+      compact: true,
+      required: false,
+      group: animationGroup
+    },
+    {
+      type: "section",
+      label: "Developer options",
+      help: "Use these only when the visual controls are not enough.",
+      group: "Style"
+    },
+    {
       name: "htmlId",
       label: "HTML ID",
       value: block.settings?.htmlId || "",
@@ -298,49 +364,12 @@ function withCustomCssField(block, fields, options = {}) {
       help: "Optional anchor ID for this element."
     },
     {
-      type: "section",
-      label: "Motion",
-      help: "Optional entrance effect. Reduced-motion preferences are always respected.",
-      group: animationGroup
-    },
-    {
       name: "cssClasses",
       label: "CSS classes",
       value: block.settings?.cssClasses || "",
       required: false,
       group: "Style",
       help: "Optional safe class names separated by spaces."
-    },
-    {
-      name: "animationEffect",
-      label: "Animation",
-      type: "select",
-      value: animation.effect,
-      options: animationEffectOptions,
-      required: false,
-      group: animationGroup
-    },
-    {
-      name: "animationDuration",
-      label: "Duration ms",
-      type: "number",
-      value: animation.durationMs,
-      min: 120,
-      max: 3000,
-      step: 10,
-      required: false,
-      group: animationGroup
-    },
-    {
-      name: "animationDelay",
-      label: "Delay ms",
-      type: "number",
-      value: animation.delayMs,
-      min: 0,
-      max: 5000,
-      step: 50,
-      required: false,
-      group: animationGroup
     },
     {
       name: "customCss",
@@ -644,6 +673,8 @@ export async function editContentBlock(page, blockKey) {
       : null;
     const modelFile = selectedFile(values.structuredModelFile);
     const modelAsset = modelFile ? await uploadMediaFile(modelFile, values.structuredTitle || block.label || "3D model") : null;
+    const posterFile = selectedFile(values.structuredVideoPosterFile);
+    const posterAsset = posterFile ? await uploadMediaFile(posterFile, values.structuredTitle || block.label || "Video poster") : null;
     const itemMediaAssets = {};
     for (const mediaField of structuredEditor.mediaFields || []) {
       const itemFile = selectedFile(values[mediaField.name]);
@@ -655,7 +686,7 @@ export async function editContentBlock(page, blockKey) {
     }
 
     return updatePageBlock(page.slug, block, {
-      value: structuredEditor.valueFrom(values, mediaAsset, itemMediaAssets, { model: modelAsset }),
+      value: structuredEditor.valueFrom(values, mediaAsset, itemMediaAssets, { model: modelAsset, poster: posterAsset }),
       settings: cssSettingsPayload(block, values),
       mediaAssetId: mediaAsset?.id || block.mediaAssetId || undefined
     });

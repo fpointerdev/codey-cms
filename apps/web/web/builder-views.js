@@ -834,10 +834,7 @@ function renderBuilderPreviewDocument(page) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <title>${escapeHtml(page.title || "Page preview")}</title>
-    <link rel="stylesheet" href="/styles/base.css" />
-    <link rel="stylesheet" href="/styles/components.css" />
-    <link rel="stylesheet" href="/styles/tables-modal-responsive.css" />
-    <link rel="stylesheet" href="/styles/generated-site.css" />
+    <link rel="stylesheet" href="/site.css" />
     <style data-site-design-system>${designCss}</style>
     ${customCss ? `<style data-site-custom-css>${customCss}</style>` : ""}
   </head>
