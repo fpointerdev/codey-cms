@@ -64,6 +64,9 @@ async function submitContactForm(form) {
     const startedAt = form.querySelector('input[name="startedAt"]');
     if (startedAt) startedAt.value = new Date().toISOString();
     setFormMessage(form, "Your inquiry has been received. We will contact you soon.");
+    document.dispatchEvent(new CustomEvent("codey:marketing", {
+      detail: { name: "generate_lead", properties: { form_key: payload.formKey, page_path: window.location.pathname } }
+    }));
   } catch (error) {
     setFormMessage(form, error instanceof Error ? error.message : "Unable to send inquiry.", true);
   } finally {
@@ -73,6 +76,10 @@ async function submitContactForm(form) {
 
 export async function startPublicRuntime() {
   const page = document.querySelector("[data-page]");
+  if (document.querySelector("#codey-marketing-config")) {
+    const { startMarketingRuntime } = await import("./marketing-runtime.js");
+    startMarketingRuntime();
+  }
   let sliderRuntimePromise = document.querySelector("[data-slider]")
     ? import("./slider-runtime.js")
     : null;

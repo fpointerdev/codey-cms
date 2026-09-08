@@ -108,6 +108,10 @@ function updateCartCounts() {
   });
 }
 
+function marketingEvent(name, properties = {}) {
+  document.dispatchEvent(new CustomEvent("codey:marketing", { detail: { name, properties } }));
+}
+
 async function ensureCart() {
   if (cart?.sessionToken) return cart;
   const token = cartToken();
@@ -509,6 +513,19 @@ async function addProduct(input) {
     body: JSON.stringify(input)
   });
   setCart(result.cart);
+  const addedItem = result.cart?.items?.find((item) =>
+    item.productId === input.productId && (item.variantId || "") === (input.variantId || "")
+  );
+  marketingEvent("add_to_cart", {
+    item_id: input.productId,
+    item_name: addedItem?.product?.name || "",
+    variant_id: input.variantId || "",
+    variant_name: addedItem?.variant?.name || "",
+    quantity: input.quantity || 1,
+    currency: result.cart?.currency || "",
+    value: Number(addedItem?.lineTotalCents || 0) / 100,
+    unit_price: Number(addedItem?.unitPriceCents || 0) / 100
+  });
 }
 
 async function changeQuantity(itemId, quantity) {
@@ -627,6 +644,11 @@ async function checkout(form) {
   let createdOrder = null;
   let provider = "MANUAL";
   try {
+    marketingEvent("begin_checkout", {
+      currency: cart?.currency || "",
+      value: Number(cart?.totalCents || 0) / 100,
+      item_count: itemCount()
+    });
     if (shippingZones.length && !formData.get("shippingRateId")) {
       throw new Error("Choose an available delivery method.");
     }
@@ -652,6 +674,13 @@ async function checkout(form) {
     provider = String(formData.get("provider") || "MANUAL");
     clearCart();
     await startPayment(createdOrder, provider);
+    if (provider === "MANUAL") {
+      marketingEvent("purchase", {
+        transaction_id: createdOrder.orderNumber,
+        currency: createdOrder.currency,
+        value: Number(createdOrder.totalCents || 0) / 100
+      });
+    }
   } catch (error) {
     if (createdOrder) {
       const pending = pendingOrder();
@@ -699,6 +728,11 @@ async function submitQuote(form) {
         }
       })
     });
+    marketingEvent("generate_lead", {
+      form_key: "product-quote",
+      item_id: form.dataset.productId,
+      page_path: window.location.pathname
+    });
     dialog.innerHTML = `
       <div class="commerce-dialog-shell commerce-complete">
         <header class="commerce-dialog-header"><div><p>Quote request</p><h2>Request received</h2></div>${closeButton()}</header>
@@ -727,11 +761,44 @@ async function resumePaymentReturn() {
         method: "POST",
         body: JSON.stringify({ orderId: pending.order.id, providerReference: params.get("token") })
       });
+      marketingEvent("purchase", {
+        transaction_id: pending.order.orderNumber,
+        currency: pending.order.currency,
+        value: Number(pending.order.totalCents || 0) / 100
+      });
       sessionStorage.removeItem(orderStorageKey);
       dialog.innerHTML = completionMarkup(pending.order, "Payment complete", "Your order is confirmed and the shop has been notified.");
-    } else if (payment === "stripe" && params.get("redirect_status") === "succeeded" && pending?.order) {
+    } else if (
+      payment === "stripe"
+      && params.get("redirect_status") === "succeeded"
+      && pending?.order
+      && pending.idempotencyKey
+    ) {
+      const confirmation = await request("/payments/intent", {
+        method: "POST",
+        body: JSON.stringify({
+          orderId: pending.order.id,
+          provider: "STRIPE",
+          idempotencyKey: pending.idempotencyKey
+        })
+      });
+      const paymentSucceeded = confirmation.payment?.status === "SUCCEEDED"
+        || confirmation.providerPayload?.status === "succeeded";
+      if (paymentSucceeded) {
+        marketingEvent("purchase", {
+          transaction_id: pending.order.orderNumber,
+          currency: pending.order.currency,
+          value: Number(pending.order.totalCents || 0) / 100
+        });
+      }
       sessionStorage.removeItem(orderStorageKey);
-      dialog.innerHTML = completionMarkup(pending.order, "Payment submitted", "Your payment is being confirmed securely.");
+      dialog.innerHTML = completionMarkup(
+        pending.order,
+        paymentSucceeded ? "Payment complete" : "Payment submitted",
+        paymentSucceeded
+          ? "Your order is confirmed and the shop has been notified."
+          : "Your payment is being confirmed securely."
+      );
     } else {
       dialog.innerHTML = pending?.order
         ? paymentRetryMarkup(
@@ -1030,6 +1097,13 @@ function bindCommerceEvents() {
       }).then((result) => {
         if (result.error) throw new Error(result.error.message || "Card payment failed.");
         const pending = pendingOrder();
+        if (pending?.order && result.paymentIntent?.status === "succeeded") {
+          marketingEvent("purchase", {
+            transaction_id: pending.order.orderNumber,
+            currency: pending.order.currency,
+            value: Number(pending.order.totalCents || 0) / 100
+          });
+        }
         sessionStorage.removeItem(orderStorageKey);
         dialog.innerHTML = completionMarkup(pending?.order || {}, "Payment submitted", "Your payment is being confirmed securely.");
       }).catch((error) => {
@@ -1063,6 +1137,16 @@ export async function enhanceCommerce() {
     }
 
     await resumePaymentReturn();
+    const productForm = document.querySelector("[data-commerce-product-form]");
+    if (productForm) {
+      marketingEvent("view_item", {
+        item_id: productForm.dataset.productId,
+        item_name: productForm.dataset.productName,
+        currency: productForm.dataset.productCurrency,
+        value: Number(productForm.dataset.productValue || 0),
+        unit_price: Number(productForm.dataset.productValue || 0)
+      });
+    }
   }
 
   if (document.querySelector("[data-commerce-account-root]")) {

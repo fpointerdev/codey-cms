@@ -88,6 +88,44 @@ test("site branding supplies favicon, social fallback, and organization logo met
   assert.doesNotMatch(injected, /favicon\.svg/);
 });
 
+test("site marketing settings render verification and a non-executable runtime contract", () => {
+  const document = createPageSeoDocument({ title: "Home", slug: "home" }, {
+    origin: "https://example.com",
+    siteName: "Example",
+    marketing: {
+      provider: "google-analytics",
+      analyticsId: "G-ABC123",
+      metaPixelId: "123456",
+      consentMode: "required",
+      trackPageViews: true,
+      trackForms: true,
+      trackCommerce: true,
+      privacyUrl: "/privacy",
+      googleVerification: "google_verify_123",
+      bingVerification: "bing-verify-456"
+    }
+  });
+  const head = renderSeoHead(document);
+
+  assert.match(head, /name="google-site-verification" content="google_verify_123"/);
+  assert.match(head, /name="msvalidate\.01" content="bing-verify-456"/);
+  assert.match(head, /id="codey-marketing-config" type="application\/json"/);
+  assert.match(head, /\{"provider":"google-analytics"/);
+  assert.doesNotMatch(head, /<script[^>]+src=/);
+});
+
+test("verification-only sites do not load the marketing runtime", () => {
+  const document = createPageSeoDocument({ title: "Home", slug: "home" }, {
+    origin: "https://example.com",
+    siteName: "Example",
+    marketing: { googleVerification: "google_verify_123" }
+  });
+  const head = renderSeoHead(document);
+
+  assert.match(head, /name="google-site-verification"/);
+  assert.doesNotMatch(head, /id="codey-marketing-config"/);
+});
+
 test("published FAQ elements add matching FAQPage structured data", () => {
   const document = createPageSeoDocument({
     title: "Support",

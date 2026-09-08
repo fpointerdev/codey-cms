@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AppConfig } from "../../config/index.js";
 import type { LocalizationSettings } from "../localization/localization.service.js";
-import { designSystemSettingsSchema } from "./config.schemas.js";
+import { designSystemSettingsSchema, marketingSettingsSchema, type MarketingSettings } from "./config.schemas.js";
 
 const publicFeatureFlagsSchema = z.object({
   cms: z.boolean(),
@@ -43,6 +43,7 @@ const publicSiteSettingsSchema = z.object({
   faviconUrl: z.string(),
   socialImageUrl: z.string(),
   socialImageAlt: z.string(),
+  marketing: marketingSettingsSchema,
   customCss: z.string()
 }).strict();
 
@@ -80,6 +81,7 @@ type SiteSettings = {
   faviconUrl: string;
   socialImageUrl: string;
   socialImageAlt: string;
+  marketing: MarketingSettings;
   customCss: string;
 };
 
@@ -119,6 +121,7 @@ export function buildPublicRuntimeConfig(
       faviconUrl: siteSettings.faviconUrl,
       socialImageUrl: siteSettings.socialImageUrl,
       socialImageAlt: siteSettings.socialImageAlt,
+      marketing: siteSettings.marketing,
       customCss: siteSettings.customCss
     },
     storage: {

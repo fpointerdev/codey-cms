@@ -76,6 +76,7 @@ Useful docs:
 - `docs/ai-agent-integration.md`
 - `docs/generated-site-contract.md`
 - `docs/content-modeling.md`
+- `docs/marketing-and-analytics.md`
 - `docs/extensions.md`
 - `docs/module-system.md`
 - `docs/api-contract.md`
@@ -96,6 +97,10 @@ pnpm extension:validate -- --json extensions/yourname-extension-name
 ```
 
 See `CONTRIBUTING.md` for the contribution workflow, `docs/extensions.md` for the stable manifest contract, and `docs/extension-governance.md` for catalog review and maintenance policy.
+
+## Community
+
+Use [GitHub Issues](https://github.com/fpointerdev/codey-cms/issues) for setup questions, generated-site patterns, extension ideas, reproducible bugs, and approved feature work. Security reports stay private through the process in `SECURITY.md`.
 
 ## Safety Boundary
 

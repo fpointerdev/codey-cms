@@ -287,6 +287,8 @@ Site settings:
 - Store title, description, meta title, and meta description through settings APIs.
 - Keep module configuration in the database, not in client-side code.
 - Store localization settings through `/api/v1/config/modules/localization/settings`.
+- Preserve owner-managed analytics, consent, campaign attribution, and search-verification settings. They are configured through `/api/v1/config/marketing`, inherited by generated pages, and must not be copied into `WebsiteSpec`.
+- Custom storefronts may emit the bounded public events documented in `docs/marketing-and-analytics.md`; never send personal data, cart/session tokens, order lookup credentials, or payment details.
 
 Payments:
 

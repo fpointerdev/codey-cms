@@ -6,6 +6,7 @@ import { defaultDesignSystemSettings } from "./site-design.js";
 const moduleIds = Object.keys(moduleCatalog);
 const hostnamePattern =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+const verificationTokenPattern = /^[a-zA-Z0-9_-]+$/;
 const httpEndpointSchema = z
   .string()
   .trim()
@@ -159,6 +160,52 @@ export const storageSettingsSchema = z.object({
     });
   }
 });
+
+const publicLinkSchema = z
+  .string()
+  .trim()
+  .max(2_000)
+  .refine((value) => {
+    if (!value || (value.startsWith("/") && !value.startsWith("//"))) return true;
+
+    try {
+      return ["http:", "https:"].includes(new URL(value).protocol);
+    } catch {
+      return false;
+    }
+  }, "Use a site path or an HTTP(S) URL.");
+
+export const marketingSettingsSchema = z.object({
+  provider: z.enum(["none", "google-analytics", "google-tag-manager", "plausible"]).default("none"),
+  analyticsId: z.string().trim().max(253).default(""),
+  metaPixelId: z.string().trim().regex(/^\d*$/, "Meta Pixel ID must contain only numbers.").max(32).default(""),
+  consentMode: z.enum(["required", "not-required"]).default("required"),
+  privacyUrl: publicLinkSchema.default(""),
+  trackPageViews: z.boolean().default(true),
+  trackForms: z.boolean().default(true),
+  trackCommerce: z.boolean().default(true),
+  googleVerification: z.string().trim().regex(verificationTokenPattern, "Google verification token is invalid.").max(255).or(z.literal("")).default(""),
+  bingVerification: z.string().trim().regex(verificationTokenPattern, "Bing verification token is invalid.").max(255).or(z.literal("")).default("")
+}).strict().superRefine((value, context) => {
+  const validId = value.provider === "none"
+    || (value.provider === "google-analytics" && /^G-[A-Z0-9]+$/i.test(value.analyticsId))
+    || (value.provider === "google-tag-manager" && /^GTM-[A-Z0-9]+$/i.test(value.analyticsId))
+    || (value.provider === "plausible" && hostnamePattern.test(value.analyticsId.toLowerCase()));
+  if (!validId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["analyticsId"],
+      message: "Enter the site or container ID required by the selected provider."
+    });
+  }
+});
+
+export type MarketingSettings = z.infer<typeof marketingSettingsSchema>;
+
+export function normalizeMarketingSettings(value: unknown): MarketingSettings {
+  const parsed = marketingSettingsSchema.safeParse(value);
+  return parsed.success ? parsed.data : marketingSettingsSchema.parse({});
+}
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color.");
 const designColorsSchema = z.object({

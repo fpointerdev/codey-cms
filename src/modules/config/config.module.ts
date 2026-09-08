@@ -23,12 +23,14 @@ import {
   emailSettingsSchema,
   emailTestSchema,
   maintenanceSettingsSchema,
+  marketingSettingsSchema,
   moduleIdParams,
   moduleLifecycleParams,
   moduleSettingsSchema,
   siteSettingsSchema,
   storageSettingsSchema,
-  updateSiteDomainSchema
+  updateSiteDomainSchema,
+  normalizeMarketingSettings
 } from "./config.schemas.js";
 import { EmailSettingsService } from "../../infrastructure/email/email-settings.service.js";
 import { ModuleAdminService } from "./module-admin.service.js";
@@ -142,6 +144,7 @@ async function readSiteSettings(context: ModuleContext) {
     faviconUrl: typeof storedSettings.faviconUrl === "string" ? storedSettings.faviconUrl : "",
     socialImageUrl: typeof storedSettings.socialImageUrl === "string" ? storedSettings.socialImageUrl : "",
     socialImageAlt: typeof storedSettings.socialImageAlt === "string" ? storedSettings.socialImageAlt : "",
+    marketing: normalizeMarketingSettings(storedSettings.marketing),
     customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }
@@ -540,6 +543,52 @@ export const configModule: AppModule = {
         const effectiveMaintenance = await readMaintenanceSettings(context);
 
         return sendSuccess(res, { maintenance: effectiveMaintenance });
+      })
+    );
+
+    router.patch(
+      "/marketing",
+      requirePermission(context, "manage", "modules"),
+      validateRequest({ body: marketingSettingsSchema }),
+      asyncHandler(async (req, res) => {
+        const site = await getOrCreateDefaultSite(context);
+        const marketing = req.body;
+
+        await context.prisma.$transaction(async (tx) => {
+          const key = { siteId: site.id, moduleId: "config", key: "site" };
+          const current = await tx.moduleSetting.findUnique({
+            where: { siteId_moduleId_key: key },
+            select: { value: true }
+          });
+          const stored = current?.value && typeof current.value === "object" && !Array.isArray(current.value)
+            ? current.value as Record<string, unknown>
+            : {};
+
+          await tx.moduleSetting.upsert({
+            where: { siteId_moduleId_key: key },
+            update: {
+              value: { ...stored, marketing }
+            },
+            create: {
+              siteId: site.id,
+              moduleId: "config",
+              key: "site",
+              value: { ...stored, marketing }
+            }
+          });
+          await writeAuditLog(tx, {
+            actorUserId: req.user?.id,
+            action: "site.marketing.update",
+            subject: "site",
+            subjectId: site.id,
+            ipAddress: req.ip,
+            userAgent: req.header("user-agent"),
+            requestId: req.requestId,
+            metadata: marketing
+          });
+        });
+
+        return sendSuccess(res, { marketing: (await readSiteSettings(context)).marketing });
       })
     );
 

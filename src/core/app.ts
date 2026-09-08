@@ -50,6 +50,7 @@ import { enrichProductListContent } from "../modules/products/product-list-conte
 import { productCatalogOrderBy, type ProductCatalogSort } from "../modules/products/product-sort.js";
 import { readShopSettings } from "../modules/products/shop-settings.js";
 import { publicSiteStyleTag } from "../modules/config/site-design.js";
+import { normalizeMarketingSettings } from "../modules/config/config.schemas.js";
 import {
   createInstallationGate,
   createInstallationRouter
@@ -399,6 +400,7 @@ async function readSiteSeoDefaults() {
       faviconUrl: "",
       socialImageUrl: "",
       socialImageAlt: "",
+      marketing: normalizeMarketingSettings(undefined),
       customCss: ""
     };
   }
@@ -443,6 +445,7 @@ async function readSiteSeoDefaults() {
     faviconUrl: typeof storedSettings.faviconUrl === "string" ? storedSettings.faviconUrl : "",
     socialImageUrl: typeof storedSettings.socialImageUrl === "string" ? storedSettings.socialImageUrl : "",
     socialImageAlt: typeof storedSettings.socialImageAlt === "string" ? storedSettings.socialImageAlt : "",
+    marketing: normalizeMarketingSettings(storedSettings.marketing),
     customCss: typeof storedSettings.customCss === "string" ? storedSettings.customCss : ""
   };
 }
@@ -464,7 +467,8 @@ function seoDocumentContext(
     faviconUrl: site.faviconUrl,
     defaultImage: site.socialImageUrl
       ? { url: site.socialImageUrl, alt: site.socialImageAlt || site.brandTitle || site.title }
-      : undefined
+      : undefined,
+    marketing: site.marketing
   };
 }
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { normalizeMarketingSettings } from "../src/modules/config/config.schemas.js";
 import { defaultDesignSystemSettings } from "../src/modules/config/site-design.js";
 import {
   buildPublicRuntimeConfig,
@@ -53,6 +54,11 @@ function publicConfig() {
     faviconUrl: "/uploads/favicon.webp",
     socialImageUrl: "/uploads/social.webp",
     socialImageAlt: "Public site",
+    marketing: normalizeMarketingSettings({
+      provider: "google-analytics",
+      analyticsId: "G-ABC123",
+      googleVerification: "google-token"
+    }),
     customCss: ".custom { color: green; }"
   }, normalizeLocalizationSettings({}, false));
 }
@@ -75,6 +81,8 @@ test("public runtime configuration exposes only the explicit browser contract", 
   for (const privateValue of ["private-environment", "private-bucket", "private-prefix", "trustProxy"]) {
     assert.doesNotMatch(serialized, new RegExp(privateValue));
   }
+  assert.equal(result.siteSettings.marketing.analyticsId, "G-ABC123");
+  assert.equal(result.siteSettings.marketing.consentMode, "required");
 });
 
 test("public runtime configuration rejects accidental top-level fields", () => {
