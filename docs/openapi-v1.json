@@ -5678,7 +5678,7 @@
         ],
         "operationId": "config_get_config",
         "summary": "GET /config",
-        "x-codey-source": "src/modules/config/config.module.ts:206",
+        "x-codey-source": "src/modules/config/config.module.ts:209",
         "security": [],
         "responses": {
           "200": {
@@ -5713,7 +5713,7 @@
         ],
         "operationId": "config_get_config_admin",
         "summary": "GET /config/admin",
-        "x-codey-source": "src/modules/config/config.module.ts:220",
+        "x-codey-source": "src/modules/config/config.module.ts:223",
         "security": [
           {
             "bearerAuth": []
@@ -5758,7 +5758,7 @@
         ],
         "operationId": "config_get_config_audit_logs",
         "summary": "GET /config/audit-logs",
-        "x-codey-source": "src/modules/config/config.module.ts:615",
+        "x-codey-source": "src/modules/config/config.module.ts:664",
         "x-codey-validation": {
           "query": "auditLogQuerySchema"
         },
@@ -5810,7 +5810,7 @@
         ],
         "operationId": "config_get_config_compatibility",
         "summary": "GET /config/compatibility",
-        "x-codey-source": "src/modules/config/config.module.ts:270",
+        "x-codey-source": "src/modules/config/config.module.ts:273",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5859,7 +5859,7 @@
         ],
         "operationId": "config_get_config_domains",
         "summary": "GET /config/domains",
-        "x-codey-source": "src/modules/config/config.module.ts:664",
+        "x-codey-source": "src/modules/config/config.module.ts:713",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -5906,7 +5906,7 @@
         ],
         "operationId": "config_post_config_domains",
         "summary": "POST /config/domains",
-        "x-codey-source": "src/modules/config/config.module.ts:748",
+        "x-codey-source": "src/modules/config/config.module.ts:797",
         "x-codey-validation": {
           "body": "createSiteDomainSchema"
         },
@@ -5970,7 +5970,7 @@
         ],
         "operationId": "config_patch_config_domains_domainId",
         "summary": "PATCH /config/domains/{domainId}",
-        "x-codey-source": "src/modules/config/config.module.ts:759",
+        "x-codey-source": "src/modules/config/config.module.ts:808",
         "x-codey-validation": {
           "params": "domainIdParams",
           "body": "updateSiteDomainSchema"
@@ -6046,7 +6046,7 @@
         ],
         "operationId": "config_post_config_domains_domainId_verify",
         "summary": "POST /config/domains/{domainId}/verify",
-        "x-codey-source": "src/modules/config/config.module.ts:770",
+        "x-codey-source": "src/modules/config/config.module.ts:819",
         "x-codey-validation": {
           "params": "domainIdParams"
         },
@@ -6109,7 +6109,7 @@
         ],
         "operationId": "config_get_config_email",
         "summary": "GET /config/email",
-        "x-codey-source": "src/modules/config/config.module.ts:318",
+        "x-codey-source": "src/modules/config/config.module.ts:321",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -6156,7 +6156,7 @@
         ],
         "operationId": "config_patch_config_email",
         "summary": "PATCH /config/email",
-        "x-codey-source": "src/modules/config/config.module.ts:326",
+        "x-codey-source": "src/modules/config/config.module.ts:329",
         "x-codey-validation": {
           "body": "emailSettingsSchema"
         },
@@ -6220,7 +6220,7 @@
         ],
         "operationId": "config_post_config_email_test",
         "summary": "POST /config/email/test",
-        "x-codey-source": "src/modules/config/config.module.ts:379",
+        "x-codey-source": "src/modules/config/config.module.ts:382",
         "x-codey-validation": {
           "body": "emailTestSchema"
         },
@@ -6284,7 +6284,7 @@
         ],
         "operationId": "config_post_config_generation_apply",
         "summary": "POST /config/generation/apply",
-        "x-codey-source": "src/modules/config/config.module.ts:735",
+        "x-codey-source": "src/modules/config/config.module.ts:784",
         "x-codey-validation": {
           "body": "applyWebsiteSpecRequestSchema"
         },
@@ -6348,7 +6348,7 @@
         ],
         "operationId": "config_get_config_generation_contract",
         "summary": "GET /config/generation/contract",
-        "x-codey-source": "src/modules/config/config.module.ts:674",
+        "x-codey-source": "src/modules/config/config.module.ts:723",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -6397,7 +6397,7 @@
         ],
         "operationId": "config_post_config_generation_validate",
         "summary": "POST /config/generation/validate",
-        "x-codey-source": "src/modules/config/config.module.ts:724",
+        "x-codey-source": "src/modules/config/config.module.ts:773",
         "x-codey-validation": {
           "body": "websiteSpecRequestSchema"
         },
@@ -6461,7 +6461,7 @@
         ],
         "operationId": "config_get_config_launch_readiness",
         "summary": "GET /config/launch-readiness",
-        "x-codey-source": "src/modules/config/config.module.ts:281",
+        "x-codey-source": "src/modules/config/config.module.ts:284",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -6510,7 +6510,7 @@
         ],
         "operationId": "config_get_config_maintenance",
         "summary": "GET /config/maintenance",
-        "x-codey-source": "src/modules/config/config.module.ts:495",
+        "x-codey-source": "src/modules/config/config.module.ts:498",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -6557,7 +6557,7 @@
         ],
         "operationId": "config_patch_config_maintenance",
         "summary": "PATCH /config/maintenance",
-        "x-codey-source": "src/modules/config/config.module.ts:505",
+        "x-codey-source": "src/modules/config/config.module.ts:508",
         "x-codey-validation": {
           "body": "maintenanceSettingsSchema"
         },
@@ -6614,6 +6614,70 @@
         }
       }
     },
+    "/config/marketing": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "config_patch_config_marketing",
+        "summary": "PATCH /config/marketing",
+        "x-codey-source": "src/modules/config/config.module.ts:549",
+        "x-codey-validation": {
+          "body": "marketingSettingsSchema"
+        },
+        "x-codey-permission": {
+          "action": "manage",
+          "subject": "modules"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Validated at runtime by marketingSettingsSchema.",
+                "x-codey-zod-schema": "marketingSettingsSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/config/modules": {
       "get": {
         "tags": [
@@ -6621,7 +6685,7 @@
         ],
         "operationId": "config_get_config_modules",
         "summary": "GET /config/modules",
-        "x-codey-source": "src/modules/config/config.module.ts:257",
+        "x-codey-source": "src/modules/config/config.module.ts:260",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -6670,7 +6734,7 @@
         ],
         "operationId": "config_delete_config_modules_moduleId",
         "summary": "DELETE /config/modules/{moduleId}",
-        "x-codey-source": "src/modules/config/config.module.ts:817",
+        "x-codey-source": "src/modules/config/config.module.ts:866",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -6733,7 +6797,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_disable",
         "summary": "POST /config/modules/{moduleId}/disable",
-        "x-codey-source": "src/modules/config/config.module.ts:805",
+        "x-codey-source": "src/modules/config/config.module.ts:854",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -6796,7 +6860,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_enable",
         "summary": "POST /config/modules/{moduleId}/enable",
-        "x-codey-source": "src/modules/config/config.module.ts:793",
+        "x-codey-source": "src/modules/config/config.module.ts:842",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -6859,7 +6923,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_install",
         "summary": "POST /config/modules/{moduleId}/install",
-        "x-codey-source": "src/modules/config/config.module.ts:781",
+        "x-codey-source": "src/modules/config/config.module.ts:830",
         "x-codey-validation": {
           "params": "moduleIdParams"
         },
@@ -6922,7 +6986,7 @@
         ],
         "operationId": "config_post_config_modules_moduleId_lifecycle_hook",
         "summary": "POST /config/modules/{moduleId}/lifecycle/{hook}",
-        "x-codey-source": "src/modules/config/config.module.ts:848",
+        "x-codey-source": "src/modules/config/config.module.ts:897",
         "x-codey-validation": {
           "params": "moduleLifecycleParams"
         },
@@ -6994,7 +7058,7 @@
         ],
         "operationId": "config_patch_config_modules_moduleId_settings",
         "summary": "PATCH /config/modules/{moduleId}/settings",
-        "x-codey-source": "src/modules/config/config.module.ts:829",
+        "x-codey-source": "src/modules/config/config.module.ts:878",
         "x-codey-validation": {
           "params": "moduleIdParams",
           "body": "moduleSettingsSchema"
@@ -7070,7 +7134,7 @@
         ],
         "operationId": "config_get_config_runtime_update",
         "summary": "GET /config/runtime-update",
-        "x-codey-source": "src/modules/config/config.module.ts:682",
+        "x-codey-source": "src/modules/config/config.module.ts:731",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -7119,7 +7183,7 @@
         ],
         "operationId": "config_post_config_runtime_update_apply",
         "summary": "POST /config/runtime-update/apply",
-        "x-codey-source": "src/modules/config/config.module.ts:698",
+        "x-codey-source": "src/modules/config/config.module.ts:747",
         "x-codey-permission": {
           "action": "manage",
           "subject": "modules"
@@ -7168,7 +7232,7 @@
         ],
         "operationId": "config_post_config_runtime_update_check",
         "summary": "POST /config/runtime-update/check",
-        "x-codey-source": "src/modules/config/config.module.ts:690",
+        "x-codey-source": "src/modules/config/config.module.ts:739",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -7217,7 +7281,7 @@
         ],
         "operationId": "config_patch_config_site_settings",
         "summary": "PATCH /config/site-settings",
-        "x-codey-source": "src/modules/config/config.module.ts:546",
+        "x-codey-source": "src/modules/config/config.module.ts:595",
         "x-codey-validation": {
           "body": "siteSettingsSchema"
         },
@@ -7281,7 +7345,7 @@
         ],
         "operationId": "config_get_config_storage",
         "summary": "GET /config/storage",
-        "x-codey-source": "src/modules/config/config.module.ts:437",
+        "x-codey-source": "src/modules/config/config.module.ts:440",
         "x-codey-permission": {
           "action": "read",
           "subject": "modules"
@@ -7328,7 +7392,7 @@
         ],
         "operationId": "config_patch_config_storage",
         "summary": "PATCH /config/storage",
-        "x-codey-source": "src/modules/config/config.module.ts:445",
+        "x-codey-source": "src/modules/config/config.module.ts:448",
         "x-codey-validation": {
           "body": "storageSettingsSchema"
         },

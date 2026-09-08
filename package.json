@@ -49,7 +49,7 @@
     "release:qualify-upgrade": "node scripts/qualify-runtime-upgrade.mjs",
     "lint": "eslint apps/web/web scripts src test",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
-    "audit": "pnpm audit --prod --audit-level high",
+    "audit": "node scripts/audit-production-dependencies.mjs",
     "api:generate": "node scripts/generate-openapi.mjs",
     "api:check": "node scripts/generate-openapi.mjs --check",
     "db:schema": "node scripts/build-prisma-schema.mjs",

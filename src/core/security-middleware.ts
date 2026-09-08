@@ -117,12 +117,24 @@ function createHelmetOptions(config: AppConfig) {
     "https://*.js.stripe.com",
     "https://hooks.stripe.com"
   ];
+  const marketingScriptSources = [
+    "https://www.googletagmanager.com",
+    "https://connect.facebook.net"
+  ];
+  const marketingConnectSources = [
+    "https://www.google-analytics.com",
+    "https://*.google-analytics.com",
+    "https://www.googletagmanager.com",
+    "https://plausible.io",
+    "https://www.facebook.com"
+  ];
   const contentSecurityPolicyDirectives = {
     "img-src": ["'self'", "data:", "blob:", "https:"],
-    "script-src": ["'self'", ...(config.features.payments ? stripeScriptSources : [])],
+    "script-src": ["'self'", ...marketingScriptSources, ...(config.features.payments ? stripeScriptSources : [])],
     "connect-src": [
       "'self'",
       "blob:",
+      ...marketingConnectSources,
       ...(config.features.payments ? ["https://api.stripe.com", "https://maps.googleapis.com"] : [])
     ],
     "frame-src": ["'self'", "blob:", ...(config.features.payments ? stripeFrameSources : [])],

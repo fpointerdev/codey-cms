@@ -341,6 +341,7 @@ export function createSeoDocument(input = {}) {
       description,
       ...(image ? { image } : {})
     },
+    marketing: isRecord(input.marketing) ? input.marketing : {},
     structuredData: Array.isArray(input.structuredData) ? input.structuredData : []
   };
 }
@@ -537,10 +538,17 @@ function imageMetaTags(prefix, image) {
 }
 
 export function renderSeoHead(document) {
+  const marketing = isRecord(document.marketing) ? document.marketing : {};
+  const measurementConfigured = (
+    ["google-analytics", "google-tag-manager", "plausible"].includes(marketing.provider)
+    && Boolean(marketing.analyticsId)
+  ) || Boolean(marketing.metaPixelId);
   const tags = [
     `<title data-codey-seo>${escapeHtml(document.title)}</title>`,
     `<meta name="description" content="${escapeHtml(document.description)}" data-codey-seo />`,
     `<meta name="robots" content="${document.noindex ? "noindex, nofollow" : "index, follow, max-image-preview:large"}" data-codey-seo />`,
+    marketing.googleVerification ? `<meta name="google-site-verification" content="${escapeHtml(marketing.googleVerification)}" data-codey-seo />` : "",
+    marketing.bingVerification ? `<meta name="msvalidate.01" content="${escapeHtml(marketing.bingVerification)}" data-codey-seo />` : "",
     document.canonicalUrl ? `<link rel="canonical" href="${escapeHtml(document.canonicalUrl)}" data-codey-seo />` : "",
     document.faviconUrl ? `<link rel="icon" href="${escapeHtml(document.faviconUrl)}" data-codey-seo />` : "",
     ...document.alternates.map((alternate) => `<link rel="alternate" hreflang="${escapeHtml(alternate.hreflang)}" href="${escapeHtml(alternate.href)}" data-codey-seo />`),
@@ -555,6 +563,9 @@ export function renderSeoHead(document) {
     `<meta name="twitter:description" content="${escapeHtml(document.twitter.description)}" data-codey-seo />`,
     ...imageMetaTags("twitter", document.twitter.image),
     ...document.structuredData.map((schema) => `<script type="application/ld+json" data-codey-seo>${safeJson(schema)}</script>`),
+    measurementConfigured
+      ? `<script id="codey-marketing-config" type="application/json" data-codey-seo>${safeJson(marketing)}</script>`
+      : "",
     `<script id="codey-seo-document" type="application/json" data-codey-seo>${safeJson(document)}</script>`
   ];
 

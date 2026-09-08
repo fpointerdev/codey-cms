@@ -466,6 +466,25 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.equal(adminConfigBody.data?.env, config.env);
     assert.ok(adminConfigBody.data?.modules?.cms);
     assert.ok(Array.isArray(adminConfigBody.data?.installedModules));
+    const updateMarketing = await request("/api/v1/config/marketing", {
+      method: "PATCH",
+      headers: authorization,
+      body: JSON.stringify({
+        provider: "google-analytics",
+        analyticsId: "G-INTEGRATION1",
+        metaPixelId: "",
+        consentMode: "required",
+        privacyUrl: "/privacy",
+        trackPageViews: true,
+        trackForms: true,
+        trackCommerce: true,
+        googleVerification: "integration_google",
+        bingVerification: "integration-bing"
+      })
+    });
+    const updateMarketingBody = await responseJson(updateMarketing);
+    assert.equal(updateMarketing.status, 200, JSON.stringify(updateMarketingBody));
+    assert.equal(updateMarketingBody.data?.marketing.analyticsId, "G-INTEGRATION1");
     const compatibility = await request("/api/v1/config/compatibility", { headers: authorization });
     const compatibilityBody = await responseJson(compatibility);
     assert.equal(compatibility.status, 200, JSON.stringify(compatibilityBody));
@@ -494,6 +513,8 @@ test("runtime API, media policy, SSR routing, and redirects work together", { ti
     assert.doesNotMatch(publicHtml, /window\.compromised|<script>window\.compromised/);
     assert.match(publicHtml, /data-site-design-system/);
     assert.match(publicHtml, /--accent: #c0264f/);
+    assert.match(publicHtml, /name="google-site-verification" content="integration_google"/);
+    assert.match(publicHtml, /id="codey-marketing-config" type="application\/json"/);
 
     const deleteTemplate = await request(`/api/v1/cms/templates/${reusableTemplateId}`, {
       method: "DELETE",

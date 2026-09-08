@@ -1017,6 +1017,39 @@ export async function saveSiteSettings(form) {
   }
 }
 
+export async function saveMarketingSettings(form) {
+  const formData = new FormData(form);
+  setFormDisabled(form, true);
+  setFormMessage(form, "Saving marketing settings...");
+
+  try {
+    const response = await api("/config/marketing", {
+      method: "PATCH",
+      body: JSON.stringify({
+        provider: String(formData.get("provider") || "none"),
+        analyticsId: String(formData.get("analyticsId") || "").trim(),
+        metaPixelId: String(formData.get("metaPixelId") || "").trim(),
+        consentMode: String(formData.get("consentMode") || "required"),
+        privacyUrl: String(formData.get("privacyUrl") || "").trim(),
+        trackPageViews: formData.get("trackPageViews") === "on",
+        trackForms: formData.get("trackForms") === "on",
+        trackCommerce: formData.get("trackCommerce") === "on",
+        googleVerification: String(formData.get("googleVerification") || "").trim(),
+        bingVerification: String(formData.get("bingVerification") || "").trim()
+      })
+    });
+    if (state.config?.siteSettings && response.marketing) {
+      state.config.siteSettings.marketing = response.marketing;
+    }
+    setFormMessage(form, "Marketing settings saved.");
+    setStatus("Marketing settings saved.");
+  } catch (error) {
+    setFormMessage(form, error.message || "Unable to save marketing settings.", true);
+  } finally {
+    setFormDisabled(form, false);
+  }
+}
+
 export async function saveEmailSettings(form) {
   const formData = new FormData(form);
   const bearerToken = String(formData.get("bearerToken") || "").trim();

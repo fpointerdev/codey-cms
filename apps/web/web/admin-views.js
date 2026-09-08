@@ -2178,6 +2178,8 @@ function renderSettingsImagePicker({ name, label, url = "", alt = "", help = "",
 
 export function renderSettingsPage(config) {
   const settings = config.siteSettings || {};
+  const marketing = settings.marketing || {};
+  const marketingConfigured = (marketing.provider && marketing.provider !== "none") || marketing.metaPixelId;
   const email = config.email || {};
   const storage = config.storage || {};
   const storageProvider = ["local", "s3", "r2"].includes(storage.provider)
@@ -2214,6 +2216,7 @@ export function renderSettingsPage(config) {
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-launch" checked />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-general" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-style" />
+          <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-marketing" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-storage" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-email" />
           <input class="settings-tab-input" type="radio" name="settings-tab" id="settings-tab-multilingual" />
@@ -2223,6 +2226,7 @@ export function renderSettingsPage(config) {
             <label for="settings-tab-launch">Launch</label>
             <label for="settings-tab-general">General settings</label>
             <label for="settings-tab-style">Style</label>
+            <label for="settings-tab-marketing">Marketing</label>
             <label for="settings-tab-storage">Storage</label>
             <label for="settings-tab-email">Email</label>
             <label for="settings-tab-multilingual">Multilingual</label>
@@ -2308,6 +2312,74 @@ export function renderSettingsPage(config) {
           </section>
           <section class="settings-tab-panel settings-tab-panel-style" data-settings-panel="style">
             ${renderDesignSystemEditor({ ...settings, title: settings.title || config.app?.name || "CodeY CMS" })}
+          </section>
+          <section class="settings-tab-panel settings-tab-panel-marketing" data-settings-panel="marketing">
+            <form class="admin-card settings-form" data-marketing-settings-form>
+              <div class="module-status-row">
+                <div>
+                  <strong>${marketingConfigured ? "Measurement configured" : "Measurement is off"}</strong>
+                  <span>Connect trusted services without pasting scripts into the website.</span>
+                </div>
+                <span class="status-pill ${marketingConfigured ? "success" : ""}">${marketingConfigured ? "Active" : "Off"}</span>
+              </div>
+              <div class="settings-form-section">
+                <div>
+                  <p class="section-label">Analytics</p>
+                  <h2>Understand what works</h2>
+                  <p class="dashboard-copy compact">CodeY sends page, lead, and shop events. It never sends form values, customer names, email addresses, or payment details.</p>
+                </div>
+                <div class="builder-form-grid">
+                  <label>
+                    <span>Analytics provider</span>
+                    <select name="provider">
+                      <option value="none"${marketing.provider && marketing.provider !== "none" ? "" : " selected"}>None</option>
+                      <option value="google-analytics"${marketing.provider === "google-analytics" ? " selected" : ""}>Google Analytics 4</option>
+                      <option value="google-tag-manager"${marketing.provider === "google-tag-manager" ? " selected" : ""}>Google Tag Manager</option>
+                      <option value="plausible"${marketing.provider === "plausible" ? " selected" : ""}>Plausible</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Site or container ID</span>
+                    <input name="analyticsId" value="${escapeHtml(marketing.analyticsId || "")}" placeholder="G-..., GTM-..., or example.com" autocomplete="off" />
+                    <small class="field-help">Use the ID shown by your selected provider.</small>
+                  </label>
+                  <label>
+                    <span>Meta Pixel ID</span>
+                    <input name="metaPixelId" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(marketing.metaPixelId || "")}" placeholder="Optional" autocomplete="off" />
+                  </label>
+                  <label>
+                    <span>Visitor consent</span>
+                    <select name="consentMode">
+                      <option value="required"${marketing.consentMode === "not-required" ? "" : " selected"}>Ask before loading analytics</option>
+                      <option value="not-required"${marketing.consentMode === "not-required" ? " selected" : ""}>Load without a banner</option>
+                    </select>
+                    <small class="field-help">Ask first is the safer default. Your local privacy rules still apply.</small>
+                  </label>
+                </div>
+                <label>
+                  <span>Privacy policy link</span>
+                  <input name="privacyUrl" value="${escapeHtml(marketing.privacyUrl || "")}" placeholder="/privacy" autocomplete="url" />
+                </label>
+                <div class="settings-check-grid">
+                  <label class="inline-check"><input type="checkbox" name="trackPageViews" ${marketing.trackPageViews === false ? "" : "checked"} /><span>Track page views</span></label>
+                  <label class="inline-check"><input type="checkbox" name="trackForms" ${marketing.trackForms === false ? "" : "checked"} /><span>Track successful inquiries</span></label>
+                  <label class="inline-check"><input type="checkbox" name="trackCommerce" ${marketing.trackCommerce === false ? "" : "checked"} /><span>Track shop journey</span></label>
+                </div>
+              </div>
+              <div class="settings-form-section">
+                <div>
+                  <p class="section-label">Search verification</p>
+                  <h2>Verify site ownership</h2>
+                </div>
+                <div class="builder-form-grid">
+                  <label><span>Google verification token</span><input name="googleVerification" value="${escapeHtml(marketing.googleVerification || "")}" autocomplete="off" /></label>
+                  <label><span>Bing verification token</span><input name="bingVerification" value="${escapeHtml(marketing.bingVerification || "")}" autocomplete="off" /></label>
+                </div>
+                <small class="field-help">Paste only the content value from the provider's HTML meta tag, not the full tag.</small>
+              </div>
+              ${renderFormMessage()}
+              <div class="form-actions"><button type="submit">Save marketing settings</button></div>
+            </form>
           </section>
           <section class="settings-tab-panel settings-tab-panel-storage" data-settings-panel="storage">
             <form class="admin-card settings-form storage-settings-form" data-storage-settings-form>

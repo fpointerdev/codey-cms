@@ -1,0 +1,41 @@
+name: Support question
+description: Ask for help installing, configuring, or using CodeY CMS.
+title: "[Support]: "
+body:
+  - type: markdown
+    attributes:
+      value: Do not post passwords, API keys, customer data, payment details, or private backup content. Report security vulnerabilities through the private process in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: CodeY CMS version
+      description: Find this in Settings or codey-runtime.json.
+      placeholder: 1.4.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation
+      options:
+        - Self-host ZIP and launcher
+        - Docker Compose
+        - Local development
+        - CodeY generated website
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: Describe the outcome you need and the steps you already tried.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened?
+      description: Include the exact error and relevant logs with secrets removed.
+    validations:
+      required: true

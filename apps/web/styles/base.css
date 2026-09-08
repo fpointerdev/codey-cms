@@ -4471,6 +4471,73 @@ body:not([data-codey-runtime-theme="true"]) .content-block {
   width: auto;
 }
 
+.settings-check-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.codey-consent {
+  position: fixed;
+  z-index: 90;
+  right: 20px;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: min(760px, calc(100% - 40px));
+  margin-inline: auto;
+  padding: 18px;
+  color: var(--text, #171717);
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--line, #d8d8d8);
+  border-radius: min(var(--site-radius, 8px), 12px);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+
+.codey-consent p {
+  margin: 4px 0 0;
+  color: var(--muted, #5f6368);
+}
+
+.codey-consent-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.codey-privacy-settings {
+  position: fixed;
+  z-index: 80;
+  right: 16px;
+  bottom: 16px;
+  min-height: 36px;
+  padding: 7px 12px;
+  color: var(--text, #171717);
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--line, #d8d8d8);
+  border-radius: min(var(--site-button-radius, 8px), 12px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 720px) {
+  .settings-check-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .codey-consent {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .codey-consent-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .settings-form .module-status-row button {
   width: auto;
   white-space: nowrap;

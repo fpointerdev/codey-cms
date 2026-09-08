@@ -17,6 +17,7 @@ import {
   saveEmailSettings,
   saveStorageSettings,
   saveLocalizationSettings,
+  saveMarketingSettings,
   syncLocaleLanguageFields,
   testEmailSettings,
   toggleLocalizationModule,
@@ -330,6 +331,13 @@ function bindSubmitEvents() {
     if (settingsForm) {
       event.preventDefault();
       void saveSiteSettings(settingsForm);
+      return;
+    }
+
+    const marketingSettingsForm = event.target.closest("[data-marketing-settings-form]");
+    if (marketingSettingsForm) {
+      event.preventDefault();
+      void saveMarketingSettings(marketingSettingsForm);
       return;
     }
 

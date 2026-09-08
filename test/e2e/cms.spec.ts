@@ -184,6 +184,11 @@ test("admin settings and builder controls complete their primary workflows", asy
   await logoPicker.getByRole("button", { name: "Remove" }).click();
   await expect(logoPicker.locator('[name="logoRemove"]')).toHaveValue("true");
   await expect(logoPicker.getByText("Upload image", { exact: true })).toBeVisible();
+  await page.getByText("Marketing", { exact: true }).click();
+  await expect(page.locator("[data-marketing-settings-form]")).toBeVisible();
+  await expect(page.getByLabel("Analytics provider")).toBeVisible();
+  await expect(page.getByLabel("Visitor consent")).toHaveValue("required");
+  await expect(page.getByText("Verify site ownership", { exact: true })).toBeVisible();
   await page.getByText("Email", { exact: true }).click();
   await expect(page.locator("[data-email-settings-form]")).toBeVisible();
   await expect(page.getByLabel("Provider API key")).toHaveAttribute("type", "password");
