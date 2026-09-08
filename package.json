@@ -89,7 +89,7 @@
     "@eslint/js": "^9.39.5",
     "@lhci/cli": "^0.15.1",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.8.1",
     "@types/cookie-parser": "^1.4.10",
@@ -101,11 +101,11 @@
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "globals": "^16.5.0",
-    "motion": "^13.1.1",
+    "motion": "^13.2.0",
     "three": "^0.185.1",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.68.0"
+    "typescript-eslint": "^8.69.0"
   },
   "description": "Reusable CodeY CMS runtime for generated websites."
 }
