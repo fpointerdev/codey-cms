@@ -59,7 +59,7 @@ test("protected client editing preserves design on desktop and mobile and reject
         expect(after.sections[0].settings).toEqual(originalSettings);
         expect(after.sections[0].blocks[0].settings).toEqual({ customCss: "max-width: 720px" });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
-        await page.screenshot({ path: `/private/tmp/codey-content-editor-${testInfo.project.name}-${viewport.width}.png`, fullPage: true });
+        await page.screenshot({ path: testInfo.outputPath(`content-editor-${viewport.width}.png`), fullPage: true });
 
         await page.getByRole("button", { name: "Edit content", exact: true }).click();
         await dialog.getByLabel("Text", { exact: true }).fill("Stale browser text");

@@ -60,6 +60,6 @@ test("owner handover report and backup controls are usable on desktop and mobile
     await expect(page.locator("[data-backup-message]")).toContainText("requested backup completed");
     await expect(page.locator("[data-backup-panel]")).not.toContainText("Backups are protected off-site");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
-    await page.screenshot({ path: `/private/tmp/codey-owner-handover-${testInfo.project.name}-${width}.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`owner-handover-${width}.png`), fullPage: true });
   }
 });
