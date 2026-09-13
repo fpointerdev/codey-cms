@@ -1,5 +1,6 @@
 import {
   availableComponentTemplates,
+  contentEditingAccess,
   defaultPage,
   elements,
   escapeHtml,
@@ -220,6 +221,7 @@ function visualIconButton(icon, label, attribute, disabled = false, className = 
 }
 
 function renderVisualSectionControls(section, index, sections) {
+  if (!contentEditingAccess().canDesign) return "";
   const label = section.label || section.key || `Section ${index + 1}`;
 
   return `
@@ -237,6 +239,11 @@ function renderVisualSectionControls(section, index, sections) {
 
 function renderVisualBlockControls(block, index, blocks) {
   const label = block.label || block.key || `Element ${index + 1}`;
+  if (!contentEditingAccess().canDesign) {
+    return block.editable !== false && block.type !== "EMBED"
+      ? `<div class="visual-item-toolbar visual-block-toolbar" data-editor-ui>${visualIconButton("&#9998;", `Edit ${label}`, "data-edit-block")}</div>`
+      : "";
+  }
   const editable = block.editable !== false;
   const directTextEdit = editable && ["TEXT", "RICH_TEXT"].includes(block.type);
 
@@ -260,6 +267,19 @@ function renderVisualBlockControls(block, index, blocks) {
 }
 
 function renderVisualEditorToolbar(page) {
+  const access = contentEditingAccess(page);
+  if (access.protectedDesign && (!access.canDesign || !access.canEdit)) {
+    const locale = `?locale=${encodeURIComponent(page.locale || currentLocale())}`;
+    return `<div class="visual-editor-bar" role="toolbar" aria-label="Page content editor" data-editor-ui>
+      <div class="visual-editor-summary"><strong>${escapeHtml(page.title)}</strong><span>${access.canEdit ? "Content editing" : "Publishing access required"}</span></div>
+      <div class="visual-editor-actions">
+        <a class="visual-command-button" href="/dashboard/pages/${encodeURIComponent(page.slug)}/builder${locale}">Content</a>
+        ${access.canEdit ? '<button type="button" class="visual-command-button" data-edit-page-inline>Page details</button>' : ""}
+        ${access.canPublish && page.status !== "PUBLISHED" ? '<button type="button" class="visual-command-button" data-publish-inline>Publish</button>' : ""}
+        <button type="button" class="visual-command-button" data-exit-visual-editor>Done</button>
+      </div>
+    </div>`;
+  }
   const reusableSections = (state.cmsTemplates || []).filter((template) => template.type === "SECTION");
   const availableElements = availableComponentTemplates();
   const canCreateTemplates = hasPermission("create", "cms");
@@ -2605,8 +2625,7 @@ export function renderComponentPalette() {
 
 export function renderPage(page) {
   const visualEditorActive = Boolean(state.visualEditorActive && state.user && hasPermission("update", "cms"));
-  const canEditCms = visualEditorActive && moduleEnabled("cms");
-  const canEditProducts = visualEditorActive && moduleEnabled("products") && hasPermission("update", "products");
+  const canEditCms = visualEditorActive && moduleEnabled("cms") && contentEditingAccess(page).canEdit;
   const currentLibrary = elements.page?.querySelector?.(".visual-library-menu");
   const historyKey = `${page.locale || currentLocale()}:${page.slug || ""}`;
 
@@ -2631,7 +2650,7 @@ export function renderPage(page) {
   updatePublicBrand();
   updateHeaderLanguageSwitcher(page);
   elements.page.innerHTML = `
-    ${canEditCms || canEditProducts ? renderVisualEditorToolbar(page) : ""}
+    ${visualEditorActive ? renderVisualEditorToolbar(page) : ""}
     ${state.user && moduleEnabled("cms") && hasPermission("update", "cms") && !visualEditorActive ? '<button type="button" class="visual-editor-entry" data-enter-visual-editor><span aria-hidden="true">&#9998;</span> Edit page</button>' : ""}
     ${renderPageContent(page, {
       canEdit: canEditCms,

@@ -17,6 +17,7 @@ import path from "node:path";
 import { encryptBackupFile } from "./backup-crypto.mjs";
 import { resolveBackupStorage } from "./backup-storage-settings.mjs";
 import { postgresCliConnection } from "./postgres-cli-url.mjs";
+import { acquireBackupLock } from "./backup-control.mjs";
 
 function requireEnv(name) {
   const value = process.env[name]?.trim();
@@ -190,6 +191,8 @@ const mirrorDir = process.env.BACKUP_MIRROR_DIR
   : undefined;
 const incompleteArtifacts = [];
 let completedLocalStatus;
+// Scheduled, requested, and pre-update backups share the same artifact directory.
+const releaseBackupLock = await acquireBackupLock(backupDir);
 
 try {
   const databaseConnection = postgresCliConnection(requireEnv("DATABASE_URL"));
@@ -334,4 +337,6 @@ try {
   await sendFailureAlert(error, status);
   console.error(status.error);
   process.exitCode = 1;
+} finally {
+  await releaseBackupLock();
 }

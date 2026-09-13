@@ -8,6 +8,11 @@
     "src/infrastructure/operations"
   ],
   "files": {
+    "src/infrastructure/operations/backup-control.service.ts": {
+      "lines": 100,
+      "branches": 94.74,
+      "functions": 100
+    },
     "src/infrastructure/operations/backup-status.ts": {
       "lines": 94.76,
       "branches": 60.94,

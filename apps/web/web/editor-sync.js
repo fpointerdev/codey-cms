@@ -1,5 +1,13 @@
 export const pageChangeStoragePrefix = "codey_cms_page_change:";
 
+export function pageSettingsHaveUnsavedChanges(form) {
+  return Array.from(form?.querySelectorAll?.("input, textarea, select") || []).some((field) => {
+    if (field.tagName === "SELECT") return Array.from(field.options || []).some((option) => option.selected !== option.defaultSelected);
+    if (["checkbox", "radio"].includes(field.type)) return field.checked !== field.defaultChecked;
+    return field.value !== field.defaultValue;
+  });
+}
+
 function browserStorage(storage) {
   if (storage) return storage;
 

@@ -22,14 +22,51 @@ test("runtime update completes after backup, switch, and readiness", async () =>
   });
   assert.deepEqual(events, [
     "before",
+    "stop",
     "backup",
     "after-backup",
-    "stop",
     "prepare",
     `switch:${targetRelease}`,
     "start",
     "ready"
   ]);
+});
+
+test("runtime update snapshots the final accepted writes after stopping the application", async () => {
+  const configured = operations([]);
+  let latestContent = "original";
+  let snapshot = "";
+  let stopped = false;
+  configured.stopRuntime = async () => {
+    latestContent = "last accepted edit";
+    stopped = true;
+  };
+  configured.createBackup = async () => {
+    assert.equal(stopped, true);
+    snapshot = latestContent;
+    return backup;
+  };
+  configured.waitForReadiness = async () => {
+    if (latestContent !== "restored") throw new Error("candidate failed");
+  };
+  configured.restoreBackup = async () => {
+    assert.equal(snapshot, "last accepted edit");
+    latestContent = "restored";
+  };
+  const result = await executeRuntimeUpdate({ request, previousRelease, operations: configured });
+  assert.equal(result.status, "ROLLED_BACK");
+});
+
+test("runtime update restarts the untouched release if its backup fails after shutdown", async () => {
+  const events: string[] = [];
+  const configured = operations(events);
+  configured.createBackup = async () => { throw new Error("backup failed"); };
+  const result = await executeRuntimeUpdate({ request, previousRelease, operations: configured });
+  assert.equal(result.status, "FAILED");
+  assert.equal(result.recovered, true);
+  assert.equal(result.switched, false);
+  assert.equal(events.includes("prepare"), false);
+  assert.deepEqual(events.slice(-2), ["start", "ready"]);
 });
 
 test("runtime update restores the backup and previous release after a failed readiness check", async () => {

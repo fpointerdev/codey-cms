@@ -279,6 +279,16 @@ export const moduleCatalog = {
         action: "update",
         subject: "cms",
         description: "Update CMS pages and posts"
+      },
+      {
+        action: "design",
+        subject: "cms",
+        description: "Change protected page structure, design and code"
+      },
+      {
+        action: "publish",
+        subject: "cms",
+        description: "Publish, schedule and change live pages and posts"
       }
     ],
     lifecycle: standardLifecycle

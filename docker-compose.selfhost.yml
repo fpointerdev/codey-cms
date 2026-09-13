@@ -133,7 +133,7 @@ services:
     <<: *codey-image
     command: ["node", "scripts/run-with-runtime-secrets.mjs", "--", "node", "scripts/backup-scheduler.mjs"]
     healthcheck:
-      test: ["CMD", "node", "-e", "process.kill(1, 0)"]
+      test: ["CMD", "node", "scripts/check-backup-worker.mjs"]
       interval: 10s
       timeout: 5s
       start_period: 5s

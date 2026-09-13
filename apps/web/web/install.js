@@ -1,3 +1,6 @@
+import { completeOwnerSetup } from "./install-flow.js";
+import { browserStorage } from "./browser-storage.js";
+
 const apiBase = "/api/v1";
 const form = document.querySelector("[data-install-form]");
 const loading = document.querySelector("[data-installer-loading]");
@@ -58,37 +61,37 @@ form.addEventListener("submit", async (event) => {
   setMessage("Creating your website...");
 
   try {
-    await request("/install/complete", {
-      method: "POST",
-      body: JSON.stringify({
-        claimToken: String(data.get("claimToken") || ""),
-        siteName: String(data.get("siteName") || "").trim(),
-        profile: String(data.get("profile") || "cms"),
-        searchIndexing: data.get("searchIndexing") === "on",
-        admin: {
-          name: String(data.get("adminName") || "").trim(),
-          email: String(data.get("adminEmail") || "").trim(),
-          password
-        }
-      })
-    });
-    const login = await request("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
+    const result = await completeOwnerSetup(request, {
+      claimToken: String(data.get("claimToken") || ""),
+      siteName: String(data.get("siteName") || "").trim(),
+      profile: String(data.get("profile") || "cms"),
+      searchIndexing: data.get("searchIndexing") === "on",
+      admin: {
+        name: String(data.get("adminName") || "").trim(),
         email: String(data.get("adminEmail") || "").trim(),
         password
-      })
+      }
     });
 
-    if (login.data?.tokens?.accessToken) {
-      localStorage.setItem("cms_session_hint", "1");
+    if (result.signedIn) {
+      browserStorage.setItem("cms_session_hint", "1");
     }
     setProgress("complete");
+    if (!result.signedIn) {
+      form.hidden = true;
+      form.reset();
+      document.querySelector("[data-install-sign-in]").hidden = false;
+      return;
+    }
     setMessage("Installation complete. Opening your dashboard...");
     window.location.replace("/dashboard");
   } catch (error) {
     setMessage(error.message || "Installation could not be completed.", true);
     setDisabled(false);
+    if (error.code === "installation_token_invalid") {
+      claimTokenField.hidden = false;
+      form.elements.claimToken.focus();
+    }
   }
 });
 
@@ -104,7 +107,7 @@ async function request(path, options = {}) {
   const body = await response.json().catch(() => null);
 
   if (!response.ok || !body?.success) {
-    throw new Error(body?.error?.message || `Request failed with status ${response.status}.`);
+    throw Object.assign(new Error(body?.error?.message || `Request failed with status ${response.status}.`), { code: body?.error?.code });
   }
 
   return body;

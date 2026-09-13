@@ -7,13 +7,13 @@ export async function executeRuntimeUpdate({ request, previousRelease, operation
 
   try {
     await operations.beforeApply();
+    await operations.stopRuntime();
+    runtimeStopped = true;
     const backup = await operations.createBackup();
     backupId = backup.backupId;
     backupManifestPath = backup.manifestPath;
     await operations.afterBackup(backup);
 
-    await operations.stopRuntime();
-    runtimeStopped = true;
     targetRelease = await operations.prepareRelease(previousRelease, request);
     await operations.switchCurrent(targetRelease);
     switched = true;

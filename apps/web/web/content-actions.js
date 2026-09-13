@@ -1,5 +1,6 @@
 import {
   api,
+  contentEditingAccess,
   elements,
   moduleEnabled,
   sectionFromTemplate,
@@ -21,6 +22,7 @@ import {
   sliderValueFromModal
 } from "./slider-config.js";
 import { structuredContentEditor } from "./structured-content-editor.js";
+import { contentOnlyEditor } from "./content-only-editor.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
 import {
   advancedSettingsFromValues,
@@ -269,10 +271,10 @@ function findBlock(page, blockKey) {
     .find((block) => block.key === blockKey);
 }
 
-async function updatePageBlock(pageSlugValue, block, payload) {
-  const { page } = await api(`/cms/pages/${encodeURIComponent(pageSlugValue)}/blocks/${encodeURIComponent(block.key)}?${localeQuery()}`, {
+async function updatePageBlock(sourcePage, block, payload) {
+  const { page } = await api(`/cms/pages/${encodeURIComponent(sourcePage.slug)}/blocks/${encodeURIComponent(block.key)}?locale=${encodeURIComponent(sourcePage.locale || currentLocale())}`, {
     method: "PATCH",
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ ...payload, expectedUpdatedAt: sourcePage.updatedAt })
   });
 
   return page;
@@ -429,6 +431,28 @@ function customCodeLibraries(value) {
 export async function editContentBlock(page, blockKey) {
   const block = findBlock(page, blockKey);
   if (!block) return null;
+  const access = contentEditingAccess(page);
+  if (!access.canEdit) {
+    setStatus("Publishing access is required to edit this content.", true);
+    return null;
+  }
+  if (!access.canDesign) {
+    const editor = contentOnlyEditor(block, state.config?.builder?.contentEditing);
+    if (!editor.fields.length) {
+      setStatus("This element requires design access.", true);
+      return null;
+    }
+    return getModalFormHandler()({
+      label: "Content", title: block.label || block.key, fields: editor.fields, submitLabel: "Save content",
+      async onSubmit(values) {
+        const value = await editor.valueFrom(values, uploadMediaFile);
+        return updatePageBlock(page, block, {
+          value,
+          ...(block.type === "IMAGE" && value?.mediaAssetId ? { mediaAssetId: value.mediaAssetId } : {})
+        });
+      }
+    });
+  }
 
   if (block.type === "EMBED") {
     const current = customCodeValue(block.value);
@@ -487,7 +511,7 @@ export async function editContentBlock(page, blockKey) {
       submitLabel: "Save custom code"
     });
     if (!values) return null;
-    return updatePageBlock(page.slug, block, {
+    return updatePageBlock(page, block, {
       value: {
         html: values.html,
         css: values.css,
@@ -529,7 +553,7 @@ export async function editContentBlock(page, blockKey) {
       return null;
     }
 
-    return updatePageBlock(page.slug, block, {
+    return updatePageBlock(page, block, {
       value: {
         url: imageUrl,
         alt: values.alt || mediaAsset?.altText || block.value?.alt || ""
@@ -559,7 +583,7 @@ export async function editContentBlock(page, blockKey) {
         return null;
       }
 
-      return updatePageBlock(page.slug, block, {
+      return updatePageBlock(page, block, {
         value: galleryValue,
         settings: cssSettingsPayload(block, values)
       });
@@ -588,7 +612,7 @@ export async function editContentBlock(page, blockKey) {
       return null;
     }
 
-    return updatePageBlock(page.slug, block, {
+    return updatePageBlock(page, block, {
       value: sliderValue,
       settings: cssSettingsPayload(block, values)
     });
@@ -605,7 +629,7 @@ export async function editContentBlock(page, blockKey) {
     });
     if (!values) return null;
 
-    return updatePageBlock(page.slug, block, {
+    return updatePageBlock(page, block, {
       value: {
         label: values.label,
         url: values.url
@@ -627,7 +651,7 @@ export async function editContentBlock(page, blockKey) {
       return null;
     }
 
-    return updatePageBlock(page.slug, block, {
+    return updatePageBlock(page, block, {
       value: productListValueFromValues(values),
       settings: cssSettingsPayload(block, values)
     });
@@ -646,7 +670,7 @@ export async function editContentBlock(page, blockKey) {
     });
     if (!values) return null;
 
-    return updatePageBlock(page.slug, block, {
+    return updatePageBlock(page, block, {
       value: {
         formKey: values.formKey || "contact",
         subject: values.subject || "",
@@ -685,7 +709,7 @@ export async function editContentBlock(page, blockKey) {
       );
     }
 
-    return updatePageBlock(page.slug, block, {
+    return updatePageBlock(page, block, {
       value: structuredEditor.valueFrom(values, mediaAsset, itemMediaAssets, { model: modelAsset, poster: posterAsset }),
       settings: cssSettingsPayload(block, values),
       mediaAssetId: mediaAsset?.id || block.mediaAssetId || undefined
@@ -709,7 +733,7 @@ export async function editContentBlock(page, blockKey) {
   });
   if (!values) return null;
 
-  return updatePageBlock(page.slug, block, {
+  return updatePageBlock(page, block, {
     value: parseEditableValue(block, values.value),
     settings: cssSettingsPayload(block, values)
   });
@@ -731,6 +755,7 @@ export async function editBlock(blockKey) {
 
 export async function editPageSettings() {
   if (!state.page) return;
+  const sourcePage = state.page;
 
   const values = await getModalFormHandler()({
     label: "Page settings",
@@ -745,9 +770,10 @@ export async function editPageSettings() {
   });
   if (!values) return;
 
-  const { page } = await api(`/cms/pages/${state.page.slug}?${localeQuery()}`, {
+  const { page } = await api(`/cms/pages/${sourcePage.slug}?locale=${encodeURIComponent(sourcePage.locale || currentLocale())}`, {
     method: "PATCH",
     body: JSON.stringify({
+      expectedUpdatedAt: sourcePage.updatedAt,
       title: values.title,
       excerpt: values.excerpt,
       metaTitle: values.metaTitle,
@@ -761,6 +787,7 @@ export async function editPageSettings() {
 
 export async function editFooter() {
   if (!state.page) return;
+  const sourcePage = state.page;
 
   const values = await getModalFormHandler()({
     label: "Footer",
@@ -771,11 +798,12 @@ export async function editFooter() {
   });
   if (!values) return;
 
-  const { page } = await api(`/cms/pages/${state.page.slug}?${localeQuery()}`, {
+  const { page } = await api(`/cms/pages/${sourcePage.slug}?locale=${encodeURIComponent(sourcePage.locale || currentLocale())}`, {
     method: "PATCH",
     body: JSON.stringify({
+      expectedUpdatedAt: sourcePage.updatedAt,
       content: {
-        ...(state.page.content || {}),
+        ...(sourcePage.content || {}),
         footerText: values.footerText
       }
     })
@@ -988,6 +1016,7 @@ export async function saveSiteSettings(form) {
       method: "PATCH",
       body: JSON.stringify({
         title: settingValue("title"),
+        ...(formData.has("editingPolicyPresent") ? { editingPolicy: formData.has("protectedEditing") ? "protected" : "standard" } : {}),
         description: settingValue("description"),
         metaTitle: settingValue("metaTitle"),
         metaDescription: settingValue("metaDescription"),
@@ -1008,6 +1037,7 @@ export async function saveSiteSettings(form) {
       })
     });
     if (state.config && response.siteSettings) state.config.siteSettings = response.siteSettings;
+    if (formData.has("editingPolicyPresent")) setRuntimeConfig(await api("/config/admin"));
     setFormMessage(form, "Settings saved.");
     setStatus("Settings saved.");
   } catch (error) {
@@ -1193,6 +1223,48 @@ export async function checkRuntimeUpdate(button) {
     button.disabled = false;
     setStatus(error.message || "Unable to check for updates.", true);
   }
+}
+
+export async function manageBackup(button, create = false) {
+  const panel = button.closest("[data-backup-panel]");
+  if (!panel || panel.dataset.busy === "true") return;
+  panel.dataset.busy = "true";
+  button.disabled = true;
+  try {
+    if (create) await api("/config/backup", { method: "POST", body: "{}" });
+    const deadline = Date.now() + 5 * 60_000;
+    do {
+      const result = await api("/config/backup");
+      if (!panel.isConnected) return;
+      const { renderBackupProtection } = await import("./admin-views.js");
+      panel.innerHTML = renderBackupProtection({ operations: { backup: result.health } }, result.control);
+      if (!create || !result.control.busy || !result.control.available) break;
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+    } while (panel.isConnected && Date.now() < deadline);
+  } catch (error) {
+    const message = panel.querySelector("[data-backup-message]");
+    if (message) { message.textContent = error.message; message.classList.add("error"); }
+    setStatus(error.message || "Unable to request a backup.", true);
+  } finally {
+    delete panel.dataset.busy;
+    if (button.isConnected) button.disabled = false;
+  }
+}
+
+export async function downloadHandoverReport(button) {
+  button.disabled = true;
+  try {
+    const { readiness, runtime } = await api("/config/launch-readiness");
+    const report = { contract: "codey-cms.owner-handover", version: "1.0", runtime, readiness };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "codey-owner-handover.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  } catch (error) {
+    setStatus(error.message || "Unable to download the handover report.", true);
+  } finally { button.disabled = false; }
 }
 
 export async function applyRuntimeUpdate(button) {
@@ -1477,6 +1549,7 @@ export async function editProductFromBlock(productSlug) {
 
 export async function addSection() {
   if (!state.page) return;
+  const sourcePage = state.page;
 
   try {
     const values = await getModalFormHandler()({
@@ -1490,14 +1563,15 @@ export async function addSection() {
     if (!values) return;
 
     const key = `section-${Date.now()}`;
-    const label = `Section ${state.page.sections.length + 1}`;
+    const label = `Section ${sourcePage.sections.length + 1}`;
 
-    const { page } = await api(`/cms/pages/${encodeURIComponent(state.page.slug)}/sections?${localeQuery()}`, {
+    const { page } = await api(`/cms/pages/${encodeURIComponent(sourcePage.slug)}/sections?locale=${encodeURIComponent(sourcePage.locale || currentLocale())}`, {
       method: "POST",
       body: JSON.stringify({
         key,
         label,
-        sortOrder: state.page.sections.length,
+        expectedUpdatedAt: sourcePage.updatedAt,
+        sortOrder: sourcePage.sections.length,
         settings: {
           layout: values.layout,
           gap: "md",
@@ -1523,9 +1597,10 @@ export async function addSection() {
 
 export async function addElementTemplate(templateId) {
   if (!state.page) return;
+  const sourcePage = state.page;
 
   try {
-    const section = sectionFromTemplate(templateId, state.page);
+    const section = sectionFromTemplate(templateId, sourcePage);
     for (const block of section.blocks) {
       if (block.type !== "GALLERY") continue;
 
@@ -1571,9 +1646,9 @@ export async function addElementTemplate(templateId) {
     }
 
     setStatus(`Adding ${templateId}...`);
-    const { page } = await api(`/cms/pages/${encodeURIComponent(state.page.slug)}/sections?${localeQuery()}`, {
+    const { page } = await api(`/cms/pages/${encodeURIComponent(sourcePage.slug)}/sections?locale=${encodeURIComponent(sourcePage.locale || currentLocale())}`, {
       method: "POST",
-      body: JSON.stringify(section)
+      body: JSON.stringify({ ...section, expectedUpdatedAt: sourcePage.updatedAt })
     });
 
     state.page = page;
@@ -1591,7 +1666,7 @@ export async function publishPage() {
     setStatus("Publishing page...");
     const { page } = await api(`/cms/pages/${encodeURIComponent(state.page.slug)}/publish?${localeQuery()}`, {
       method: "POST",
-      body: JSON.stringify({})
+      body: JSON.stringify({ expectedUpdatedAt: state.page.updatedAt })
     });
     state.page = page;
     renderPage(page);

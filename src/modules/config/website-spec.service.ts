@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { sanitizeGeneratedStylesheet } from "../../core/security/css-sanitizer.js";
 import type { ModuleContext, ModuleId } from "../../core/types/module.js";
 import { CmsService } from "../cms/cms.service.js";
+import { contentEditingContract, type EditingUser } from "../cms/content-editing.js";
 import {
   deploymentProfiles,
   moduleCatalog,
@@ -28,9 +29,7 @@ import {
   websiteSpecContractVersion
 } from "../../runtime/release.js";
 
-type RequestUser = {
-  id: string;
-};
+type RequestUser = EditingUser;
 
 type WebsiteSpecDatabase = ModuleContext["prisma"] | Prisma.TransactionClient;
 
@@ -496,6 +495,26 @@ async function syncLocalizationSettings(
 export function generationContract() {
   return {
     name: "codey-cms.website-generation",
+    contentEditing: contentEditingContract,
+    ownerHandover: {
+      version: "1.0",
+      readinessPath: "/api/v1/config/launch-readiness",
+      backupPath: "/api/v1/config/backup",
+      permission: { action: "manage", subject: "modules" },
+      readinessScope: "installation-configuration",
+      backupRequest: { method: "POST", body: {}, encryptedOnly: true },
+      browserRestore: false,
+      configurationIsNotDeliveryEvidence: true
+    },
+    commerceReadiness: {
+      version: "1.0",
+      providerPath: "/api/v1/payments/providers/public",
+      providerFields: ["provider", "mode"],
+      modes: ["empty", "catalog", "quote", "test", "live", "manual", "mixed", "unknown"],
+      configurationIsNotJourneyEvidence: true,
+      manualModeIsNotSandbox: true,
+      mixedTestAndRealRequiresAttention: true
+    },
     version: websiteSpecContractVersion,
     runtime: {
       product: "codey-cms",
@@ -1315,10 +1334,10 @@ async function syncCmsContent(
         slug: page.slug,
         locale: page.locale
       },
-      select: { id: true }
+      select: { id: true, updatedAt: true }
     });
 
-    if (existing) await cmsService.updatePage(page.slug, input, user, page.locale);
+    if (existing) await cmsService.updatePage(page.slug, { ...input, expectedUpdatedAt: existing.updatedAt.toISOString() }, user, page.locale);
     else await cmsService.createPage(input, user);
 
     pages += 1;
@@ -1332,10 +1351,10 @@ async function syncCmsContent(
         slug: post.slug,
         locale: post.locale
       },
-      select: { id: true }
+      select: { id: true, updatedAt: true }
     });
 
-    if (existing) await cmsService.updatePost(post.slug, post, user, post.locale);
+    if (existing) await cmsService.updatePost(post.slug, { ...post, expectedUpdatedAt: existing.updatedAt.toISOString() }, user, post.locale);
     else await cmsService.createPost(post, user);
   }
 

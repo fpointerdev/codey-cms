@@ -71,7 +71,7 @@ Never add `-v` to `docker compose down` unless the database, secrets, uploads, b
 
 ## Backup Requirement
 
-The default package immediately writes encrypted backups to two local Docker volumes. This keeps first setup automatic, but **Settings > Updates** reports **Local only** until the mirror is stored somewhere independent.
+The default package immediately writes encrypted backups to two local Docker volumes. This keeps first setup automatic, but **Settings > Updates** reports that off-site protection needs attention until the mirror is stored somewhere independent.
 
 Before production handoff, mount `/app/backups-mirror` from both `backend` and `backup` onto a NAS, removable drive, or cloud-synchronized directory with `docker-compose.override.yml`. Test a restore, then add `BACKUP_OFFSITE_PROTECTED=true` to the installation `.env`. A backup on the same disk is not disaster recovery, and CodeY will not report it as protected.
 
@@ -94,12 +94,20 @@ BACKUP_OFFSITE_PROTECTED=true
 
 Run and inspect a manual backup:
 
+Owners can choose **Create backup** in **Settings > Updates** when the packaged
+backup worker is connected. This queues the same encrypted backup without
+opening a terminal. Operators can also invoke it directly:
+
 ```bash
 docker compose -f docker-compose.selfhost.yml exec backend \
   node scripts/run-with-runtime-secrets.mjs -- node scripts/backup-runtime.mjs
 ```
 
 Test restore procedures on an isolated test installation before relying on them. See `docs/backup-disaster-recovery.md`.
+
+Use [Owner handover](owner-handover.md) before delivery. Configuration checks do
+not replace a real owner editing session, public HTTPS verification, or restore
+drill.
 
 ## Advanced Installation
 

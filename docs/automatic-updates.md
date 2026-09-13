@@ -10,8 +10,8 @@ The self-host package checks the signed `stable` feed on a schedule. Users do no
 4. Download the artifact into a private staging directory.
 5. Verify its signed size and SHA-256 while limiting streamed bytes.
 6. Validate the signed source commit, immutable container-image references, and CycloneDX SBOM metadata.
-7. Enter maintenance mode and create an encrypted database/media backup.
-8. Stop the current runtime.
+7. Stop the current runtime so its final accepted writes are included in recovery.
+8. Create an encrypted database/media backup while application writes are stopped.
 9. Reject unsafe archive paths, links, and unexpected roots before extraction.
 10. Install locked production dependencies and generate the Prisma client.
 11. Switch the `current` runtime link atomically and apply migrations.

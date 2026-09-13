@@ -1,5 +1,6 @@
 import {
   api,
+  contentEditingAccess,
   availableComponentTemplates,
   buildSectionPattern,
   normalizePageLayout,
@@ -105,6 +106,8 @@ function configuredLocaleOptions(sourceLocale = "") {
 }
 
 async function createContentTranslation(kind, sourceSlug, sourceLocale, sourceTitle, preferredTargetLocale = "") {
+  const source = await api(withLocale(`/cms/${kind === "page" ? "pages" : "posts"}/${encodeURIComponent(sourceSlug)}`, sourceLocale));
+  const expectedUpdatedAt = source[kind].updatedAt;
   const localeOptions = configuredLocaleOptions(sourceLocale);
   if (!localeOptions.length) {
     setStatus("Enable another language before creating a translation.", true);
@@ -154,6 +157,7 @@ async function createContentTranslation(kind, sourceSlug, sourceLocale, sourceTi
       method: "POST",
       body: JSON.stringify({
         targetLocale,
+        expectedUpdatedAt,
         ...(title ? { title } : {}),
         ...(slug ? { slug } : {})
       })
@@ -268,13 +272,13 @@ async function linkExistingContentTranslation(kind, sourceSlug, sourceLocale, so
     if (!translationGroupId || translationGroupId === sourceSlug) {
       await api(withLocale(`/cms/${endpoint}/${encodeURIComponent(sourceSlug)}`, sourceLocale), {
         method: "PATCH",
-        body: JSON.stringify({ translationGroupId: groupId })
+        body: JSON.stringify({ translationGroupId: groupId, expectedUpdatedAt: (await api(withLocale(`/cms/${endpoint}/${encodeURIComponent(sourceSlug)}`, sourceLocale)))[responseKey].updatedAt })
       });
     }
 
     const response = await api(withLocale(`/cms/${endpoint}/${encodeURIComponent(targetSlug)}`, targetLocale), {
       method: "PATCH",
-      body: JSON.stringify({ translationGroupId: groupId })
+      body: JSON.stringify({ translationGroupId: groupId, expectedUpdatedAt: (await api(withLocale(`/cms/${endpoint}/${encodeURIComponent(targetSlug)}`, targetLocale)))[responseKey].updatedAt })
     });
     const content = response[responseKey];
 
@@ -586,11 +590,12 @@ export async function savePageBuilderSettings(form) {
   const slugUnlocked = slugInput?.dataset?.slugUnlocked === "true";
   const payload = {
     title: String(formData.get("title") || "").trim(),
-    status: String(formData.get("status") || "DRAFT"),
+    expectedUpdatedAt: state.builderPage?.updatedAt,
+    status: String(formData.get("status") || state.builderPage?.status || "DRAFT"),
     excerpt: optionalFormValue(formData, "excerpt"),
     content: {
       ...(state.builderPage?.content || {}),
-      layout: normalizePageLayout(formData.get("layout"))
+      ...(formData.has("layout") ? { layout: normalizePageLayout(formData.get("layout")) } : {})
     }
   };
   if (slugUnlocked) {
@@ -759,7 +764,7 @@ async function saveBuilderSections(sections, message, activeSectionKey = "", opt
     : copyBuilderSections(state.builderPage?.sections || []);
   const { page } = await api(withLocale(`/cms/pages/${encodeURIComponent(state.builderPage.slug)}`, activePageLocale()), {
     method: "PATCH",
-    body: JSON.stringify({ sections: normalizeBuilderSectionsForSave(sections) })
+    body: JSON.stringify({ sections: normalizeBuilderSectionsForSave(sections), expectedUpdatedAt: options.expectedUpdatedAt || state.builderPage.updatedAt })
   });
 
   if (previousSections) recordBuilderHistory(previousSections);
@@ -1005,6 +1010,7 @@ export async function reorderBuilderBlock(blockKey, targetSectionId, beforeBlock
 
 export async function deleteBuilderSection(sectionId) {
   if (!state.builderPage || !sectionId) return;
+  const expectedUpdatedAt = state.builderPage.updatedAt;
 
   const sections = [...(state.builderPage.sections || [])];
   const section = sections.find((item) => item.id === sectionId);
@@ -1028,7 +1034,7 @@ export async function deleteBuilderSection(sectionId) {
   const nextActiveSection = nextSections.find((item) => item.id === state.activeBuilderSectionId) || nextSections[0];
 
   try {
-    await saveBuilderSections(nextSections, "Container deleted.", nextActiveSection?.key || "");
+    await saveBuilderSections(nextSections, "Container deleted.", nextActiveSection?.key || "", { expectedUpdatedAt });
   } catch (error) {
     setStatus(error.message || "Unable to delete container.", true);
   }
@@ -1036,6 +1042,7 @@ export async function deleteBuilderSection(sectionId) {
 
 export async function deleteBuilderBlock(blockKey) {
   if (!state.builderPage || !blockKey) return;
+  const expectedUpdatedAt = state.builderPage.updatedAt;
 
   let deletedBlock = null;
   let activeSectionKey = "";
@@ -1063,7 +1070,7 @@ export async function deleteBuilderBlock(blockKey) {
   if (!confirmation) return;
 
   try {
-    await saveBuilderSections(sections, "Element deleted.", activeSectionKey);
+    await saveBuilderSections(sections, "Element deleted.", activeSectionKey, { expectedUpdatedAt });
   } catch (error) {
     setStatus(error.message || "Unable to delete element.", true);
   }
@@ -1071,6 +1078,7 @@ export async function deleteBuilderBlock(blockKey) {
 
 export async function editBuilderSection(sectionId) {
   if (!state.builderPage || !sectionId) return;
+  const expectedUpdatedAt = state.builderPage.updatedAt;
 
   const section = (state.builderPage.sections || []).find((item) => item.id === sectionId);
   if (!section) return;
@@ -1107,7 +1115,7 @@ export async function editBuilderSection(sectionId) {
       });
     });
 
-    await saveBuilderSections(sections, "Container settings saved.", section.key);
+    await saveBuilderSections(sections, "Container settings saved.", section.key, { expectedUpdatedAt });
   } catch (error) {
     setStatus(error.message || "Unable to save container settings.", true);
   }
@@ -1311,6 +1319,7 @@ export async function comparePageRevision(revisionId) {
 
 export async function restorePageRevision(revisionId, version = "") {
   if (!state.builderPage || !revisionId) return;
+  const sourcePage = state.builderPage;
 
   const confirmation = await getModalFormHandler()({
     label: "Version history",
@@ -1334,10 +1343,11 @@ export async function restorePageRevision(revisionId, version = "") {
 
   try {
     setStatus("Restoring revision...");
-    const currentSlug = state.builderPage.slug;
-    const locale = activePageLocale();
+    const currentSlug = sourcePage.slug;
+    const locale = sourcePage.locale || activePageLocale();
     const { page } = await api(withLocale(`/cms/pages/${encodeURIComponent(currentSlug)}/revisions/${encodeURIComponent(revisionId)}/restore`, locale), {
-      method: "POST"
+      method: "POST",
+      body: JSON.stringify({ expectedUpdatedAt: sourcePage.updatedAt })
     });
 
     state.builderPage = page;
@@ -1380,15 +1390,16 @@ async function postPayloadFromForm(form, existingPost = null) {
 
   const payload = {
     title,
+    ...(existingPost ? { expectedUpdatedAt: existingPost.updatedAt } : {}),
     excerpt: optionalFormValue(formData, "excerpt"),
     content: {
       ...(existingPost?.content || {}),
-      layout: normalizePageLayout(formData.get("layout")),
+      ...(contentEditingAccess(existingPost).canDesign ? { layout: normalizePageLayout(formData.get("layout")) } : {}),
       body: String(formData.get("body") || "").trim(),
       category: String(formData.get("category") || "").trim(),
       image
     },
-    status: String(formData.get("status") || "DRAFT"),
+    status: String(formData.get("status") || existingPost?.status || "DRAFT"),
     locale: activePostLocale(),
     tags,
     categorySlugs: (existingPost?.categories || []).map((item) => item.category?.slug || item.slug).filter(Boolean)

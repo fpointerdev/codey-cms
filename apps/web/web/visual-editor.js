@@ -56,7 +56,7 @@ async function saveVisualSections(sections, message, selection = null, options =
   const previous = options.recordHistory === false ? null : copyBuilderSections(state.page.sections || []);
   const { page } = await api(`/cms/pages/${encodeURIComponent(state.page.slug)}?${localeQuery()}`, {
     method: "PATCH",
-    body: JSON.stringify({ sections: normalizeBuilderSectionsForSave(sections) })
+    body: JSON.stringify({ sections: normalizeBuilderSectionsForSave(sections), expectedUpdatedAt: state.page.updatedAt })
   });
 
   if (previous) recordHistory(previous);
@@ -244,6 +244,7 @@ export function startVisualInlineEdit(blockKey) {
   editor.setAttribute("role", "textbox");
   editor.setAttribute("aria-multiline", found.block.type === "RICH_TEXT" ? "true" : "false");
   editor.dataset.visualInlineEditor = "true";
+  editor.dataset.expectedUpdatedAt = state.page.updatedAt || "";
   blockElement.querySelector?.("[data-visual-inline-default]")?.setAttribute("hidden", "");
   blockElement.querySelector?.("[data-visual-inline-actions]")?.removeAttribute("hidden");
   editor.focus();
@@ -267,7 +268,7 @@ export async function saveVisualInlineEdit(blockKey = state.visualEditorEditingB
     setStatus("Saving text...");
     const { page } = await api(`/cms/pages/${encodeURIComponent(state.page.slug)}/blocks/${encodeURIComponent(blockKey)}?${localeQuery()}`, {
       method: "PATCH",
-      body: JSON.stringify({ value })
+      body: JSON.stringify({ value, expectedUpdatedAt: editor.dataset.expectedUpdatedAt || state.page.updatedAt })
     });
     recordHistory(previous);
     state.page = page;

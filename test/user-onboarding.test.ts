@@ -447,8 +447,13 @@ test("settings show whether backups are protected off-site", async () => {
   });
   const page = nodes.get("[data-page]") as { innerHTML: string };
   assert.match(page.innerHTML, /Backups need off-site protection/);
-  assert.match(page.innerHTML, /Local only/);
-  assert.match(page.innerHTML, /BACKUP_OFFSITE_PROTECTED=true/);
+  assert.match(page.innerHTML, /Needs attention/);
+  assert.match(page.innerHTML, /hosting provider needs to protect an independent copy and test a restore/);
+  assert.match(page.innerHTML, /data-create-backup disabled/);
+  assert.match(page.innerHTML, /data-refresh-backup/);
+  assert.match(page.innerHTML, /Signed stable updates/);
+  assert.doesNotMatch(page.innerHTML, /CodeY CMS is up to date/);
+  assert.doesNotMatch(page.innerHTML, /BACKUP_OFFSITE_PROTECTED=true/);
   assert.match(page.innerHTML, /Website identity/);
   assert.match(page.innerHTML, /name="logoFile"/);
   assert.match(page.innerHTML, /name="faviconFile"/);

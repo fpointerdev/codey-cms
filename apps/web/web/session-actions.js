@@ -4,14 +4,15 @@ import { getModalFormHandler } from "./modal.js";
 import { renderAdminLogin } from "./ui.js";
 import { optionalFormValue } from "./content-actions.js";
 import { setFormDisabled, setFormMessage } from "./ui.js";
+import { browserStorage } from "./browser-storage.js";
 
 function storeSession(user, tokens) {
   state.token = tokens.accessToken;
   state.hasSession = true;
   state.user = user;
-  localStorage.setItem("cms_session_hint", "1");
-  localStorage.removeItem("cms_access_token");
-  localStorage.removeItem("cms_refresh_token");
+  browserStorage.setItem("cms_session_hint", "1");
+  browserStorage.removeItem("cms_access_token");
+  browserStorage.removeItem("cms_refresh_token");
 }
 
 function clearBrowserSession() {
@@ -27,9 +28,9 @@ function clearBrowserSession() {
   state.visualEditorRedoStack = [];
   state.visualEditorDevice = "desktop";
   state.visualEditorLibraryOpen = false;
-  localStorage.removeItem("cms_session_hint");
-  localStorage.removeItem("cms_access_token");
-  localStorage.removeItem("cms_refresh_token");
+  browserStorage.removeItem("cms_session_hint");
+  browserStorage.removeItem("cms_access_token");
+  browserStorage.removeItem("cms_refresh_token");
 }
 
 export async function loadUser() {
