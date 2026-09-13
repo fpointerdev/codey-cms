@@ -271,6 +271,48 @@ test("WebsiteSpec atomically imports custom elements that server-render publicly
   await prisma.$disconnect();
 });
 
+test("WebsiteSpec updates protected pages and posts without changing its 1.0 payload", { timeout: 60_000 }, async () => {
+  const site = await prisma.site.findUniqueOrThrow({ where: { slug: "default" } });
+  const key = { siteId: site.id, moduleId: "config", key: "site" };
+  const settings = await prisma.moduleSetting.findUniqueOrThrow({ where: { siteId_moduleId_key: key } });
+  const owner = await prisma.user.findUniqueOrThrow({ where: { email: ownerEmail } });
+  const slug = `protected-import-${Date.now()}`;
+  const spec = {
+    version: "1.0", intent: "cms",
+    project: { name: "Protected import", slug, summary: "An existing site with protected client editing." },
+    modules: { cms: true },
+    style: { theme: "system", colorPalette: { primary: "#17211b" } },
+    pages: [{ title: "Imported page", slug, purpose: "content", sections: [{ key: "intro", type: "richText", heading: "Original import" }] }],
+    posts: [{ title: "Imported post", slug, body: "Original article" }]
+  };
+  try {
+    await prisma.moduleSetting.update({ where: { id: settings.id }, data: { value: { ...(settings.value as object), editingPolicy: "protected" } } });
+    const user = { id: owner.id, permissions: [{ action: "manage", subject: "all" }] };
+    await applyWebsiteSpec({ config, prisma, logger }, spec, user);
+    const firstPage = await prisma.cmsPage.findUniqueOrThrow({ where: { locale_slug: { locale: "en", slug } } });
+    const firstPost = await prisma.cmsPost.findUniqueOrThrow({ where: { locale_slug: { locale: "en", slug } } });
+    spec.pages[0].sections[0].heading = "Updated import";
+    spec.posts[0].body = "Updated article";
+    await applyWebsiteSpec({ config, prisma, logger }, spec, user);
+    const page = await prisma.cmsPage.findUniqueOrThrow({ where: { id: firstPage.id }, include: { sections: { include: { blocks: true } } } });
+    const post = await prisma.cmsPost.findUniqueOrThrow({ where: { id: firstPost.id } });
+    assert.ok(page.updatedAt > firstPage.updatedAt);
+    assert.ok(post.updatedAt > firstPost.updatedAt);
+    assert.match(renderPageContent(page), /Updated import/);
+    assert.match(JSON.stringify(post.content), /Updated article/);
+    const currentSettings = await prisma.moduleSetting.findUniqueOrThrow({ where: { id: settings.id } });
+    assert.equal((currentSettings.value as Record<string, unknown>).editingPolicy, "protected");
+    await assert.rejects(applyWebsiteSpec({ config, prisma, logger }, spec, { id: owner.id, permissions: [] }), { statusCode: 403 });
+    assert.deepEqual((await prisma.cmsPage.findUniqueOrThrow({ where: { id: page.id } })).updatedAt, page.updatedAt);
+  } finally {
+    await prisma.cmsPage.deleteMany({ where: { slug } });
+    await prisma.cmsPost.deleteMany({ where: { slug } });
+    await prisma.moduleSetting.update({ where: { id: settings.id }, data: { value: settings.value as Prisma.InputJsonValue } });
+    await prisma.site.update({ where: { id: site.id }, data: { name: site.name, deploymentProfile: site.deploymentProfile } });
+    await prisma.$disconnect();
+  }
+});
+
 test("a late WebsiteSpec failure rolls back every generated record", { timeout: 60_000 }, async () => {
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const pageSlug = `atomic-page-${runId}`;

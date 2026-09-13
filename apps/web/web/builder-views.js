@@ -1,6 +1,7 @@
 import {
   availableSectionPatterns,
   availableComponentTemplates,
+  contentEditingAccess,
   elements,
   escapeHtml,
   hasPermission,
@@ -16,6 +17,7 @@ import { designSystemCss } from "./design-system.js";
 import { hydrateRichEditors } from "./rich-editor.js";
 import { sanitizeStylesheet, styleAttribute } from "./custom-css.js";
 import { pageChangeToken } from "./editor-sync.js";
+import { contentOnlyEditor } from "./content-only-editor.js";
 import {
   customStorefrontEditorHref,
   customStorefrontPageHref,
@@ -768,6 +770,7 @@ function renderRevisionPanel(page) {
 }
 
 function renderPageSettingsForm(page, layout) {
+  const access = contentEditingAccess(page);
   return `
     <form id="builder-page-settings-form" class="builder-card builder-settings-form" data-page-builder-settings data-page-slug="${escapeHtml(page.slug)}">
       <div class="builder-card-heading">
@@ -779,9 +782,9 @@ function renderPageSettingsForm(page, layout) {
       </div>
       <div class="builder-form-grid">
         <label><span>Title</span><input name="title" value="${escapeHtml(page.title || "")}" required /></label>
-        ${renderSlugField(page.slug || "")}
-        <label><span>Status</span><select name="status">${statusOptionHtml(page.status || "DRAFT")}</select></label>
-        <label><span>Page layout</span><select name="layout">${layoutOptionHtml(layout)}</select></label>
+        ${access.canDesign ? renderSlugField(page.slug || "") : ""}
+        ${access.canPublish ? `<label><span>Status</span><select name="status">${statusOptionHtml(page.status || "DRAFT")}</select></label>` : ""}
+        ${access.canDesign ? `<label><span>Page layout</span><select name="layout">${layoutOptionHtml(layout)}</select></label>` : ""}
       </div>
       <label><span>Excerpt</span><textarea name="excerpt" rows="3">${escapeHtml(page.excerpt || "")}</textarea></label>
       ${renderFormMessage()}
@@ -813,7 +816,7 @@ function renderBuilderStickyHeader(page, layout) {
           <summary class="secondary-button builder-details-toggle">Details</summary>
           <div class="builder-details-panel">
             ${hasPermission("create", "cms") ? '<div class="button-row"><button type="button" class="secondary-button" data-save-builder-page-template>Save page as template</button></div>' : ""}
-            ${renderTranslationPanel("page", page)}
+            ${contentEditingAccess(page).canDesign ? renderTranslationPanel("page", page) : ""}
             ${renderPageSettingsForm(page, layout)}
           </div>
         </details>
@@ -975,6 +978,32 @@ export function renderPageBuilderPage(page, message = "") {
     state.activeBuilderBlockKey = "";
   }
   const layout = normalizePageLayout(page.content?.layout);
+  const access = contentEditingAccess(page);
+  if (access.protectedDesign && (!access.canDesign || !access.canEdit)) {
+    renderAdminShell({ view: "page-builder", slug: page.slug }, `
+      <section class="admin-section" data-page-builder data-content-only-editor>
+        <div class="section-heading-row">
+          <div><p class="section-label">Page content</p><h1 class="dashboard-title">${escapeHtml(page.title)}</h1><span class="status-pill">${escapeHtml(page.status)}</span></div>
+          <div class="button-row"><a class="secondary-button" href="/dashboard/pages" data-dashboard-link>Pages</a>
+            <a class="secondary-button" href="${escapeHtml(customStorefrontEditorHref(page, storefrontPageHref(page)))}">On-page</a>
+            ${access.canEdit ? '<button type="submit" form="builder-page-settings-form">Save details</button>' : ""}
+          </div>
+        </div>
+        ${message ? `<p class="form-message" role="status">${escapeHtml(message)}</p>` : ""}
+        ${access.canEdit ? renderPageSettingsForm(page, layout) : '<p class="form-message">This content is published or scheduled. Ask an administrator for publishing access before editing.</p>'}
+        ${(page.sections || []).map((section) => `
+          <section class="admin-section"><h2>${escapeHtml(section.label || section.key)}</h2>
+            ${(section.blocks || []).map((block) => `
+              <article class="builder-block" data-builder-block-key="${escapeHtml(block.key)}">
+                <header><strong>${escapeHtml(block.label || block.key)}</strong>
+                  ${access.canEdit && (access.canDesign || contentOnlyEditor(block, state.config?.builder?.contentEditing).fields.length) ? '<button type="button" class="secondary-button" data-builder-edit-block>Edit content</button>' : ""}
+                </header><div class="builder-block-preview">${renderBlock(block, { allowCustomCode: false })}</div>
+              </article>`).join("")}
+          </section>`).join("")}
+      </section>`);
+    setStatus(message || "Page content loaded.");
+    return;
+  }
 
   renderAdminShell(
     { view: "page-builder", slug: page.slug || "" },
@@ -1009,25 +1038,36 @@ export function renderPostEditorPage(post = null, message = "") {
   const content = post?.content || {};
   const layout = normalizePageLayout(content.layout);
   const image = typeof content.image === "string" ? { url: content.image } : content.image || {};
+  const access = contentEditingAccess(post);
+  if (post && access.protectedDesign && !access.canEdit) {
+    renderAdminShell({ view: "post-builder", slug: post.slug }, `
+      <section class="admin-section"><h1 class="dashboard-title">${escapeHtml(post.title)}</h1>
+        <p class="form-message">This content is published or scheduled. Ask an administrator for publishing access before editing.</p>
+        <a href="/dashboard/posts" data-dashboard-link>Posts</a>
+        ${renderRichText(postBody(post))}
+      </section>`);
+    setStatus("Post is read-only.");
+    return;
+  }
 
   renderAdminShell(
     { view: isNew ? "post-create" : "post-builder", slug: post?.slug || "" },
     `
-      <form class="${builderShellClass()}" data-post-editor-form data-post-slug="${escapeHtml(post?.slug || "")}">
-        ${renderBuilderLibrary({ action: "post" })}
+      <form class="${access.canDesign ? builderShellClass() : "admin-section"}" data-post-editor-form data-post-slug="${escapeHtml(post?.slug || "")}">
+        ${access.canDesign ? renderBuilderLibrary({ action: "post" }) : ""}
         <main class="builder-main">
           <section class="builder-topbar">
             <div><p class="section-label">${isNew ? "New post" : "Post editor"}</p><h1 class="dashboard-title">${escapeHtml(post?.title || "Create Post")}</h1><p class="dashboard-copy">Write the article body and keep the publishing metadata in the same editor.</p></div>
             <div class="button-row"><a class="secondary-button" href="/dashboard/posts" data-dashboard-link>Posts</a><button type="submit">${isNew ? "Create post" : "Save post"}</button></div>
           </section>
           ${message ? `<p class="form-message">${escapeHtml(message)}</p>` : ""}
-          ${!isNew ? renderTranslationPanel("post", post) : ""}
+          ${!isNew && access.canDesign ? renderTranslationPanel("post", post) : ""}
           <section class="builder-card">
             <div class="builder-form-grid">
               <label><span>Title</span><input name="title" value="${escapeHtml(post?.title || "New post")}" required /></label>
-              ${isNew ? '<p class="field-help slug-create-help">The slug is generated automatically from the title after the post is created.</p>' : renderSlugField(post?.slug || "")}
-              <label><span>Status</span><select name="status">${statusOptionHtml(post?.status || "DRAFT")}</select></label>
-              <label><span>Article layout</span><select name="layout">${layoutOptionHtml(layout)}</select></label>
+              ${!isNew && access.canDesign ? renderSlugField(post?.slug || "") : ""}
+              ${access.canPublish ? `<label><span>Status</span><select name="status">${statusOptionHtml(post?.status || "DRAFT")}</select></label>` : ""}
+              ${access.canDesign ? `<label><span>Article layout</span><select name="layout">${layoutOptionHtml(layout)}</select></label>` : ""}
             </div>
             <label><span>Excerpt</span><textarea name="excerpt" rows="3">${escapeHtml(post?.excerpt || "")}</textarea></label>
             <div class="builder-form-grid post-editor-media-fields">

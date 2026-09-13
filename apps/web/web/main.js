@@ -1,8 +1,10 @@
+import { browserStorage } from "./browser-storage.js";
+
 function needsEditorRuntime() {
   const path = window.location.pathname || "/";
   const adminPath = path === "/cy-admin" || path.startsWith("/dashboard") || path.startsWith("/auth/");
   const editMode = new URLSearchParams(window.location.search || "").get("edit") === "1";
-  const sessionHint = localStorage.getItem("cms_session_hint") === "1";
+  const sessionHint = browserStorage.getItem("cms_session_hint") === "1";
 
   return adminPath || editMode || sessionHint;
 }

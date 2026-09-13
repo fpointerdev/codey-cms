@@ -15,6 +15,7 @@ import {
   completeSignedUploadSchema,
   createContentTranslationSchema,
   contactSubmissionSchema,
+  contentVersionSchema,
   createCmsCategorySchema,
   createCmsPageSchema,
   createCmsPostSchema,
@@ -319,12 +320,13 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/pages/:slug/publish",
     requirePermission(context, "update", "cms"),
-    validateRequest({ params: slugParams, query: localeQuerySchema }),
+    validateRequest({ params: slugParams, query: localeQuerySchema, body: contentVersionSchema.default({}) }),
     asyncHandler(async (req, res) => {
       const page = await cmsService.publishPage(
         req.params.slug,
         req.user,
-        await requestLocale(context, req.query.locale)
+        await requestLocale(context, req.query.locale),
+        req.body.expectedUpdatedAt
       );
 
       return sendSuccess(res, { page });
@@ -334,12 +336,13 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/pages/:slug/archive",
     requirePermission(context, "update", "cms"),
-    validateRequest({ params: slugParams, query: localeQuerySchema }),
+    validateRequest({ params: slugParams, query: localeQuerySchema, body: contentVersionSchema.default({}) }),
     asyncHandler(async (req, res) => {
       const page = await cmsService.archivePage(
         req.params.slug,
         req.user,
-        await requestLocale(context, req.query.locale)
+        await requestLocale(context, req.query.locale),
+        req.body.expectedUpdatedAt
       );
 
       return sendSuccess(res, { page });
@@ -378,13 +381,14 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/pages/:slug/revisions/:revisionId/restore",
     requirePermission(context, "update", "cms"),
-    validateRequest({ params: revisionParams, query: localeQuerySchema }),
+    validateRequest({ params: revisionParams, query: localeQuerySchema, body: contentVersionSchema.default({}) }),
     asyncHandler(async (req, res) => {
       const page = await cmsService.restoreRevision(
         req.params.slug,
         req.params.revisionId,
         req.user,
-        await requestLocale(context, req.query.locale)
+        await requestLocale(context, req.query.locale),
+        req.body.expectedUpdatedAt
       );
 
       return sendSuccess(res, { page });
@@ -457,11 +461,9 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/publishing/run",
     requirePermission(context, "update", "cms"),
-    asyncHandler(async (_req, res) => {
-      const [published, collections] = await Promise.all([
-        cmsService.publishScheduledContent(),
-        contentModelsService.publishScheduledEntries()
-      ]);
+    asyncHandler(async (req, res) => {
+      const published = await cmsService.publishScheduledContent(new Date(), req.user);
+      const collections = await contentModelsService.publishScheduledEntries();
 
       return sendSuccess(res, { published: { ...published, collections } });
     })

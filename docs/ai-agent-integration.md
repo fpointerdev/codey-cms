@@ -53,6 +53,19 @@ hostnames stay enabled for local and container health checks.
 
 Use HTTPS at the edge and retain an explicit host allowlist. The endpoint is intentionally anonymous and read-only.
 
+For production, install a verified exact package version during the image build,
+not an unpinned `npx` download at startup. On 11 September 2026,
+`codey-cms-mcp@0.1.1` was independently downloaded and checked with
+`npm audit signatures`: its registry signature and provenance both verified.
+The tarball SHA-256 is
+`7cff2faafe990529cb22580c1422dcafede8334755afe1ec9a922a035f929b94`.
+Its provenance binds `mcp-v0.1.1` and CMS commit
+`85e32dc62d039e1eaddfe68125bb7b8a9656a518` to
+`.github/workflows/publish-mcp.yml`, run `33916275873`, attempt 2.
+Verify this identity again at deployment. A published package does not mean the
+public HTTP endpoint is deployed, or that its bundled registry describes a newer
+installed CMS; installed-site capabilities always come from that site's contract.
+
 ## Installed-site automation
 
 An agent operating a customer site must follow the exact runtime contract:

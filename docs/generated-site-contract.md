@@ -118,6 +118,11 @@ schema version `1`. CodeY must accept only `status: "passed"` and
 reported as `passed-local-unsigned` and must never satisfy a platform release
 gate.
 
+For managed deployment, follow [Managed hosting](managed-hosting-contract.md).
+The packaged production launcher always runs migrations; candidate and live
+runtimes must never share a writable database or runtime volume. Package
+acceptance is not evidence of host isolation, public TLS or data-safe cutover.
+
 ## Builder Registry Contract
 
 The generation contract exposes a versioned builder registry at `builder.version`, `builder.elements`, `builder.sectionPresets`, `builder.stylePresets`, and `builder.sectionPatterns`. Registry `2026-08-26.2` contains 40 elements, 39 editor-available elements, 38 generator-safe elements, 5 section style presets, and 26 qualified section patterns.
@@ -166,6 +171,75 @@ Generated pages must use registered elements instead of anonymous JSON structure
 - Never generate the `custom-code` element or include it in WebsiteSpec. It is an explicit trusted-editor escape hatch for HTML, CSS, inline JavaScript, and HTTPS script libraries. The public renderer runs it in an opaque-origin iframe without `allow-same-origin`; the visual and backend editors keep it paused.
 
 ## Content Creation Rules
+
+### Protected Client Editing (Additive Capability)
+
+For nontechnical delivery, discover `ownerHandover.version: "1.0"` and follow
+[Owner handover](owner-handover.md). Its management-only readiness report covers
+configuration, not external hosting, human task completion, or a restore drill.
+The encrypted backup request uses the existing worker; it never accepts shell
+commands, file paths, or a request to restore a live database.
+
+Discover `contentEditing.version: "1.0"` from the generation contract and the
+signed-in user's effective `builder.contentEditing` from `GET /api/v1/config/admin`.
+Older releases without this capability retain the standard permission model;
+never advertise a design lock for them.
+
+The owner can enable **Settings > Security > Protect page and post designs**.
+This persists `siteSettings.editingPolicy: "protected"`; the default is
+`"standard"`. No migration, environment variable, WebsiteSpec version change, or
+automatic role grant is required. Enabling it registers `design:cms` and
+`publish:cms` for the existing Roles screen. Administrators retain full access.
+
+- Base create/update CMS permissions still apply. `design:cms` additionally
+  permits page creation, section/block structure, layout settings, custom code,
+  translations, and revision restoration in protected mode.
+- Without design access, existing draft copy/media can change but section/block
+  identities, order, collection shape, settings, and unknown configuration stay
+  intact. Locked blocks and custom-code blocks cannot be edited. The backend
+  enforces this for direct API requests, not merely through hidden controls.
+- `publish:cms` is separately required for published/scheduled edits, scheduling,
+  publication state changes, and the scheduled-publishing command. There is one
+  stored page/post version, not a separate review draft over live content:
+  `separateLiveDraft: false`. Authorized live edits take effect immediately.
+- This policy covers **pages and posts**, not a blanket lock on menus, shop
+  configuration, custom collections, or site-wide administration. Do not grant
+  clients module/role management and then describe them as restricted editors.
+- Supply `expectedUpdatedAt` from the exact page/post `updatedAt` the editor
+  loaded on PATCH, add-section/block, translation, publish/archive, and restore
+  requests. Protected mode requires it; standard mode accepts it optionally.
+  Missing protected versions return HTTP 428 `cms_version_required`; stale ones
+  return HTTP 409 `cms_content_conflict`. Keep the user's draft and ask them to
+  reload/review. Never retry with a freshly fetched timestamp automatically.
+  Every successful content or block mutation advances the parent version inside
+  its transaction. Creation, administrative WebsiteSpec apply, and publishing
+  already-scheduled records use their existing atomic service contracts.
+
+WebsiteSpec remains 1.0 and preserves the installed editing policy. CodeY should
+import with the authorized owner, then explicitly configure client permissions.
+Do not include the owner policy or credentials in WebsiteSpec.
+
+### Commerce Configuration Is Not Checkout Evidence
+
+The generation contract advertises `commerceReadiness.version: "1.0"`. Read
+`provider` and `mode` from `/api/v1/payments/providers/public`, which lists enabled,
+configured methods (online methods also require a successful connection test).
+Do not treat the presence of any method as proof of live selling:
+
+- `catalog`: active buy products, no usable payment method.
+- `test`: online methods are SANDBOX only; no real money is collected.
+- `live`: a LIVE online method is configured, with no sandbox methods enabled.
+- `manual`: manually collected payment; its legacy SANDBOX field does **not**
+  mean an online test payment. The owner must confirm receipt separately.
+- `quote`: all checked active products request quotes, not online payment.
+- `mixed`: both sandbox and real/manual methods are exposed; disable sandbox
+  methods before taking real orders. `empty` and `unknown` are explicit states.
+
+The dashboard marks configuration, not completed payment journeys, and limits
+catalog checks to the loaded products. Shipping, tax, settlement, webhook
+handling, receipts, refunds, and fulfillment still need end-to-end evidence.
+CodeY must not generate "checkout works" or "ready to sell" claims from these
+configuration states alone.
 
 Pages:
 

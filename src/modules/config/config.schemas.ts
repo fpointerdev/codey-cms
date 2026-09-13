@@ -4,6 +4,7 @@ import type { ModuleId } from "../../core/types/module.js";
 import { defaultDesignSystemSettings } from "./site-design.js";
 
 const moduleIds = Object.keys(moduleCatalog);
+export const backupRequestSchema = z.object({}).strict().default({});
 const hostnamePattern =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 const verificationTokenPattern = /^[a-zA-Z0-9_-]+$/;
@@ -267,6 +268,7 @@ const siteImageUrlSchema = z
   }, "Use an uploaded image or an HTTP(S) image URL.");
 
 export const siteSettingsSchema = z.object({
+  editingPolicy: z.enum(["standard", "protected"]).optional(),
   title: z.string().trim().min(1).max(160),
   description: z.string().trim().max(500).optional().default(""),
   metaTitle: z.string().trim().max(160).optional().default(""),

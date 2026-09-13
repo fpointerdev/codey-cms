@@ -1,5 +1,6 @@
 import {
   escapeHtml,
+  contentEditingAccess,
   formatDate,
   formatMoney,
   formatRoles,
@@ -11,6 +12,8 @@ import {
 } from "./core.js";
 import { adminHref, publicPageHref, publicPostHref, publicProductHref } from "./routes.js";
 import { renderAdminShell, renderFormMessage } from "./ui.js";
+import { commerceReadiness, productAvailableStock, productPurchaseMode } from "./shop-readiness.js";
+import { selectSettingsTab } from "./settings-navigation.js";
 import {
   cardStyleOptions,
   catalogSortOptions,
@@ -301,6 +304,7 @@ export function renderDashboardHome(data = {}) {
         <div class="section-heading-row"><div><p class="section-label">Start here</p><h2>What do you want to do?</h2></div></div>
         ${renderDashboardActions()}
       </section>
+      ${hasPermission("manage", "modules") ? '<section class="admin-section form-actions"><a class="secondary-button" href="/dashboard/settings#launch" data-dashboard-link>Website setup and handover</a><a class="secondary-button" href="/dashboard/settings#updates" data-dashboard-link>Backups and updates</a></section>' : ""}
       <details class="admin-section admin-panel dashboard-system-details">
         <summary>
           <span><strong>Site capabilities</strong><small>Installed modules and technical status</small></span>
@@ -462,7 +466,7 @@ export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
           <div><p class="section-label">Pages</p><h1 class="dashboard-title">Pages</h1><p class="dashboard-copy">Create and review the site pages available to this project.</p></div>
           <div class="button-row">
             <a class="secondary-button" href="/dashboard/posts${currentLocaleSuffix()}" data-dashboard-link>Posts</a>
-            ${hasPermission("create", "cms") ? `<a class="admin-primary-link" href="/dashboard/pages/new${currentLocaleSuffix()}" data-dashboard-link>Create Page</a>` : ""}
+            ${hasPermission("create", "cms") && contentEditingAccess().canDesign ? `<a class="admin-primary-link" href="/dashboard/pages/new${currentLocaleSuffix()}" data-dashboard-link>Create Page</a>` : ""}
           </div>
         </div>
         ${errorMessage ? `<p class="form-message error">Pages are not available yet: ${escapeHtml(errorMessage)}</p>` : ""}
@@ -487,10 +491,10 @@ export function renderPagesPage(pages, errorMessage = "", allPages = pages) {
                               <div class="page-actions" aria-label="Actions for ${escapeHtml(page.title)}">
                                 ${canUpdatePages ? `
                                   <a class="page-action-primary" href="${escapeHtml(customStorefrontEditorHref(page, publicHrefForPage(page)))}">Edit visually</a>
-                                  <a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link>Edit structure</a>
+                                  <a href="${escapeHtml(hrefWithLocale(adminHref("page-builder", page.slug), page.locale))}" data-dashboard-link>${contentEditingAccess(page).canDesign ? "Edit structure" : "Content"}</a>
                                 ` : ""}
                                 <a href="${escapeHtml(publicHrefForPage(page))}">View</a>
-                              ${enabledLocales(allPages).length > 1 && hasPermission("create", "cms") ? `
+                              ${enabledLocales(allPages).length > 1 && hasPermission("create", "cms") && contentEditingAccess(page).canDesign ? `
                                 <button type="button" class="link-button" data-create-page-translation="${escapeHtml(page.slug)}" data-source-locale="${escapeHtml(page.locale || "en")}" data-source-title="${escapeHtml(page.title)}">Translate</button>
                               ` : ""}
                               </div>
@@ -702,17 +706,6 @@ function orderNeedsAttention(order = {}) {
     || order.supportCases?.some((supportCase) => ["OPEN", "IN_REVIEW", "APPROVED"].includes(supportCase.status));
 }
 
-function productPurchaseMode(product = {}) {
-  return product.metadata?.purchaseMode === "quote" ? "quote" : "buy";
-}
-
-function productAvailableStock(product = {}) {
-  const variants = Array.isArray(product.variants) ? product.variants.filter((variant) => variant.active !== false) : [];
-  return variants.length
-    ? variants.reduce((total, variant) => total + Math.max(0, Number(variant.availableStock ?? variant.stockQuantity) || 0), 0)
-    : Math.max(0, Number(product.availableStock ?? product.stockQuantity) || 0);
-}
-
 function productOnHandStock(product = {}) {
   const variants = Array.isArray(product.variants) ? product.variants.filter((variant) => variant.active !== false) : [];
   return variants.length
@@ -727,47 +720,6 @@ function productReservedStock(product = {}) {
     : Math.max(0, Number(product.reservedQuantity) || 0);
 }
 
-function commerceReadiness(products, commerce) {
-  const activeProducts = products.filter((product) => product.status === "ACTIVE");
-  const buyProducts = activeProducts.filter((product) => productPurchaseMode(product) === "buy");
-  const incompleteProducts = activeProducts.filter((product) => (
-    !product.name || !product.images?.length ||
-    (productPurchaseMode(product) === "buy" && (Number(product.priceCents || 0) <= 0 || productAvailableStock(product) <= 0))
-  ));
-  const providers = commerce.providers || [];
-  const shippingZones = commerce.shippingZones || [];
-  const checks = [
-    {
-      complete: activeProducts.length > 0,
-      label: "Publish a product",
-      detail: activeProducts.length ? `${activeProducts.length} products are visible` : "Customers need at least one active product",
-      href: activeProducts.length ? "/dashboard/shop/products" : "/dashboard/shop/products/new"
-    },
-    {
-      complete: activeProducts.length > 0 && incompleteProducts.length === 0,
-      label: "Complete sellable details",
-      detail: incompleteProducts.length ? `${incompleteProducts.length} active products need an image, price, or stock` : "Active products are ready for customers",
-      href: "/dashboard/shop/products"
-    },
-    {
-      complete: buyProducts.length === 0 || providers.length > 0,
-      label: "Enable checkout",
-      detail: buyProducts.length === 0
-        ? "Quote-only catalogs do not need online payment"
-        : providers.length
-          ? `${providers.length} payment method${providers.length === 1 ? "" : "s"} available`
-          : "Connect card, PayPal, or manual payment",
-      href: "/dashboard/shop/configuration"
-    }
-  ];
-
-  return {
-    checks,
-    complete: checks.filter((check) => check.complete).length,
-    shippingZones: shippingZones.length
-  };
-}
-
 export function renderShopPage({ products = [], orders = [], commerce = {}, errorMessage = "" } = {}) {
   const activeProducts = products.filter((product) => product.status === "ACTIVE");
   const draftProducts = products.filter((product) => product.status === "DRAFT");
@@ -778,15 +730,15 @@ export function renderShopPage({ products = [], orders = [], commerce = {}, erro
   const revenueCents = orders
     .filter((order) => ["PAID", "FULFILLED"].includes(order.status))
     .reduce((total, order) => total + Number(order.totalCents || 0), 0);
-  const readiness = commerceReadiness(products, commerce);
+  const readiness = commerceReadiness(products, commerce, errorMessage);
 
   renderShopShell(
     "shop",
     `
       ${errorMessage ? `<p class="form-message error">${escapeHtml(errorMessage)}</p>` : ""}
-      <section class="admin-section shop-readiness${readiness.complete === readiness.checks.length ? " is-ready" : ""}">
+      <section class="admin-section shop-readiness${readiness.status === "configured" ? " is-ready" : ""}" data-commerce-mode="${escapeHtml(readiness.mode)}">
         <div class="shop-readiness-heading">
-          <div><p class="section-label">Sellability</p><h2>${readiness.complete === readiness.checks.length ? "Ready to sell" : "Finish store setup"}</h2><p class="dashboard-copy">${readiness.complete} of ${readiness.checks.length} essentials complete${readiness.shippingZones ? ` · ${readiness.shippingZones} delivery zone${readiness.shippingZones === 1 ? "" : "s"}` : " · Delivery is optional"}</p></div>
+          <div><p class="section-label">Store configuration</p><h2>${escapeHtml(readiness.title)}</h2><p class="dashboard-copy">${escapeHtml(readiness.message)}</p><p class="dashboard-copy">${readiness.shippingZones} configured delivery zones. Shipping, tax, payment settlement, and email delivery need an end-to-end check.</p></div>
           <span class="shop-readiness-score" aria-label="${readiness.complete} of ${readiness.checks.length} complete">${readiness.complete}/${readiness.checks.length}</span>
         </div>
         <div class="shop-readiness-list">
@@ -2116,20 +2068,21 @@ function renderSecurityActivity(config) {
 }
 
 function renderLaunchReadiness(readiness = {}) {
+  if (!hasPermission("manage", "modules")) return "";
   const checks = Array.isArray(readiness.checks) ? readiness.checks : [];
   const status = readiness.status || "blocked";
   const title = status === "ready"
-    ? "Ready to publish"
+    ? "Setup checks complete"
     : status === "attention"
       ? "Finish setup before publishing"
-      : "Publishing is blocked";
-  const statusLabel = status === "ready" ? "Ready" : status === "attention" ? "Needs attention" : "Blocked";
+      : "Complete your website setup";
+  const statusLabel = status === "ready" ? "Configured" : "Needs attention";
 
   return `
     <section class="admin-card settings-form launch-readiness" data-launch-readiness>
       <div class="section-heading-row">
         <div>
-          <p class="section-label">Launch readiness</p>
+          <p class="section-label">Website setup</p>
           <h2>${title}</h2>
           <p class="dashboard-copy compact">${escapeHtml(readiness.target === "public" ? "Public website checks" : "Local installation checks")}</p>
         </div>
@@ -2146,10 +2099,13 @@ function renderLaunchReadiness(readiness = {}) {
             <div class="module-status-actions">
               <span class="status-pill ${check.status === "pass" ? "success" : check.status === "blocked" ? "error" : ""}">${check.status === "pass" ? "Complete" : check.status === "blocked" ? "Required" : "Review"}</span>
               ${check.settingsTab ? `<button type="button" class="secondary-button" data-open-settings-tab="${escapeHtml(check.settingsTab)}">Open</button>` : ""}
+              ${check.actionHref === "/dashboard/profile" ? '<a class="secondary-button" href="/dashboard/profile" data-dashboard-link>Protect account</a>' : ""}
             </div>
           </div>
         `).join("") || '<p class="dashboard-copy compact">Readiness checks are unavailable.</p>'}
       </div>
+      <p class="field-help">Configuration checks do not verify public access, a recovery drill, or the owner's editing experience.</p>
+      <div class="form-actions"><button type="button" class="secondary-button" data-download-handover>Download handover report</button></div>
     </section>
   `;
 }
@@ -2608,22 +2564,32 @@ export function renderSettingsPage(config) {
             </div>
           </section>
           <section class="settings-tab-panel settings-tab-panel-updates" data-settings-panel="updates">
-            ${renderBackupProtection(operationsDiagnostics)}
+            <div data-backup-panel>${renderBackupProtection(operationsDiagnostics, config.backupControl)}</div>
             <div data-runtime-update-panel>
               ${renderRuntimeUpdatePanel(runtimeUpdate)}
             </div>
           </section>
           <section class="settings-tab-panel settings-tab-panel-security" data-settings-panel="security">
+            ${hasPermission("manage", "modules") ? `
+              <form class="admin-card settings-form" data-site-settings-form>
+                <h2>Client editing</h2>
+                <input type="hidden" name="editingPolicyPresent" value="true" />
+                <label class="checkbox-field"><input type="checkbox" name="protectedEditing"${settings.editingPolicy === "protected" ? " checked" : ""} /><span>Protect page and post designs</span></label>
+                <p class="field-help">Content editors keep existing layouts. Design access allows structural changes; publishing access allows live changes. Assign these permissions in Roles. Administrators keep full access.</p>
+                <p class="field-help">Without publishing access, editors can change drafts only. Published edits go live immediately; there is no separate review draft.</p>
+                ${renderFormMessage()}<div class="form-actions"><button type="submit">Save editing policy</button></div>
+              </form>` : ""}
             ${renderSecurityActivity(config)}
           </section>
         </div>
       </section>
     `
   );
+  selectSettingsTab();
   setStatus("Settings loaded.");
 }
 
-function renderBackupProtection(diagnostics = {}) {
+export function renderBackupProtection(diagnostics = {}, control = {}) {
   if (!hasPermission("manage", "modules")) return "";
 
   const backup = diagnostics.operations?.backup || {};
@@ -2656,15 +2622,20 @@ function renderBackupProtection(diagnostics = {}) {
           <strong>Off-site copy</strong>
           <span>${protectedOffsite ? "Confirmed by the deployment" : "Action required before production handoff"}</span>
         </div>
-        <span class="status-pill ${healthy ? "success" : "error"}">${healthy ? "Protected" : "Local only"}</span>
+        <span class="status-pill ${healthy ? "success" : "error"}">${healthy ? "Protected" : diagnostics.error ? "Unknown" : "Needs attention"}</span>
       </div>
       ${details.completedAt ? `<p class="field-help">Latest verified backup: ${escapeHtml(formatDate(details.completedAt))}</p>` : ""}
       ${healthy ? "" : `
         <div class="translation-help">
           <strong>Complete disaster recovery</strong>
-          <span>Sync the backup mirror to another machine or object-storage service, test a restore, then set <code>BACKUP_OFFSITE_PROTECTED=true</code>.</span>
+          <span>Your hosting provider needs to protect an independent copy and test a restore. A backup on this server alone cannot protect against losing the server.</span>
         </div>
       `}
+      <p class="form-message" data-backup-message aria-live="polite">${escapeHtml(control.message || (control.busy ? "Backup in progress. You can keep working." : control.status === "succeeded" ? "The requested backup completed." : ""))}</p>
+      <div class="form-actions">
+        <button type="button" data-create-backup ${control.canRequest ? "" : "disabled"}>Create backup</button>
+        <button type="button" class="secondary-button" data-refresh-backup>Refresh status</button>
+      </div>
     </div>
   `;
 }
@@ -2694,7 +2665,7 @@ export function renderRuntimeUpdatePanel(update = {}) {
       ? failedTitle
         : updateAvailable
           ? "A verified update is ready"
-          : "CodeY CMS is up to date";
+          : check.updateAvailable === false ? "CodeY CMS is up to date" : "Signed stable updates";
   const description = update.error
     ? update.error
     : applying

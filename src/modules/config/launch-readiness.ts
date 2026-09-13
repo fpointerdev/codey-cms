@@ -5,7 +5,8 @@ export type LaunchReadinessCheck = {
   label: string;
   status: "pass" | "action" | "blocked";
   message: string;
-  settingsTab?: "general" | "email" | "updates" | "security";
+  settingsTab?: "general" | "email" | "updates" | "security" | "storage";
+  actionHref?: string;
 };
 
 type LaunchReadinessInput = {
@@ -34,7 +35,7 @@ function parsedUrl(value?: string) {
 }
 
 function isLocalHostname(hostname: string) {
-  return ["localhost", "127.0.0.1", "::1"].includes(hostname);
+  return ["localhost", "::1", "[::1]"].includes(hostname) || /^127\./.test(hostname);
 }
 
 export function buildLaunchReadiness(input: LaunchReadinessInput) {
@@ -135,7 +136,7 @@ export function buildLaunchReadiness(input: LaunchReadinessInput) {
         label: "Owner account protection",
         status: publicTarget ? "blocked" : "action",
         message: "Enable two-step verification on the owner account before publishing.",
-        settingsTab: "security"
+        actionHref: "/dashboard/profile"
       });
 
   checks.push(input.storageDriver !== "disabled"
@@ -152,7 +153,7 @@ export function buildLaunchReadiness(input: LaunchReadinessInput) {
         label: "Persistent media",
         status: "blocked",
         message: "Enable persistent media storage before publishing.",
-        settingsTab: "general"
+        settingsTab: "storage"
       });
 
   checks.push(input.updatesEnabled
@@ -174,6 +175,15 @@ export function buildLaunchReadiness(input: LaunchReadinessInput) {
   const actions = checks.filter((check) => check.status === "action").length;
 
   return {
+    version: "1.0",
+    scope: "installation-configuration",
+    checkedAt: new Date().toISOString(),
+    evidence: {
+      externalReachabilityVerified: false,
+      ownerJourneyVerified: false,
+      restoreDrillVerified: false,
+      requiredDeliveryChecks: ["public-https", "owner-login-edit-publish", "signed-update-rollback", "offsite-restore"]
+    },
     status: blocked > 0 ? "blocked" as const : actions > 0 ? "attention" as const : "ready" as const,
     target: publicTarget ? "public" as const : "local" as const,
     summary: {
@@ -182,6 +192,7 @@ export function buildLaunchReadiness(input: LaunchReadinessInput) {
       blocked,
       total: checks.length
     },
-    checks
+    checks,
+    nextAction: checks.find((check) => check.status === "blocked") || checks.find((check) => check.status === "action") || null
   };
 }

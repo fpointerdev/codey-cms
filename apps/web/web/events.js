@@ -1,5 +1,6 @@
 import { availableComponentTemplates, elements, escapeHtml, normalizePageLayout, setStatus, slugFromTitle, state } from "./core.js";
 import { bootstrap } from "./controller.js";
+import { saveSettingsTab, selectSettingsTab } from "./settings-navigation.js";
 import {
   addArticle,
   addElementTemplate,
@@ -8,6 +9,8 @@ import {
   addSection,
   applyRuntimeUpdate,
   checkRuntimeUpdate,
+  manageBackup,
+  downloadHandoverReport,
   editBlock,
   editFooter,
   editMenuItem,
@@ -956,6 +959,16 @@ function bindAdminClick(event) {
   }
 
   const updateCheckButton = event.target.closest("[data-check-runtime-update]");
+  const backupButton = event.target.closest("[data-create-backup], [data-refresh-backup]");
+  if (backupButton) {
+    void manageBackup(backupButton, backupButton.hasAttribute("data-create-backup"));
+    return true;
+  }
+  const handoverButton = event.target.closest("[data-download-handover]");
+  if (handoverButton) {
+    void downloadHandoverReport(handoverButton);
+    return true;
+  }
   if (updateCheckButton) {
     void checkRuntimeUpdate(updateCheckButton);
     return true;
@@ -1936,6 +1949,7 @@ function bindMenuAndFooterEvents() {
 }
 
 export function bindEvents() {
+  elements.page.addEventListener("change", (event) => saveSettingsTab(event.target));
   bindSubmitEvents();
   bindClickEvents();
   bindRichTextEvents();
@@ -1959,6 +1973,7 @@ export function bindEvents() {
   });
 
   if (typeof window.addEventListener === "function") {
+    window.addEventListener("hashchange", () => selectSettingsTab());
     window.addEventListener("popstate", () => {
       void bootstrap();
     });

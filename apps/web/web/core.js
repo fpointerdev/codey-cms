@@ -1,18 +1,15 @@
 import { recordPageChange } from "./editor-sync.js";
+import { browserStorage } from "./browser-storage.js";
 
 const defaultApiUrl = "/api/v1";
 
 function storedValue(key) {
-  if (typeof localStorage === "undefined") return "";
-
-  return localStorage.getItem(key) || "";
+  return browserStorage.getItem(key) || "";
 }
 
 function removeLegacyTokens() {
-  if (typeof localStorage === "undefined") return;
-
-  localStorage.removeItem("cms_access_token");
-  localStorage.removeItem("cms_refresh_token");
+  browserStorage.removeItem("cms_access_token");
+  browserStorage.removeItem("cms_refresh_token");
 }
 
 removeLegacyTokens();
@@ -1678,11 +1675,9 @@ function clearStoredSession() {
   state.visualEditorRedoStack = [];
   state.visualEditorDevice = "desktop";
   state.visualEditorLibraryOpen = false;
-  if (typeof localStorage !== "undefined") {
-    localStorage.removeItem("cms_session_hint");
-    localStorage.removeItem("cms_access_token");
-    localStorage.removeItem("cms_refresh_token");
-  }
+  browserStorage.removeItem("cms_session_hint");
+  browserStorage.removeItem("cms_access_token");
+  browserStorage.removeItem("cms_refresh_token");
 }
 
 async function readApiBody(response) {
@@ -1716,7 +1711,7 @@ async function refreshSession() {
     state.token = body.data.tokens.accessToken;
     state.hasSession = true;
     state.user = body.data.user || state.user;
-    if (typeof localStorage !== "undefined") localStorage.setItem("cms_session_hint", "1");
+    browserStorage.setItem("cms_session_hint", "1");
     return true;
   })();
 
@@ -1808,6 +1803,20 @@ export function hasAnyPermission(requirements = []) {
   if (!requirements.length) return true;
 
   return requirements.some(([action, subject]) => hasPermission(action, subject));
+}
+
+export function contentEditingAccess(content = null) {
+  const capability = state.config?.builder?.contentEditing;
+  const protectedDesign = capability?.policy === "protected";
+  const canDesign = !protectedDesign || capability.canDesign === true;
+  const canPublish = !protectedDesign || capability.canPublish === true;
+  return {
+    protectedDesign,
+    canDesign,
+    canPublish,
+    canEdit: hasPermission("update", "cms") &&
+      (canPublish || content?.status !== "PUBLISHED" && !content?.publishedAt)
+  };
 }
 
 export function setRuntimeConfig(config) {

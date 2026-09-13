@@ -18,6 +18,7 @@ import {
 } from "../manifest.js";
 import {
   auditLogQuerySchema,
+  backupRequestSchema,
   createSiteDomainSchema,
   domainIdParams,
   emailSettingsSchema,
@@ -62,9 +63,11 @@ import {
 } from "../../core/audit/audit-log.js";
 import { AppError } from "../../core/errors/app-error.js";
 import { readBackupHealth } from "../../infrastructure/operations/backup-status.js";
+import { BackupControlService } from "../../infrastructure/operations/backup-control.service.js";
 import { buildLaunchReadiness } from "./launch-readiness.js";
 import { buildPublicRuntimeConfig } from "./public-runtime-config.js";
 import { StorageSettingsService } from "../../infrastructure/storage/storage-settings.service.js";
+import { editingCapabilities, editingPolicy } from "../cms/content-editing.js";
 
 async function getOrCreateDefaultSite(context: ModuleContext) {
   return context.prisma.site.upsert({
@@ -126,6 +129,7 @@ async function readSiteSettings(context: ModuleContext) {
   const storedSettings = (setting?.value ?? {}) as Record<string, unknown>;
 
   return {
+    editingPolicy: editingPolicy(storedSettings.editingPolicy),
     title: typeof storedSettings.title === "string" ? storedSettings.title : site.name,
     description: typeof storedSettings.description === "string" ? storedSettings.description : "",
     metaTitle: typeof storedSettings.metaTitle === "string" ? storedSettings.metaTitle : site.name,
@@ -220,7 +224,7 @@ export const configModule: AppModule = {
       ));
     }));
 
-    router.get("/admin", requireAuth(context), asyncHandler(async (_req, res) => {
+    router.get("/admin", requireAuth(context), asyncHandler(async (req, res) => {
       let installedModules: unknown[] = [];
       const [siteSettings, localization, storage] = await Promise.all([
         readSiteSettings(context),
@@ -244,6 +248,7 @@ export const configModule: AppModule = {
         modules: moduleCatalog,
         deploymentProfiles,
         builder: {
+          contentEditing: editingCapabilities(siteSettings.editingPolicy, req.user),
           version: builderRegistryVersion,
           elements: builderElementRegistry,
           sectionPresets: sectionPresetRegistry,
@@ -283,14 +288,14 @@ export const configModule: AppModule = {
 
     router.get(
       "/launch-readiness",
-      requirePermission(context, "read", "modules"),
+      requirePermission(context, "manage", "modules"),
       asyncHandler(async (_req, res) => {
         const storageConfig = storageSettingsService.getRuntimeConfig();
         const [siteSettings, email, backup, owner] = await Promise.all([
           readSiteSettings(context),
           emailSettingsService.getAdminStatus(),
           readBackupHealth({ ...context.config.backup, storageDriver: storageConfig.driver }),
-          context.prisma.user.findFirst({
+          context.prisma.user.findMany({
             where: {
               status: "ACTIVE",
               roles: { some: { role: { name: "owner" } } }
@@ -302,6 +307,7 @@ export const configModule: AppModule = {
         ]);
 
         return sendSuccess(res, {
+          runtime: { product: "codey-cms", version: runtimeVersion },
           readiness: buildLaunchReadiness({
             publicUrl: context.config.app.publicUrl,
             siteUrl: siteSettings.siteUrl,
@@ -311,7 +317,7 @@ export const configModule: AppModule = {
             storageDriver: storageConfig.driver,
             email,
             backup,
-            ownerMfaEnabled: Boolean(owner?.mfaCredential?.enabledAt),
+            ownerMfaEnabled: owner.length > 0 && owner.every((account) => Boolean(account.mfaCredential?.enabledAt)),
             updatesEnabled: context.config.updates.enabled
           })
         });
@@ -619,6 +625,16 @@ export const configModule: AppModule = {
             ...siteSettings
           };
 
+          if (siteSettings.editingPolicy === "protected") {
+            for (const permission of moduleCatalog.cms.permissions.filter((entry) => ["design", "publish"].includes(entry.action))) {
+              await tx.permission.upsert({
+                where: { action_subject: { action: permission.action, subject: permission.subject } },
+                create: permission,
+                update: { description: permission.description }
+              });
+            }
+          }
+
           await tx.site.update({
             where: {
               id: site.id
@@ -725,6 +741,38 @@ export const configModule: AppModule = {
       requirePermission(context, "read", "modules"),
       asyncHandler(async (_req, res) => {
         return sendSuccess(res, generationContract());
+      })
+    );
+
+    router.get(
+      "/backup",
+      requirePermission(context, "manage", "modules"),
+      asyncHandler(async (_req, res) => {
+        const storageDriver = storageSettingsService.getRuntimeConfig().driver;
+        return sendSuccess(res, {
+          control: await new BackupControlService(context.config).status(),
+          health: await readBackupHealth({ ...context.config.backup, storageDriver })
+        });
+      })
+    );
+
+    router.post(
+      "/backup",
+      requirePermission(context, "manage", "modules"),
+      validateRequest({ body: backupRequestSchema }),
+      asyncHandler(async (req, res) => {
+        const control = await new BackupControlService(context.config).request();
+        await writeAuditLog(context.prisma, {
+          actorUserId: req.user?.id,
+          action: "backup.request",
+          subject: "runtime",
+          subjectId: control.requestId || undefined,
+          ipAddress: req.ip,
+          userAgent: req.header("user-agent"),
+          requestId: req.requestId,
+          metadata: { status: control.status }
+        });
+        return sendSuccess(res, { control }, undefined, 202);
       })
     );
 

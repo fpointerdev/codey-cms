@@ -844,6 +844,7 @@ function openModalForm(config) {
             <button type="button" class="modal-close" data-modal-cancel aria-label="Close">×</button>
           </div>
           ${fields.length ? `<div class="modal-body">${modalFieldsHtml(fields)}</div>` : ""}
+          ${config.onSubmit ? '<p class="form-message error" data-modal-error role="alert" hidden></p>' : ""}
           <div class="modal-actions">
             <button type="button" class="secondary-button" data-modal-cancel>Cancel</button>
             <button type="submit"${config.destructive ? ' class="danger-button"' : ""}>${escapeHtml(config.submitLabel || "Save")}</button>
@@ -853,9 +854,10 @@ function openModalForm(config) {
     `;
 
     let closed = false;
+    let submitting = false;
 
     function close(result) {
-      if (closed) return;
+      if (closed || submitting) return;
       closed = true;
       document.removeEventListener("keydown", handleKeydown);
       modal.remove();
@@ -908,8 +910,9 @@ function openModalForm(config) {
       activateModalTab(tab);
     });
 
-    modal.querySelector("[data-modal-form]").addEventListener("submit", (event) => {
+    modal.querySelector("[data-modal-form]").addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (submitting) return;
       syncRichEditors(event.currentTarget);
       if (revealInvalidControl(event.currentTarget)) return;
 
@@ -942,7 +945,32 @@ function openModalForm(config) {
         }
         values[field.name] = String(value || "").trim();
       });
-      close(values);
+      if (typeof config.onSubmit !== "function") {
+        close(values);
+        return;
+      }
+      const form = event.currentTarget;
+      const message = form.querySelector("[data-modal-error]");
+      const submit = form.querySelector('button[type="submit"]');
+      const submitLabel = submit.textContent;
+      submitting = true;
+      submit.textContent = "Saving...";
+      form.inert = true;
+      form.setAttribute("aria-busy", "true");
+      message.hidden = true;
+      try {
+        const result = await config.onSubmit(values);
+        submitting = false;
+        close(result);
+      } catch (error) {
+        message.textContent = error.message || "Unable to save. Your changes are still in this form.";
+        message.hidden = false;
+      } finally {
+        submitting = false;
+        form.inert = false;
+        submit.textContent = submitLabel;
+        form.removeAttribute("aria-busy");
+      }
     });
 
     modal.addEventListener("change", (event) => {

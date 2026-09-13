@@ -228,11 +228,17 @@ export const createCmsPageSchema = z.object({
   sections: z.array(pageSectionSchema).default([])
 });
 
+export const contentVersionSchema = z.object({
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional()
+});
+
 export const updateCmsPageSchema = createCmsPageSchema.partial().extend({
+  ...contentVersionSchema.shape,
   sections: z.array(pageSectionSchema).optional()
 });
 
 export const createContentTranslationSchema = z.object({
+  ...contentVersionSchema.shape,
   targetLocale: z.string().trim().toLowerCase().min(2).max(16),
   title: z.string().trim().min(1).max(180).optional(),
   slug: z.string().trim().min(1).max(180).optional(),
@@ -246,7 +252,7 @@ export const createCmsPostSchema = createCmsPageSchema.omit({ sections: true }).
   categorySlugs: z.array(z.string().trim().min(1).max(120)).default([])
 });
 
-export const updateCmsPostSchema = createCmsPostSchema.partial();
+export const updateCmsPostSchema = createCmsPostSchema.partial().extend(contentVersionSchema.shape);
 
 export const postQuerySchema = z.object({
   locale: z.string().trim().toLowerCase().min(2).max(16).optional(),
@@ -269,11 +275,12 @@ export const createCmsCategorySchema = z.object({
 
 export const updateCmsCategorySchema = createCmsCategorySchema.partial();
 
-export const addSectionSchema = pageSectionSchema;
+export const addSectionSchema = pageSectionSchema.extend(contentVersionSchema.shape);
 
-export const addContentBlockSchema = contentBlockSchema;
+export const addContentBlockSchema = contentBlockSchema.extend(contentVersionSchema.shape);
 
 export const updateContentBlockSchema = z.object({
+  ...contentVersionSchema.shape,
   label: z.string().trim().min(1).max(120).optional(),
   value: z.unknown().optional(),
   settings: jsonObjectSchema.optional(),

@@ -3,8 +3,19 @@ import test from "node:test";
 import {
   pageChangeStorageKey,
   pageChangeToken,
+  pageSettingsHaveUnsavedChanges,
   recordPageChange
 } from "../apps/web/web/editor-sync.js";
+
+test("cross-editor refresh detects unsaved fields even after they lose focus", () => {
+  assert.equal(pageSettingsHaveUnsavedChanges(null), false);
+  const field = { tagName: "INPUT", value: "Draft title", defaultValue: "Saved title" };
+  const form = { querySelectorAll: () => [field] };
+  assert.equal(pageSettingsHaveUnsavedChanges(form), true);
+  field.value = field.defaultValue;
+  assert.equal(pageSettingsHaveUnsavedChanges(form), false);
+  assert.equal(pageSettingsHaveUnsavedChanges({ querySelectorAll: () => [{ tagName: "SELECT", options: [{ selected: true, defaultSelected: false }] }] }), true);
+});
 
 function memoryStorage() {
   const values = new Map<string, string>();

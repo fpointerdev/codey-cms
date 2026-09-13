@@ -40,6 +40,13 @@ test("generation contract gives agents one deterministic WebsiteSpec workflow", 
   assert.equal(contract.name, "codey-cms.website-generation");
   assert.equal(contract.version, "1.0");
   assert.equal(contract.automation.version, "1.0");
+  assert.equal(contract.contentEditing.version, "1.0");
+  assert.equal(contract.contentEditing.scope, "pages-and-posts");
+  assert.equal(contract.contentEditing.defaultPolicy, "standard");
+  assert.equal(contract.contentEditing.separateLiveDraft, false);
+  assert.equal(contract.contentEditing.concurrency.field, "expectedUpdatedAt");
+  assert.equal(contract.commerceReadiness.version, "1.0");
+  assert.equal(contract.commerceReadiness.configurationIsNotJourneyEvidence, true);
   assert.equal(contract.automation.release.selection, "latest-signed-stable");
   assert.equal(contract.automation.release.customerVersionChoice, false);
   assert.equal(workflow.get("readiness")?.path, "/api/v1/health/ready");

@@ -127,7 +127,8 @@ test("self-host launchers load generated and public overrides when requested", a
   assert.match(windowsLauncher, /%APP_PUBLIC_URL%\/install#token=%INSTALL_TOKEN%/);
   assert.match(windowsLauncher, /--domain/);
   assert.match(windowsLauncher, /docker-compose\.public\.yml/);
-  assert.match(composeFile, /backup:[\s\S]*healthcheck:[\s\S]*process\.kill\(1, 0\)/);
+  assert.match(composeFile, /backup:[\s\S]*healthcheck:[\s\S]*scripts\/check-backup-worker\.mjs/);
+  assert.doesNotMatch(composeFile, /process\.kill\(1, 0\)/);
   assert.match(composeFile, /secrets:[\s\S]*healthcheck:\s*\n\s*disable:\s*true/);
   assert.match(composeFile, /CODEY_SEED_DEMO_CONTENT: \$\{CODEY_SEED_DEMO_CONTENT:-false\}/);
   assert.doesNotMatch(composeFile, /backup:[\s\S]*healthcheck:\s*\n\s*disable:\s*true/);

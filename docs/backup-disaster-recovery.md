@@ -31,7 +31,7 @@ BACKUP_ALERT_WEBHOOK_URL=https://monitor.example.com/hooks/codey
 BACKUP_ALERT_WEBHOOK_TOKEN=<optional bearer token>
 ```
 
-`BACKUP_MIRROR_DIR` must be mounted on independent storage or synchronized off-host. A second volume on the same server is not a complete disaster-recovery strategy and is reported as **Local only** under **Settings > Updates**. After the external copy and a restore test are working, set `BACKUP_OFFSITE_PROTECTED=true`. CodeY reports protection only when that confirmation is present and the latest backup was successfully mirrored.
+`BACKUP_MIRROR_DIR` must be mounted on independent storage or synchronized off-host. A second volume on the same server is not a complete disaster-recovery strategy and is reported as needing attention under **Settings > Updates**. After the external copy and a restore test are working, set `BACKUP_OFFSITE_PROTECTED=true`. CodeY reports protection only when that confirmation is present and the latest backup was successfully mirrored.
 
 For S3-compatible media, enable and test bucket versioning, replication, or an independent object backup before setting `BACKUP_S3_MEDIA_PROTECTED=true`. The database dump does not copy S3 or R2 objects. The backup manifest records the active dashboard provider and bucket without including credentials.
 
@@ -42,6 +42,19 @@ pnpm runtime:backup
 ```
 
 The failure webhook receives `codey.backup.failed`. A mirror failure is reported as failed but does not delete a completed local backup.
+
+Administrators can request the same encrypted snapshot in **Settings > Updates**.
+The worker checks for requests every five seconds and publishes a heartbeat;
+the self-host healthcheck verifies heartbeat freshness rather than merely the
+existence of a process. The dashboard never receives paths or encryption keys.
+See [Owner handover](owner-handover.md) for request/status and upgrade contracts.
+
+Scheduled, dashboard-requested, and pre-update backups share an exclusive
+`.backup-running` directory lock. A competing run fails before changing backup
+status or artifacts. After a hard crash, an operator must verify that no backup
+process is running in either service before removing this empty lock directory.
+Do not remove `latest.json`, pending requests, or completed archives to recover
+a lock. There is deliberately no timer that can steal a live backup's lock.
 
 ## Restore Procedure
 

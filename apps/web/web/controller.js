@@ -4,7 +4,7 @@ import { loadMenu } from "./content-actions.js";
 import { renderPage, renderPost } from "./public-renderer.js";
 import { loadUser } from "./session-actions.js";
 import { renderAdminLogin, renderEmailVerification, renderInviteAcceptance, renderPasswordReset } from "./ui.js";
-import { pageChangeStorageKey, pageChangeToken } from "./editor-sync.js";
+import { pageChangeStorageKey, pageChangeToken, pageSettingsHaveUnsavedChanges } from "./editor-sync.js";
 
 let pageBuilderRefreshPromise = null;
 
@@ -488,7 +488,7 @@ export async function loadAdminRoute(route) {
   if (route.view === "settings") {
     const { renderSettingsPage } = await adminViews();
     const config = await api("/config/admin");
-    const [emailResult, updateResult, auditResult, diagnosticsResult, readinessResult] = await Promise.allSettled([
+    const [emailResult, updateResult, auditResult, diagnosticsResult, readinessResult, backupResult] = await Promise.allSettled([
       api("/config/email"),
       api("/config/runtime-update"),
       hasPermission("read", "audit")
@@ -497,7 +497,8 @@ export async function loadAdminRoute(route) {
       hasPermission("manage", "modules")
         ? api("/health/diagnostics")
         : Promise.resolve(null),
-      api("/config/launch-readiness")
+      hasPermission("manage", "modules") ? api("/config/launch-readiness") : Promise.resolve(null),
+      hasPermission("manage", "modules") ? api("/config/backup") : Promise.resolve(null)
     ]);
     config.email = emailResult.status === "fulfilled"
       ? emailResult.value.email
@@ -513,8 +514,10 @@ export async function loadAdminRoute(route) {
       ? diagnosticsResult.value
       : { error: diagnosticsResult.reason?.message || "Unable to load operational diagnostics." };
     config.launchReadiness = readinessResult.status === "fulfilled"
-      ? readinessResult.value.readiness
+      ? readinessResult.value?.readiness
       : { status: "blocked", error: readinessResult.reason?.message || "Unable to check launch readiness.", checks: [] };
+    config.backupControl = backupResult.status === "fulfilled" ? backupResult.value?.control
+      : { available: false, message: backupResult.reason?.message || "Unable to check the backup worker." };
     renderSettingsPage(config);
     return;
   }
@@ -537,6 +540,12 @@ export async function refreshPageBuilderIfStale(changedStorageKey = "") {
 
   const latestToken = pageChangeToken(activePage);
   if (!latestToken || latestToken === state.builderPageChangeToken) return;
+  const editingInProgress = () => document.body?.classList?.contains?.("modal-open") ||
+    pageSettingsHaveUnsavedChanges(document.querySelector?.("[data-page-builder-settings]"));
+  if (editingInProgress()) {
+    setStatus("This page changed in another editor. Finish or cancel your edit, then reload before saving.", true);
+    return;
+  }
   if (pageBuilderRefreshPromise) return pageBuilderRefreshPromise;
 
   const previousToken = state.builderPageChangeToken;
@@ -548,6 +557,10 @@ export async function refreshPageBuilderIfStale(changedStorageKey = "") {
         adminLocaleUrl(`/cms/pages/${encodeURIComponent(route.slug)}`, { preview: "true" }),
         { cache: "no-store" }
       );
+      if (state.builderPage !== activePage || editingInProgress()) {
+        state.builderPageChangeToken = previousToken;
+        return;
+      }
       renderPageBuilderPage(page, "Updated with changes from the visual editor.");
     } catch (error) {
       state.builderPageChangeToken = previousToken;

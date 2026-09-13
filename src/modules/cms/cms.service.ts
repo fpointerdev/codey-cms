@@ -21,12 +21,20 @@ import {
 } from "./contact-submission.service.js";
 import { RedirectService, type RedirectInput } from "./redirect.service.js";
 import { MenuService, type MenuItemInput } from "./menu.service.js";
+import {
+  assertContentOnlyBlock,
+  assertContentOnlyUpdate,
+  assertPublicationChange,
+  claimContentVersion,
+  hasEditingPermission,
+  readEditingPolicy,
+  requireEditingPermission,
+  type EditingUser
+} from "./content-editing.js";
 
 type CmsDatabase = PrismaClient | Prisma.TransactionClient;
 
-type RequestUser = {
-  id: string;
-};
+type RequestUser = EditingUser;
 
 type ContentBlockInput = {
   key: string;
@@ -69,9 +77,10 @@ type CreatePostInput = Omit<CreatePageInput, "sections"> & {
 
 type UpdatePageInput = Partial<Omit<CreatePageInput, "sections">> & {
   sections?: PageSectionInput[];
+  expectedUpdatedAt?: string;
 };
 
-type UpdatePostInput = Partial<CreatePostInput>;
+type UpdatePostInput = Partial<CreatePostInput> & { expectedUpdatedAt?: string };
 
 type CmsTemplateType = "SECTION" | "PAGE";
 
@@ -99,6 +108,7 @@ type CreateTranslationInput = {
   excerpt?: string;
   metaTitle?: string;
   metaDescription?: string;
+  expectedUpdatedAt?: string;
 };
 
 type PostQueryInput = {
@@ -759,6 +769,9 @@ export class CmsService {
     assertUniqueKeys(input.sections);
 
     return this.transaction(async (tx) => {
+      const policy = await readEditingPolicy(tx);
+      requireEditingPermission(policy, user, "design");
+      if (input.status !== "DRAFT" || input.publishedAt) requireEditingPermission(policy, user, "publish");
       const page = await tx.cmsPage.create({
         data: {
           title: input.title,
@@ -804,6 +817,7 @@ export class CmsService {
         },
         include: pageInclude
       });
+      const updatedAt = await this.prepareStructuralWrite(tx, sourcePage, user, input.expectedUpdatedAt);
       const translationGroupId = sourcePage.translationGroupId || sourcePage.slug;
       const existingTranslation = await tx.cmsPage.findFirst({
         where: {
@@ -825,7 +839,8 @@ export class CmsService {
             id: sourcePage.id
           },
           data: {
-            translationGroupId
+            translationGroupId,
+            updatedAt
           }
         });
       }
@@ -867,10 +882,17 @@ export class CmsService {
         include: pageInclude
       });
 
+      const policy = await readEditingPolicy(tx);
+      assertPublicationChange(policy, user, existingPage, input);
+      if (policy === "protected" && !hasEditingPermission(user, "design")) {
+        assertContentOnlyUpdate(existingPage, input);
+      }
+      const updatedAt = await claimContentVersion(tx.cmsPage, existingPage, input.expectedUpdatedAt, policy === "protected");
+
       await this.createRevision(tx, existingPage.id, "update", user?.id);
       await tx.cmsPage.update({
         where: { id: existingPage.id },
-        data: cleanPageData(input)
+        data: { ...cleanPageData(input), updatedAt }
       });
 
       if (input.sections) {
@@ -881,7 +903,7 @@ export class CmsService {
     });
   }
 
-  async addSection(slug: string, input: PageSectionInput, user?: RequestUser, locale = "en") {
+  async addSection(slug: string, input: PageSectionInput & { expectedUpdatedAt?: string }, user?: RequestUser, locale = "en") {
     assertUniqueKeys([input]);
 
     return this.transaction(async (tx) => {
@@ -893,6 +915,7 @@ export class CmsService {
         include: pageInclude
       });
 
+      await this.prepareStructuralWrite(tx, page, user, input.expectedUpdatedAt);
       await this.createRevision(tx, page.id, "section.add", user?.id);
       const section = await tx.pageSection.create({
         data: {
@@ -912,7 +935,7 @@ export class CmsService {
   async addContentBlock(
     slug: string,
     sectionId: string,
-    input: ContentBlockInput,
+    input: ContentBlockInput & { expectedUpdatedAt?: string },
     user?: RequestUser,
     locale = "en"
   ) {
@@ -937,6 +960,7 @@ export class CmsService {
         throw new AppError(404, "section_not_found", "Section not found.");
       }
 
+      await this.prepareStructuralWrite(tx, page, user, input.expectedUpdatedAt);
       await this.createRevision(tx, page.id, "block.add", user?.id);
       await this.createBlocks(tx, page.id, section.id, [input]);
 
@@ -953,6 +977,7 @@ export class CmsService {
       settings?: Record<string, unknown>;
       editable?: boolean;
       mediaAssetId?: string | null;
+      expectedUpdatedAt?: string;
     },
     user?: RequestUser,
     locale = "en"
@@ -989,6 +1014,12 @@ export class CmsService {
         value
       });
 
+      const policy = await readEditingPolicy(tx);
+      assertPublicationChange(policy, user, page, {});
+      if (policy === "protected" && !hasEditingPermission(user, "design")) {
+        assertContentOnlyBlock(block, { ...block, ...input, value });
+      }
+      await claimContentVersion(tx.cmsPage, page, input.expectedUpdatedAt, policy === "protected");
       await this.createRevision(tx, page.id, "block.update", user?.id);
       await tx.contentBlock.update({
         where: {
@@ -1007,7 +1038,7 @@ export class CmsService {
     });
   }
 
-  async publishPage(slug: string, user?: RequestUser, locale = "en") {
+  async publishPage(slug: string, user?: RequestUser, locale = "en", expectedUpdatedAt?: string) {
     return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
@@ -1017,10 +1048,14 @@ export class CmsService {
         include: pageInclude
       });
 
+      const policy = await readEditingPolicy(tx);
+      requireEditingPermission(policy, user, "publish");
+      const updatedAt = await claimContentVersion(tx.cmsPage, page, expectedUpdatedAt, policy === "protected");
       await this.createRevision(tx, page.id, "publish", user?.id);
       await tx.cmsPage.update({
         where: { id: page.id },
         data: {
+          updatedAt,
           status: "PUBLISHED",
           publishedAt: new Date()
         }
@@ -1030,7 +1065,7 @@ export class CmsService {
     });
   }
 
-  async archivePage(slug: string, user?: RequestUser, locale = "en") {
+  async archivePage(slug: string, user?: RequestUser, locale = "en", expectedUpdatedAt?: string) {
     return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
@@ -1040,11 +1075,15 @@ export class CmsService {
         include: pageInclude
       });
 
+      const policy = await readEditingPolicy(tx);
+      requireEditingPermission(policy, user, "publish");
+      const updatedAt = await claimContentVersion(tx.cmsPage, page, expectedUpdatedAt, policy === "protected");
       await this.createRevision(tx, page.id, "archive", user?.id);
       await tx.cmsPage.update({
         where: { id: page.id },
         data: {
-          status: "ARCHIVED"
+          status: "ARCHIVED",
+          updatedAt
         }
       });
 
@@ -1082,7 +1121,7 @@ export class CmsService {
     };
   }
 
-  async restoreRevision(slug: string, revisionId: string, user?: RequestUser, locale = "en") {
+  async restoreRevision(slug: string, revisionId: string, user?: RequestUser, locale = "en", expectedUpdatedAt?: string) {
     return this.transaction(async (tx) => {
       const page = await tx.cmsPage.findFirstOrThrow({
         where: {
@@ -1094,10 +1133,15 @@ export class CmsService {
       const revision = await this.findRevision(page.id, revisionId, tx);
       const snapshot = revision.snapshot as ReturnType<typeof pageSnapshot>;
 
+      const policy = await readEditingPolicy(tx);
+      requireEditingPermission(policy, user, "design");
+      assertPublicationChange(policy, user, page, snapshot.page);
+      const updatedAt = await claimContentVersion(tx.cmsPage, page, expectedUpdatedAt, policy === "protected");
       await this.createRevision(tx, page.id, "restore", user?.id);
       await tx.cmsPage.update({
         where: { id: page.id },
         data: {
+          updatedAt,
           title: snapshot.page.title,
           slug: snapshot.page.slug,
           locale: normalizeLocale(snapshot.page.locale),
@@ -1299,6 +1343,11 @@ export class CmsService {
 
   async createPost(input: CreatePostInput, user?: RequestUser) {
     return this.transaction(async (tx) => {
+      const policy = await readEditingPolicy(tx);
+      if (input.status !== "DRAFT" || input.publishedAt) requireEditingPermission(policy, user, "publish");
+      if (policy === "protected" && !hasEditingPermission(user, "design")) {
+        assertContentOnlyUpdate({}, { content: input.content, seo: input.seo });
+      }
       const post = await tx.cmsPost.create({
         data: createPostData(input)
       });
@@ -1331,6 +1380,10 @@ export class CmsService {
         },
         include: postInclude
       });
+      const policy = await readEditingPolicy(tx);
+      requireEditingPermission(policy, user, "design");
+      assertPublicationChange(policy, user, sourcePost, {});
+      const updatedAt = await claimContentVersion(tx.cmsPost, sourcePost, input.expectedUpdatedAt, policy === "protected");
       const translationGroupId = sourcePost.translationGroupId || sourcePost.slug;
       const existingTranslation = await tx.cmsPost.findFirst({
         where: {
@@ -1352,7 +1405,8 @@ export class CmsService {
             id: sourcePost.id
           },
           data: {
-            translationGroupId
+            translationGroupId,
+            updatedAt
           }
         });
       }
@@ -1389,12 +1443,16 @@ export class CmsService {
         }
       });
 
+      const policy = await readEditingPolicy(tx);
+      assertPublicationChange(policy, user, post, input);
+      if (policy === "protected" && !hasEditingPermission(user, "design")) assertContentOnlyUpdate(post, input);
+      const updatedAt = await claimContentVersion(tx.cmsPost, post, input.expectedUpdatedAt, policy === "protected");
       await this.createPostRevision(tx, post.id, "update", user?.id);
       await tx.cmsPost.update({
         where: {
           id: post.id
         },
-        data: cleanPostData(input)
+        data: { ...cleanPostData(input), updatedAt }
       });
 
       if (input.categorySlugs) {
@@ -1713,7 +1771,8 @@ export class CmsService {
     return { pages, posts };
   }
 
-  async publishScheduledContent(now = new Date()) {
+  async publishScheduledContent(now = new Date(), user?: RequestUser) {
+    requireEditingPermission(await readEditingPolicy(this.prisma), user, "publish");
     const [pages, posts] = await Promise.all([
       this.prisma.cmsPage.updateMany({
         where: {
@@ -1766,6 +1825,13 @@ export class CmsService {
     });
 
     return sanitizePageRecord(page);
+  }
+
+  private async prepareStructuralWrite(database: CmsDatabase, page: { id: string; status: string; updatedAt: Date }, user?: RequestUser, expectedUpdatedAt?: string) {
+    const policy = await readEditingPolicy(database);
+    requireEditingPermission(policy, user, "design");
+    assertPublicationChange(policy, user, page, {});
+    return claimContentVersion(database.cmsPage, page, expectedUpdatedAt, policy === "protected");
   }
 
   private async findPostById(database: CmsDatabase, postId: string) {

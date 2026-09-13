@@ -33,6 +33,26 @@ test("a public site is ready only when every launch protection passes", () => {
   assert.equal(readiness.target, "public");
   assert.equal(readiness.summary.blocked, 0);
   assert.ok(readiness.checks.every((check) => check.status === "pass"));
+  assert.equal(readiness.version, "1.0");
+  assert.equal(readiness.scope, "installation-configuration");
+  assert.equal(readiness.evidence.ownerJourneyVerified, false);
+  assert.equal(readiness.evidence.externalReachabilityVerified, false);
+  assert.equal(readiness.evidence.restoreDrillVerified, false);
+  assert.equal(readiness.nextAction, null);
+});
+
+test("setup directs account security and missing storage to their actual controls", () => {
+  const readiness = buildLaunchReadiness(publicSite({ ownerMfaEnabled: false, storageDriver: "disabled" }));
+  assert.equal(readiness.checks.find((check) => check.id === "owner-mfa")?.actionHref, "/dashboard/profile");
+  assert.equal(readiness.checks.find((check) => check.id === "storage")?.settingsTab, "storage");
+  assert.equal(readiness.nextAction?.id, "owner-mfa");
+});
+
+test("IPv6 and alternate IPv4 loopback addresses remain local installations", () => {
+  for (const publicUrl of ["http://[::1]:4000", "http://127.1.2.3:4000"]) {
+    const readiness = buildLaunchReadiness(publicSite({ publicUrl, siteUrl: publicUrl }));
+    assert.equal(readiness.target, "local");
+  }
 });
 
 test("public launch is blocked by recovery, backup, MFA, and metadata gaps", () => {
