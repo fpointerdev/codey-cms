@@ -113,6 +113,7 @@ test("container pins cover hardened PostgreSQL and both Node runtimes", async ()
 
 test("recovery CI uses backup tools matching the PostgreSQL server major", () => {
   const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(workflow, /release-checks:\s+runs-on: ubuntu-24\.04/);
   assert.match(workflow, /image: postgres:16-alpine@sha256:/);
   assert.match(workflow, /apt-get install --yes postgresql-client-16/);
   assert.match(workflow, /echo "\/usr\/lib\/postgresql\/16\/bin" >> "\$GITHUB_PATH"/);
