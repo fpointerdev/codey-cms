@@ -111,6 +111,13 @@ test("container pins cover hardened PostgreSQL and both Node runtimes", async ()
   assert.doesNotMatch(database, /PGDATA|ENTRYPOINT|force-reset/);
 });
 
+test("recovery CI uses backup tools matching the PostgreSQL server major", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(workflow, /image: postgres:16-alpine@sha256:/);
+  assert.match(workflow, /apt-get install --yes postgresql-client-16/);
+  assert.match(workflow, /echo "\/usr\/lib\/postgresql\/16\/bin" >> "\$GITHUB_PATH"/);
+});
+
 test("Caddy keeps standard modules with locked patched upstream dependencies", () => {
   const module = readFileSync(new URL("../integrations/caddy/go.mod", import.meta.url), "utf8");
   const entrypoint = readFileSync(new URL("../integrations/caddy/main.go", import.meta.url), "utf8");

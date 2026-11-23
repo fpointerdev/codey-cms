@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import express from "express";
+import rateLimit from "express-rate-limit";
 import { gzipSync } from "node:zlib";
 import { hashPassword, newPasswordSchema, verifyPassword } from "../src/core/security/password.js";
 import { createRequestBodyParser } from "../src/core/http/body-parser.js";
-import type { ModuleContext } from "../src/core/types/module.js";
+import type { ModuleContext, ModuleId } from "../src/core/types/module.js";
+import type { ModuleLifecycleHook } from "../src/modules/manifest.js";
+import { runModuleLifecycleHook } from "../src/modules/config/module-lifecycle.js";
 import { changePasswordSchema, registerSchema, confirmPasswordResetSchema, acceptInviteSchema } from "../src/modules/auth/auth.schemas.js";
 import { completeInstallationSchema } from "../src/modules/installation/installation.schemas.js";
 import { updateProductSchema, updateProductCategorySchema, updateProductAttributeSchema } from "../src/modules/products/products.schemas.js";
@@ -51,6 +54,7 @@ test("body budgets reject oversized and compressed requests before route work", 
   });
   const context = { config: { storage: { requestBodyLimit: "1mb" } } } as ModuleContext;
   const app = express();
+  app.use(rateLimit({ windowMs: 60_000, limit: 100 }));
   app.use("/api/v1", createRequestBodyParser(context));
   app.use((req, res) => res.json({ raw: Boolean(req.rawBody), parsed: Boolean(req.body) }));
   app.use((error: { status?: number; statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -88,5 +92,15 @@ test("body budgets reject oversized and compressed requests before route work", 
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("module lifecycle dispatch rejects inherited names and unsupported hooks", async () => {
+  const context = { logger: { debug() {}, info() {} } } as unknown as ModuleContext;
+  assert.equal(await runModuleLifecycleHook(context, "cms", "seed"), false);
+  await assert.rejects(runModuleLifecycleHook(context, "health", "disable"), /does not support/);
+  for (const value of ["constructor", "__proto__", "toString", "unknown"]) {
+    await assert.rejects(runModuleLifecycleHook(context, value as ModuleId, "seed"), /Unknown module/);
+    await assert.rejects(runModuleLifecycleHook(context, "cms", value as ModuleLifecycleHook), /does not support/);
   }
 });
