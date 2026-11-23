@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { patchSchema } from "../../core/http/patch-schema.js";
 import { productCatalogSortValues } from "./product-sort.js";
 
 export const productSlugParams = z.object({
@@ -63,7 +64,7 @@ const catalogHeroSchema = z.object({
   ctaUrl: storefrontLinkSchema.default(""),
   playback: z.enum(["controls", "hover-focus"]).default("hover-focus"),
   loop: z.boolean().default(true)
-}).strict().default({});
+}).strict().prefault({});
 
 export const shopSettingsSchema = z.object({
   catalogTitle: z.string().trim().min(1).max(120).default("Shop"),
@@ -154,8 +155,8 @@ export const createProductSchema = z.object({
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).default("DRAFT"),
   metaTitle: z.string().trim().max(180).optional(),
   metaDescription: z.string().trim().max(300).optional(),
-  seo: z.record(z.unknown()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  seo: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   images: z.array(
     z.object({
       mediaAssetId: z.string().cuid().optional(),
@@ -176,16 +177,16 @@ export const createProductSchema = z.object({
     z.object({
       name: z.string().trim().min(1).max(120),
       sku: z.string().trim().max(80).optional(),
-      optionValues: z.record(z.unknown()).optional(),
+      optionValues: z.record(z.string(), z.unknown()).optional(),
       priceCents: z.number().int().nonnegative().optional(),
       stockQuantity: z.number().int().nonnegative().default(0),
       active: z.boolean().default(true),
-      metadata: z.record(z.unknown()).optional()
+      metadata: z.record(z.string(), z.unknown()).optional()
     })
   ).max(200).optional()
 });
 
-export const updateProductSchema = createProductSchema.partial().omit({
+export const updateProductSchema = patchSchema(createProductSchema).omit({
   images: true,
   options: true,
   variants: true
@@ -200,7 +201,7 @@ export const createProductCategorySchema = z.object({
   sortOrder: z.number().int().default(0)
 });
 
-export const updateProductCategorySchema = createProductCategorySchema.partial();
+export const updateProductCategorySchema = patchSchema(createProductCategorySchema);
 
 export const createProductAttributeSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -212,7 +213,7 @@ export const createProductAttributeSchema = z.object({
   sortOrder: z.number().int().default(0)
 });
 
-export const updateProductAttributeSchema = createProductAttributeSchema.partial();
+export const updateProductAttributeSchema = patchSchema(createProductAttributeSchema);
 
 export const createProductImageSchema = z.object({
   mediaAssetId: z.string().cuid().optional(),
@@ -231,9 +232,9 @@ export const createProductOptionSchema = z.object({
 export const createProductVariantSchema = z.object({
   name: z.string().trim().min(1).max(120),
   sku: z.string().trim().max(80).optional(),
-  optionValues: z.record(z.unknown()).optional(),
+  optionValues: z.record(z.string(), z.unknown()).optional(),
   priceCents: z.number().int().nonnegative().optional(),
   stockQuantity: z.number().int().nonnegative().default(0),
   active: z.boolean().default(true),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.string(), z.unknown()).optional()
 });

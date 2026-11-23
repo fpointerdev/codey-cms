@@ -9,7 +9,7 @@ const apkBuildArguments = {
   "postgresql16-client": "CODEY_APK_POSTGRESQL16_CLIENT_VERSION"
 };
 
-for (const [name, reference] of Object.entries({ node: images.node, postgres: images.postgres, caddy: images.caddy })) {
+for (const [name, reference] of Object.entries({ node: images.node, postgres: images.postgres, caddy: images.caddy, golang: images.golang })) {
   if (typeof reference !== "string" || !/@sha256:[a-f0-9]{64}$/.test(reference)) {
     throw new Error(`${name} container image must be pinned by SHA-256 digest.`);
   }
@@ -35,10 +35,19 @@ if (!images.apkPackages?.openssl || !images.apkPackages?.["postgresql16-client"]
 }
 
 await assertContains("Dockerfile", images.node);
-await assertContains("docker-compose.selfhost.yml", images.postgres);
-await assertContains("docker-compose.prod.yml", images.postgres);
+await assertContains("integrations/codey-cms-mcp/Dockerfile", images.node);
+await assertContains("Dockerfile.postgres", images.postgres);
+await assertContains("docker-compose.selfhost.yml", "dockerfile: Dockerfile.postgres");
+await assertContains("docker-compose.prod.yml", "dockerfile: Dockerfile.postgres");
+for (const name of ["libxml2", "su-exec"]) {
+  const version = images.postgresApkPackages?.[name];
+  if (!/^\d[0-9A-Za-z.+_-]*-r\d+$/.test(version || "")) throw new Error(`PostgreSQL package ${name} must be pinned.`);
+  await assertContains("Dockerfile.postgres", `${name}=${version}`);
+}
 await assertContains(".github/workflows/ci.yml", images.postgres);
-await assertContains("docker-compose.public.yml", images.caddy);
+await assertContains("Dockerfile.caddy", images.caddy);
+await assertContains("Dockerfile.caddy", images.golang);
+await assertContains("docker-compose.public.yml", "dockerfile: Dockerfile.caddy");
 
 console.log("Container image pins match runtime-meta/container-images.json.");
 

@@ -53,8 +53,8 @@ Packages through `v0.9.6` placed Corepack's cache outside the writable runtime v
 Inspect runtime state and logs:
 
 ```bash
-docker compose -f docker-compose.selfhost.yml logs backend
-docker compose -f docker-compose.selfhost.yml exec backend \
+docker compose -f docker-compose.selfhost.yml logs backend supervisor
+docker compose -f docker-compose.selfhost.yml exec supervisor \
   node scripts/run-with-runtime-secrets.mjs -- node scripts/backup-runtime.mjs
 ```
 

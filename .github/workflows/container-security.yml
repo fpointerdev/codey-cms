@@ -1,0 +1,28 @@
+name: Container Security
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  shipped-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Scan shipped images (including unfixed high and critical findings)
+        run: node scripts/audit-container-images.mjs
+      - name: Qualify patched Caddy with verified HTTPS
+        run: node scripts/qualify-caddy.mjs --image codey-cms-caddy:security
+      - name: Retain vulnerability reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: container-security-${{ github.workflow }}
+          path: .release/container-security
+          if-no-files-found: warn

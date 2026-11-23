@@ -9,6 +9,9 @@ permissions:
   contents: read
 
 jobs:
+  container-security:
+    uses: ./.github/workflows/container-security.yml
+
   platform-launchers:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
@@ -28,7 +31,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
         env:
           POSTGRES_DB: codey_cms_test
           POSTGRES_USER: codey
@@ -64,7 +67,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 11.18.0
+          version: 11.29.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
@@ -107,7 +110,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 11.18.0
+          version: 11.29.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
@@ -137,7 +140,7 @@ jobs:
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [release-checks, platform-launchers, package-qualification]
+    needs: [release-checks, platform-launchers, package-qualification, container-security]
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 40
@@ -152,7 +155,7 @@ jobs:
           fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 11.18.0
+          version: 11.29.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24

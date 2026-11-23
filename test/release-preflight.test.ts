@@ -82,11 +82,49 @@ test("CodeQL initialization and analysis use one pinned action release", () => {
   assert.equal(new Set(references).size, 1);
 });
 
-test("Dependabot groups coupled actions and defers npm major migrations", () => {
+test("Dependabot groups coupled actions without hiding major security updates", () => {
   const config = readFileSync(new URL("../.github/dependabot.yml", import.meta.url), "utf8");
 
   assert.match(config, /github-actions[\s\S]*groups:[\s\S]*patterns:[\s\S]*- "\*"/);
-  assert.match(config, /dependency-name: "\*"[\s\S]*version-update:semver-major/);
+  assert.doesNotMatch(config, /version-update:semver-major/);
+});
+
+test("release publication requires the shipped-image vulnerability gate", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const scanner = readFileSync(new URL("../scripts/audit-container-images.mjs", import.meta.url), "utf8");
+  const release = readFileSync(new URL("../scripts/build-release.mjs", import.meta.url), "utf8");
+  assert.match(workflow.split("  publish-release:")[1], /needs: \[[^\]]*container-security\]/);
+  assert.match(scanner, /aquasec\/trivy:[^"\s]+@sha256:[a-f0-9]{64}/);
+  assert.match(scanner, /"--severity", "HIGH,CRITICAL", "--exit-code", "1"/);
+  assert.doesNotMatch(scanner, /--ignore-unfixed|--skip-db-update/);
+  assert.match(scanner, /if \(result.status !== 0\) failed = true/);
+  assert.match(scanner, /postgres: "codey-cms-postgres:security"/);
+  assert.match(release, /"Dockerfile.postgres"/);
+});
+
+test("container pins cover hardened PostgreSQL and both Node runtimes", async () => {
+  const result = await execFileAsync(process.execPath, ["scripts/validate-container-pins.mjs"]);
+  assert.match(result.stdout, /Container image pins match/);
+  const database = readFileSync(new URL("../Dockerfile.postgres", import.meta.url), "utf8");
+  assert.match(database, /FROM postgres:16-alpine@sha256:/);
+  assert.match(database, /su-exec postgres true/);
+  assert.doesNotMatch(database, /PGDATA|ENTRYPOINT|force-reset/);
+});
+
+test("Caddy keeps standard modules with locked patched upstream dependencies", () => {
+  const module = readFileSync(new URL("../integrations/caddy/go.mod", import.meta.url), "utf8");
+  const entrypoint = readFileSync(new URL("../integrations/caddy/main.go", import.meta.url), "utf8");
+  const dockerfile = readFileSync(new URL("../Dockerfile.caddy", import.meta.url), "utf8");
+  const workflow = readFileSync(new URL("../.github/workflows/container-security.yml", import.meta.url), "utf8");
+  const qualifier = readFileSync(new URL("../scripts/qualify-caddy.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(module, /go-jose\/go-jose\/v3/);
+  assert.match(module, /certificates v0\.30\.3-0\.20261105213751-6d5a251fbe01/);
+  assert.match(module, /golang.org\/x\/net v0\.62\.0/);
+  assert.match(entrypoint, /caddy\/v2\/modules\/standard/);
+  assert.match(dockerfile, /go mod verify/);
+  assert.match(dockerfile, /go build -mod=readonly/);
+  assert.match(workflow, /qualify-caddy\.mjs --image codey-cms-caddy:security/);
+  assert.doesNotMatch(qualifier, /rejectUnauthorized:\s*false|NODE_TLS_REJECT_UNAUTHORIZED/);
 });
 
 test("CodeQL excludes only reproducibly generated browser bundles", () => {

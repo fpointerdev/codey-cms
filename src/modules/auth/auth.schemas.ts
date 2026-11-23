@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { newPasswordSchema } from "../../core/security/password.js";
 
 export const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8).max(128),
+  password: newPasswordSchema(),
   name: z.string().trim().min(1).max(120).optional()
 });
 
@@ -26,7 +27,7 @@ export const mfaDisableSchema = mfaConfirmSchema.extend({
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(32).optional()
-}).default({});
+}).prefault({});
 
 export const logoutSchema = refreshSchema;
 
@@ -36,7 +37,7 @@ export const sessionIdParams = z.object({
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(128)
+  newPassword: newPasswordSchema()
 }).refine(
   (input) => input.currentPassword !== input.newPassword,
   {
@@ -51,7 +52,7 @@ export const requestPasswordResetSchema = z.object({
 
 export const confirmPasswordResetSchema = z.object({
   token: z.string().min(32),
-  password: z.string().min(8).max(128)
+  password: newPasswordSchema()
 });
 
 export const requestEmailVerificationSchema = z.object({
@@ -80,6 +81,6 @@ export const inviteIdParams = z.object({
 
 export const acceptInviteSchema = z.object({
   token: z.string().min(32),
-  password: z.string().min(8).max(128),
+  password: newPasswordSchema(),
   name: z.string().trim().min(1).max(120).optional()
 });

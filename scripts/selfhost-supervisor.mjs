@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   cp,
+  copyFile,
   lstat,
   mkdir,
   readFile,
@@ -26,21 +28,29 @@ const statusFile = path.join(path.dirname(controlFile), "update-status.json");
 const updatesRoot = path.resolve(process.env.CODEY_UPDATE_DIR || path.join(runtimeRoot, "updates"));
 const backupRoot = path.resolve(process.env.BACKUP_DIR || "/app/backups");
 const port = process.env.PORT || "4000";
-const readinessUrl = `http://127.0.0.1:${port}/api/v1/health/ready`;
+const externalRuntime = process.env.CODEY_EXTERNAL_RUNTIME === "true";
+const readinessUrl = `http://${externalRuntime ? "backend" : "127.0.0.1"}:${port}/api/v1/health/ready`;
+const apiControlFile = path.join(path.dirname(controlFile), "api-state.json");
 
 let runtimeProcess;
 let runtimeExitPromise;
 let stopping = false;
 let updating = false;
 let updatePoll;
+let heartbeatPoll;
+let heartbeatPending = false;
 
 await mkdir(releasesRoot, { recursive: true });
 await mkdir(path.dirname(controlFile), { recursive: true });
 await ensureInitialRelease();
 await startRuntime();
+if (externalRuntime) {
+  await writeHeartbeat();
+  heartbeatPoll = setInterval(() => void writeHeartbeat().catch((error) => console.error("Supervisor heartbeat failed.", error)), 5_000);
+}
 
 updatePoll = setInterval(() => void processPendingUpdate(), 5_000);
-updatePoll.unref();
+if (!externalRuntime) updatePoll.unref();
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => void shutdown(signal));
@@ -70,6 +80,15 @@ async function ensureInitialRelease() {
 
 async function startRuntime() {
   const current = await currentRelease();
+  if (externalRuntime) {
+    await stopRuntime();
+    await run(current, process.execPath, [
+      path.join(imageRoot, "scripts/run-with-runtime-secrets.mjs"), "--", process.execPath,
+      path.join(imageRoot, "scripts/start-production.mjs"), "--prepare-only", "--runtime-root", current
+    ]);
+    await writeJsonAtomic(apiControlFile, { desired: "running" });
+    return;
+  }
   runtimeProcess = spawn(
     process.execPath,
     ["scripts/run-with-runtime-secrets.mjs", "--", process.execPath, "scripts/start-production.mjs"],
@@ -94,6 +113,17 @@ async function startRuntime() {
 }
 
 async function stopRuntime() {
+  if (externalRuntime) {
+    const requestId = `${Date.now()}-${process.pid}`;
+    await writeJsonAtomic(apiControlFile, { desired: "stopped", requestId });
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      const status = await readJson(path.join(path.dirname(controlFile), "api-status.json"));
+      if (status?.status === "stopped" && status.requestId === requestId) return;
+      await wait(200);
+    }
+    throw new Error("The API did not stop; no update or restore was applied.");
+  }
   if (!runtimeProcess || runtimeProcess.exitCode !== null || runtimeProcess.signalCode !== null) return;
   runtimeProcess.kill("SIGTERM");
 
@@ -187,6 +217,21 @@ async function processPendingUpdate() {
 }
 
 async function prepareRelease(previousRelease, request) {
+  // The API can write staging. Verify a private snapshot, never mutable inputs.
+  const privateDirectory = path.join(runtimeRoot, "verified-updates", request.updateId);
+  await mkdir(privateDirectory, { recursive: true, mode: 0o700 });
+  const manifestPath = path.join(privateDirectory, "release-manifest.json");
+  const artifactPath = path.join(privateDirectory, path.basename(request.artifactPath));
+  try {
+    await copyFile(request.manifestPath, manifestPath);
+    await copyFile(request.artifactPath, artifactPath);
+    return await prepareVerifiedRelease(previousRelease, { ...request, manifestPath, artifactPath });
+  } finally {
+    await rm(privateDirectory, { recursive: true, force: true });
+  }
+}
+
+async function prepareVerifiedRelease(previousRelease, request) {
   const publicKeyPath = path.resolve(
     previousRelease,
     process.env.CODEY_RELEASE_PUBLIC_KEY_FILE || "runtime-meta/release-public-key.pem"
@@ -411,7 +456,7 @@ async function rejectInvalidRequest(request, error) {
     error: message
   }).catch(() => undefined);
 
-  const historyDirectory = path.join(path.dirname(controlFile), "history");
+  const historyDirectory = path.join(runtimeRoot, "update-history");
   await mkdir(historyDirectory, { recursive: true });
   await rename(controlFile, path.join(historyDirectory, `${Date.now()}-invalid.json`)).catch(() => undefined);
 }
@@ -421,7 +466,7 @@ function isSafeFileName(value) {
 }
 
 async function archiveRequest(request, result) {
-  const historyDirectory = path.join(path.dirname(controlFile), "history");
+  const historyDirectory = path.join(runtimeRoot, "update-history");
   await mkdir(historyDirectory, { recursive: true });
   await rename(controlFile, path.join(historyDirectory, `${request.updateId}-${result}.json`));
 }
@@ -458,9 +503,20 @@ async function shutdown(signal) {
   if (stopping) return;
   stopping = true;
   if (updatePoll) clearInterval(updatePoll);
+  if (heartbeatPoll) clearInterval(heartbeatPoll);
   await stopRuntime();
   console.log(`CodeY CMS supervisor stopped after ${signal}.`);
   process.exit(0);
+}
+
+async function writeHeartbeat() {
+  if (heartbeatPending) return;
+  heartbeatPending = true;
+  try {
+    await writeJsonAtomic(path.join(runtimeRoot, "supervisor-health.json"), { updatedAt: Date.now() });
+  } finally {
+    heartbeatPending = false;
+  }
 }
 
 async function readJson(filePath) {
@@ -474,9 +530,13 @@ async function readJson(filePath) {
 
 async function writeJsonAtomic(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.${process.pid}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await rename(temporaryPath, filePath);
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    await rename(temporaryPath, filePath);
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
 }
 
 function wait(milliseconds) {

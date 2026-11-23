@@ -49,6 +49,18 @@ the self-host healthcheck verifies heartbeat freshness rather than merely the
 existence of a process. The dashboard never receives paths or encryption keys.
 See [Owner handover](owner-handover.md) for request/status and upgrade contracts.
 
+The isolated self-host package sets `BACKUP_CONTROL_DIR=/app/backup-control` for
+dashboard requests and worker heartbeats. `BACKUP_DIR` contains the artifacts and
+is read-only in the API. The launcher sets `BACKUP_WORKER_MANAGED=true` only for
+the self-host API, which never receives `BACKUP_ENCRYPTION_KEY`. Workers still
+require encryption and receive the key from the private secret volume. Other
+deployments retain the single-directory behavior unless configured explicitly.
+
+For a packaged restore, stop `supervisor` first, then `backend` and `backup`.
+Run the restore through a one-off `supervisor` container with the existing
+volumes and matching key; start all three services afterward. Do not execute a
+restore in the public API container or delete volumes to recover a site.
+
 Scheduled, dashboard-requested, and pre-update backups share an exclusive
 `.backup-running` directory lock. A competing run fails before changing backup
 status or artifacts. After a hard crash, an operator must verify that no backup

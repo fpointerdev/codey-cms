@@ -15,10 +15,7 @@ updates:
         update-types:
           - minor
           - patch
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - version-update:semver-major
+    # Major security fixes need reviewed PRs too; never merge them automatically.
 
   - package-ecosystem: github-actions
     directory: /
@@ -31,5 +28,10 @@ updates:
 
   - package-ecosystem: docker
     directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /integrations/caddy
     schedule:
       interval: weekly

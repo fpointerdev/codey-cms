@@ -7,6 +7,7 @@ import { once } from "node:events";
 import { build } from "esbuild";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const root = process.cwd();
 const outputDirectory = resolve(root, "integrations/codey-cms-mcp/dist");
@@ -103,6 +104,20 @@ try {
   }
   if (health?.status !== "ready" || health?.access !== "read-only") {
     throw new Error(`The MCP HTTP health contract failed.\n${httpStderr}`);
+  }
+  const httpClient = new Client({ name: "codey-cms-http-smoke", version: "1.0.0" });
+  try {
+    await httpClient.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
+    const httpTools = await httpClient.listTools();
+    if (httpTools.tools.length !== 6 || httpTools.tools.some((tool) => tool.annotations?.readOnlyHint !== true)) {
+      throw new Error("The HTTP MCP transport changed the read-only tool contract.");
+    }
+    const result = await httpClient.callTool({ name: "get_codey_capabilities" });
+    if (result.isError || !result.content.some((block) => block.type === "text" && block.text.includes("CodeY CMS"))) {
+      throw new Error("The HTTP MCP transport could not return CMS capabilities.");
+    }
+  } finally {
+    await httpClient.close();
   }
 } finally {
   if (httpProcess.exitCode === null) {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { patchSchema } from "../../core/http/patch-schema.js";
 
 export const roleIdParams = z.object({
   id: z.string().cuid()
@@ -13,7 +14,7 @@ export const createRoleSchema = z.object({
   ).default([])
 });
 
-export const updateRoleSchema = createRoleSchema.partial().refine(
+export const updateRoleSchema = patchSchema(createRoleSchema).refine(
   (input) => Object.keys(input).length > 0,
   "At least one role field must be provided."
 );

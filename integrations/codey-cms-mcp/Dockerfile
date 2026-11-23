@@ -1,7 +1,7 @@
-FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS builder
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS builder
 
 WORKDIR /source
-RUN corepack enable && corepack prepare pnpm@11.18.0 --activate
+RUN corepack enable && corepack prepare pnpm@11.29.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
@@ -17,9 +17,12 @@ COPY src/core/types ./src/core/types
 COPY src/runtime/release.ts ./src/runtime/release.ts
 RUN pnpm run mcp:build
 
-FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
 
 WORKDIR /app
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+  /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/pnpm /usr/local/bin/pnpx \
+  /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 ENV NODE_ENV=production
 ENV PORT=8787
 

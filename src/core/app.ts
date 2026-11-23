@@ -9,6 +9,7 @@ import { pinoHttp } from "pino-http";
 import { config, type AppConfig } from "../config/index.js";
 import { createAdminMutationAudit } from "./audit/admin-mutation-audit.middleware.js";
 import { errorHandler } from "./http/error.middleware.js";
+import { createRequestBodyParser } from "./http/body-parser.js";
 import { createMaintenanceMiddleware } from "./http/maintenance.middleware.js";
 import { loadModules } from "./http/module-loader.js";
 import { notFoundHandler } from "./http/not-found.middleware.js";
@@ -1203,13 +1204,7 @@ export async function createApp() {
   app.use(config.api.prefix, security.apiLimiter);
   app.use(`${config.api.prefix}/auth`, security.authLimiter);
   app.use(`${config.api.prefix}/config`, security.adminWriteLimiter);
-  app.use(express.json({
-    limit: config.storage.requestBodyLimit,
-    verify: (req, _res, buffer) => {
-      (req as Request).rawBody = Buffer.from(buffer);
-    }
-  }));
-  app.use(express.urlencoded({ extended: true }));
+  app.use(config.api.prefix, createRequestBodyParser({ config, prisma, logger }));
   const installation = createInstallationRouter({ config, prisma, logger });
   app.use(`${config.api.prefix}/install`, installation.router);
   app.get("/install", async (_req, res, next) => {

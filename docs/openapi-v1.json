@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CodeY CMS API",
-    "version": "1.6.0",
+    "version": "1.6.1",
     "description": "Generated stable /api/v1 contract. Each operation identifies its authentication, permission, path parameter, and authoritative Zod validation source."
   },
   "servers": [
@@ -4011,7 +4011,7 @@
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema",
-          "body": "contentVersionSchema.default({})"
+          "body": "contentVersionSchema.prefault({})"
         },
         "x-codey-permission": {
           "action": "update",
@@ -4039,8 +4039,8 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "description": "Validated at runtime by contentVersionSchema.default({}).",
-                "x-codey-zod-schema": "contentVersionSchema.default({})"
+                "description": "Validated at runtime by contentVersionSchema.prefault({}).",
+                "x-codey-zod-schema": "contentVersionSchema.prefault({})"
               }
             }
           }
@@ -4174,7 +4174,7 @@
         "x-codey-validation": {
           "params": "slugParams",
           "query": "localeQuerySchema",
-          "body": "contentVersionSchema.default({})"
+          "body": "contentVersionSchema.prefault({})"
         },
         "x-codey-permission": {
           "action": "update",
@@ -4202,8 +4202,8 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "description": "Validated at runtime by contentVersionSchema.default({}).",
-                "x-codey-zod-schema": "contentVersionSchema.default({})"
+                "description": "Validated at runtime by contentVersionSchema.prefault({}).",
+                "x-codey-zod-schema": "contentVersionSchema.prefault({})"
               }
             }
           }
@@ -4388,7 +4388,7 @@
         "x-codey-validation": {
           "params": "revisionParams",
           "query": "localeQuerySchema",
-          "body": "contentVersionSchema.default({})"
+          "body": "contentVersionSchema.prefault({})"
         },
         "x-codey-permission": {
           "action": "update",
@@ -4425,8 +4425,8 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "description": "Validated at runtime by contentVersionSchema.default({}).",
-                "x-codey-zod-schema": "contentVersionSchema.default({})"
+                "description": "Validated at runtime by contentVersionSchema.prefault({}).",
+                "x-codey-zod-schema": "contentVersionSchema.prefault({})"
               }
             }
           }

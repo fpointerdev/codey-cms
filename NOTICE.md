@@ -17,6 +17,11 @@ does not modify the GPL or add restrictions to the rights granted by it.
 Third-party packages and assets remain subject to their respective copyright
 notices and license terms. CodeY CMS does not claim ownership of them.
 
+The optional self-host HTTPS image builds standard Caddy with pinned upstream
+dependencies. Caddy and Smallstep retain their Apache-2.0 terms; see
+`integrations/caddy/README.md` for sources and the locked module graph. This
+separate service does not change the CMS license.
+
 The optional browser visual runtimes include the following MIT-licensed
 software:
 

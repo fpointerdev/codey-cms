@@ -27,6 +27,23 @@ test("backup requests require a live worker and reject stale or future heartbeat
   });
 });
 
+test("backup requests and artifacts can use separate directories", async () => {
+  await fixture(async (control) => fixture(async (artifacts) => {
+    const config = { backup: { dir: artifacts, controlDir: control, encrypted: true } } as AppConfig;
+    const service = new BackupControlService(config);
+    await writeBackupHeartbeat(control, false);
+    await service.request();
+    await runRequestedBackup(control, async () => {
+      await writeFile(path.join(artifacts, "latest.json"), JSON.stringify({
+        status: "success", encrypted: true, backupId: "isolated", completedAt: new Date().toISOString()
+      }));
+      return true;
+    }, false, artifacts);
+    assert.equal((await service.status()).backupId, "isolated");
+    await assert.rejects(readFile(path.join(control, "latest.json")), { code: "ENOENT" });
+  }));
+});
+
 test("container healthcheck rejects a missing or stale worker heartbeat", async () => {
   await fixture(async (directory) => {
     const check = () => promisify(execFile)(process.execPath, ["scripts/check-backup-worker.mjs"], {

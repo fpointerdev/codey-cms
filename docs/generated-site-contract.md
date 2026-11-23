@@ -112,6 +112,23 @@ CMS content, restarts the backend, and requires the edited marker in HTML with
 `data-server-rendered="true"`. Encrypted backup and restore remain part of the
 same qualification.
 
+The self-host Compose package separates `backend` (public API), `supervisor`
+(migrations and signed updates), and `backup` (scheduled/requested snapshots).
+Generated WebsiteSpec mounts and apply-on-start variables remain on `backend`;
+no WebsiteSpec or acceptance version change is required. Operators must keep the
+packaged service/volume boundaries: the API receives only runtime credentials
+and read-only releases/backups. The qualifier also checks these mount and secret
+restrictions. See [Self-host installation](self-host-installation.md) for existing
+installation upgrades. Send uncompressed JSON: auth/install bodies are capped
+at 16 KB, ordinary API bodies at 256 KB, and authenticated CMS/product/generation writes
+retain `STORAGE_UPLOAD_BODY_LIMIT`.
+
+Preserve the complete packaged Docker build context, including
+`Dockerfile.postgres`, `Dockerfile.caddy`, and `integrations/caddy`. The public
+proxy uses standard Caddy with pinned patched dependencies; substituting the
+unpatched upstream image would undo that security update. No new customer key,
+WebsiteSpec field, or CMS version choice is needed.
+
 The report is JSON with contract name `codey-cms.exported-site-acceptance` and
 schema version `1`. CodeY must accept only `status: "passed"` and
 `release.signatureVerified: true`. Explicit unsigned local qualification is

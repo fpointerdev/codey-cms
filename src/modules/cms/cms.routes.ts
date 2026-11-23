@@ -320,7 +320,7 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/pages/:slug/publish",
     requirePermission(context, "update", "cms"),
-    validateRequest({ params: slugParams, query: localeQuerySchema, body: contentVersionSchema.default({}) }),
+    validateRequest({ params: slugParams, query: localeQuerySchema, body: contentVersionSchema.prefault({}) }),
     asyncHandler(async (req, res) => {
       const page = await cmsService.publishPage(
         req.params.slug,
@@ -336,7 +336,7 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/pages/:slug/archive",
     requirePermission(context, "update", "cms"),
-    validateRequest({ params: slugParams, query: localeQuerySchema, body: contentVersionSchema.default({}) }),
+    validateRequest({ params: slugParams, query: localeQuerySchema, body: contentVersionSchema.prefault({}) }),
     asyncHandler(async (req, res) => {
       const page = await cmsService.archivePage(
         req.params.slug,
@@ -381,7 +381,7 @@ export function registerCmsRoutes(router: Router, context: ModuleContext) {
   router.post(
     "/pages/:slug/revisions/:revisionId/restore",
     requirePermission(context, "update", "cms"),
-    validateRequest({ params: revisionParams, query: localeQuerySchema, body: contentVersionSchema.default({}) }),
+    validateRequest({ params: revisionParams, query: localeQuerySchema, body: contentVersionSchema.prefault({}) }),
     asyncHandler(async (req, res) => {
       const page = await cmsService.restoreRevision(
         req.params.slug,

@@ -44,12 +44,13 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 const interval = intervalMilliseconds();
-const directory = path.resolve(process.env.BACKUP_DIR || "backups");
+const artifactDirectory = path.resolve(process.env.BACKUP_DIR || "backups");
+const directory = path.resolve(process.env.BACKUP_CONTROL_DIR || artifactDirectory);
 let nextBackup = 0;
 while (!controller.signal.aborted) {
   await writeBackupHeartbeat(directory, false);
   try {
-    if (await runRequestedBackup(directory, runBackup, Date.now() >= nextBackup)) {
+    if (await runRequestedBackup(directory, runBackup, Date.now() >= nextBackup, artifactDirectory)) {
       nextBackup = Date.now() + interval;
     }
   } catch (error) {

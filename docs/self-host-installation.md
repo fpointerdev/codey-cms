@@ -29,6 +29,21 @@ Docker volumes preserve:
 
 Running the launcher again reuses these values. It does not rotate secrets or create another owner.
 
+The public API has no database-owner password or backup encryption key. Private
+`supervisor` and `backup` services handle migrations, signed updates, and recovery.
+The API can read backup health and request a backup, but cannot overwrite backup
+archives or installed runtime code. These services have no public ports or Docker
+socket access. Customer payment, email, and storage settings remain in the admin
+dashboard, encrypted in the database.
+
+Existing installations must apply the signed runtime update and refresh the
+packaged Compose files/image to receive this container isolation. A runtime-only
+update cannot remove mounts from an already running container. Wait for Updates
+to show no in-progress update, take a verified backup, then run the new launcher
+from the same installation directory with the same Compose project name. Keep
+all existing volumes. Move any backup-mirror override from `backend` to
+`supervisor`; keep it on `backup` too. Never reset the database or remove volumes.
+
 ## Public Domain With Automatic HTTPS
 
 Point the domain's DNS A/AAAA records to the server, allow inbound ports 80 and 443, then run:
@@ -44,6 +59,11 @@ start-codey.cmd --domain www.example.com
 ```
 
 The launcher adds the packaged Caddy service, obtains and renews the TLS certificate, configures the HTTPS public URL and CORS origin, and trusts exactly one proxy hop. The direct CodeY port binds only to localhost; PostgreSQL, runtime volumes, and Docker control access remain private. Certificate issuance requires correct public DNS and reachable ports 80 and 443.
+
+The first launch builds the pinned, patched Caddy and PostgreSQL images; this can
+take several minutes. No Go installation or dependency choices are required on
+the host. Keep `integrations/caddy` and both packaged Dockerfiles when moving or
+exporting an installation. Existing database and certificate volumes are reused.
 
 Existing reverse-proxy installations can continue setting `APP_PUBLIC_URL`, `CORS_ORIGINS`, `CODEY_ALLOW_LOCAL_SETUP_HTTP=false`, and an exact `TRUST_PROXY` hop count in their environment or Compose override without using `--domain`.
 
@@ -73,13 +93,13 @@ Never add `-v` to `docker compose down` unless the database, secrets, uploads, b
 
 The default package immediately writes encrypted backups to two local Docker volumes. This keeps first setup automatic, but **Settings > Updates** reports that off-site protection needs attention until the mirror is stored somewhere independent.
 
-Before production handoff, mount `/app/backups-mirror` from both `backend` and `backup` onto a NAS, removable drive, or cloud-synchronized directory with `docker-compose.override.yml`. Test a restore, then add `BACKUP_OFFSITE_PROTECTED=true` to the installation `.env`. A backup on the same disk is not disaster recovery, and CodeY will not report it as protected.
+Before production handoff, mount `/app/backups-mirror` from both `supervisor` and `backup` onto a NAS, removable drive, or cloud-synchronized directory with `docker-compose.override.yml`. Test a restore, then add `BACKUP_OFFSITE_PROTECTED=true` to the installation `.env`. A backup on the same disk is not disaster recovery, and CodeY will not report it as protected.
 
 Example override, using an independently protected host directory:
 
 ```yaml
 services:
-  backend:
+  supervisor:
     volumes:
       - /absolute/path/to/codey-offsite:/app/backups-mirror
   backup:
@@ -99,7 +119,7 @@ backup worker is connected. This queues the same encrypted backup without
 opening a terminal. Operators can also invoke it directly:
 
 ```bash
-docker compose -f docker-compose.selfhost.yml exec backend \
+docker compose -f docker-compose.selfhost.yml exec supervisor \
   node scripts/run-with-runtime-secrets.mjs -- node scripts/backup-runtime.mjs
 ```
 

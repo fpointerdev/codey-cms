@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { patchSchema } from "../../core/http/patch-schema.js";
 
 const identifierSchema = z
   .string()
@@ -168,8 +169,7 @@ function validateCollectionFields(
 
 export const createContentCollectionSchema = collectionShape.superRefine(validateCollectionFields);
 
-export const updateContentCollectionSchema = collectionShape
-  .partial()
+export const updateContentCollectionSchema = patchSchema(collectionShape)
   .extend({
     description: z.string().trim().max(500).nullable().optional()
   })
@@ -188,7 +188,7 @@ export const contentEntryRevisionParams = contentEntryParams.extend({
   revisionId: z.string().trim().min(1).max(120)
 });
 
-const entryDataSchema = z.record(z.unknown()).superRefine((value, context) => {
+const entryDataSchema = z.record(z.string(), z.unknown()).superRefine((value, context) => {
   if (Buffer.byteLength(JSON.stringify(value), "utf8") > 256 * 1024) {
     context.addIssue({
       code: z.ZodIssueCode.custom,

@@ -103,6 +103,9 @@ async function resolveInput() {
   if (password.length < 12 || password.length > 128) {
     throw new Error("Admin password must be between 12 and 128 characters.");
   }
+  if (Buffer.byteLength(password, "utf8") > 72) {
+    throw new Error("Admin password is too long. Use fewer characters (maximum 72 UTF-8 bytes).");
+  }
   if (process.env.NODE_ENV === "production" && (
     email.toLowerCase() === "admin@example.com" || password === "ChangeMe123!"
   )) {

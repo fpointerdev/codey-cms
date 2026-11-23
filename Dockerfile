@@ -1,4 +1,4 @@
-FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS base
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS base
 
 WORKDIR /app
 
@@ -8,14 +8,14 @@ ENV XDG_CACHE_HOME=/runtime/xdg-cache
 ENV XDG_CONFIG_HOME=/runtime/xdg-config
 ENV XDG_DATA_HOME=/runtime/xdg-data
 
-ARG CODEY_APK_OPENSSL_VERSION=3.5.8-r0
-ARG CODEY_APK_POSTGRESQL16_CLIENT_VERSION=16.15-r0
+ARG CODEY_APK_OPENSSL_VERSION=3.5.9-r1
+ARG CODEY_APK_POSTGRESQL16_CLIENT_VERSION=16.16-r0
 
 RUN apk add --no-cache \
   "openssl=${CODEY_APK_OPENSSL_VERSION}" \
   "postgresql16-client=${CODEY_APK_POSTGRESQL16_CLIENT_VERSION}" \
   && corepack enable \
-  && corepack prepare pnpm@11.18.0 --activate
+  && corepack prepare pnpm@11.29.0 --activate
 
 FROM base AS development
 
@@ -47,7 +47,8 @@ LABEL org.opencontainers.image.title="CodeY CMS" \
   org.opencontainers.image.licenses="GPL-2.0-or-later"
 
 RUN addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 api
+  && adduser --system --uid 1001 api \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY --from=builder --chown=api:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=api:nodejs /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
@@ -60,8 +61,8 @@ COPY --from=builder --chown=api:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=api:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=api:nodejs /app/runtime-meta ./runtime-meta
 
-RUN mkdir -p storage/uploads backups backups-mirror /runtime/corepack /runtime/pnpm /runtime/xdg-cache /runtime/xdg-config /runtime/xdg-data \
-  && chown -R api:nodejs storage backups backups-mirror /runtime
+RUN mkdir -p storage/uploads backups backups-mirror backup-control /runtime/control /runtime/updates /runtime/corepack /runtime/pnpm /runtime/xdg-cache /runtime/xdg-config /runtime/xdg-data \
+  && chown -R api:nodejs storage backups backups-mirror backup-control /runtime
 
 USER api
 

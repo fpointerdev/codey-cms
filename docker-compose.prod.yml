@@ -99,7 +99,9 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}

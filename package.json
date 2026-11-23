@@ -1,6 +1,6 @@
 {
   "name": "codey-cms",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "author": "CodeY CMS contributors",
   "license": "GPL-2.0-or-later",
   "repository": {
@@ -9,7 +9,7 @@
   },
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.18.0",
+  "packageManager": "pnpm@11.29.0",
   "engines": {
     "node": ">=24 <25",
     "pnpm": ">=11 <12"
@@ -42,6 +42,7 @@
     "inventory:reconcile": "tsx scripts/inventory-reconcile.ts",
     "release:preflight": "pnpm run release:containers && node scripts/release-preflight.mjs",
     "release:containers": "node scripts/validate-container-pins.mjs",
+    "release:caddy": "node scripts/qualify-caddy.mjs",
     "release:launchers": "node scripts/validate-platform-launcher.mjs",
     "release:build": "pnpm run build && node scripts/build-release.mjs",
     "release:verify": "node scripts/verify-release.mjs",
@@ -50,6 +51,7 @@
     "lint": "eslint apps/web/web scripts src test",
     "typecheck": "pnpm prisma:generate && tsc --noEmit",
     "audit": "node scripts/audit-production-dependencies.mjs",
+    "audit:containers": "node scripts/audit-container-images.mjs",
     "api:generate": "node scripts/generate-openapi.mjs",
     "api:check": "node scripts/generate-openapi.mjs --check",
     "db:schema": "node scripts/build-prisma-schema.mjs",
@@ -69,26 +71,26 @@
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
-    "compression": "^1.8.1",
+    "compression": "^1.8.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
-    "express": "^4.22.2",
+    "express": "^4.22.3",
     "express-rate-limit": "^7.5.1",
     "helmet": "^8.3.0",
     "jose": "^5.10.0",
-    "nodemailer": "9.1.1",
+    "nodemailer": "10.6.1",
     "pino": "^9.14.0",
     "pino-http": "^10.5.0",
     "prisma": "^6.19.3",
-    "sanitize-html": "^2.17.7",
-    "sharp": "^0.35.4",
-    "zod": "^3.25.76"
+    "sanitize-html": "^2.18.0",
+    "sharp": "^0.35.5",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@lhci/cli": "^0.15.1",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@playwright/test": "^1.63.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.8.1",

@@ -22,6 +22,36 @@ Use this checklist before a generated site is published.
 - `SECURITY_AUDIT_KEY` is stored outside the database, and old values remain in `SECURITY_AUDIT_PREVIOUS_KEYS` for the required verification-retention period.
 - `BACKUP_REQUIRED=true`, `BACKUP_REQUIRE_ENCRYPTION=true`, and a unique `BACKUP_ENCRYPTION_KEY` are set.
 - S3 versioning or replication has been tested before `BACKUP_S3_MEDIA_PROTECTED=true` is set.
+- The self-host API mounts only runtime secrets and read-only backups/releases. Database-owner and backup keys belong to the private supervisor/backup services, not `backend`.
+- New passwords are limited to 72 UTF-8 bytes before bcrypt hashing; existing password hashes remain valid. Multibyte characters can reach this limit before 72 characters.
+
+## Release Checks
+
+- Run `pnpm run audit` with the committed lockfile and review all advisories. The audit includes the bundled MCP SDK, Motion, and Three.js, not just the CMS server's production dependencies.
+- Run `pnpm audit:containers` with Docker. It builds and scans CMS, MCP, hardened PostgreSQL, and patched Caddy images with a digest-pinned Trivy scanner. High/critical findings (including unfixed findings) and scanner errors block publication. Reports are retained under `.release/container-security` and in CI artifacts.
+- `Dockerfile.postgres` retains the official PostgreSQL 16 entrypoint and data directory. It pins the XML library fix and Alpine's smaller privilege helper, without changing the database major version or deleting data. Keep its package pins and `runtime-meta/container-images.json` synchronized.
+- CI runs this image gate before publishing a release; the scheduled Security workflow repeats it against current vulnerability data. Digest pinning alone is not a vulnerability check.
+- Review Dependabot major-version proposals instead of hiding them. Merge only after the complete compatibility and release gates pass.
+
+### Caddy Build
+
+The standard Caddy entrypoint is rebuilt with a locked graph that removes
+vulnerable JOSE v3 via an exact upstream Smallstep commit and updates Go networking.
+See [build provenance](../integrations/caddy/README.md). `pnpm release:caddy`
+verifies TLS with a test CA, redirects, compression, POST forwarding and restart
+behavior. No scanner exclusions or TLS-verification bypasses are permitted.
+Runtime-only updates cannot replace Caddy; refresh the packaged images too.
+
+## Request Limits
+
+Authentication and installation JSON requests are limited to 16 KB; ordinary API
+JSON to 256 KB; payment webhooks to 1 MB. CMS/product content, media uploads, and generation
+validate/apply requests retain `STORAGE_UPLOAD_BODY_LIMIT`, but authenticate before
+parsing the larger body. URL-encoded forms are capped at 16 KB, 100 parameters,
+and five nesting levels. Compressed request bodies are rejected; response
+compression remains enabled. Only payment webhooks retain raw bytes for signature
+verification. Generators must send uncompressed JSON and use authenticated
+content endpoints or signed media-upload URLs for larger payloads.
 
 ## Content And Access
 

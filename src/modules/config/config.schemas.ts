@@ -4,7 +4,7 @@ import type { ModuleId } from "../../core/types/module.js";
 import { defaultDesignSystemSettings } from "./site-design.js";
 
 const moduleIds = Object.keys(moduleCatalog);
-export const backupRequestSchema = z.object({}).strict().default({});
+export const backupRequestSchema = z.object({}).strict().prefault({});
 const hostnamePattern =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 const verificationTokenPattern = /^[a-zA-Z0-9_-]+$/;
@@ -36,7 +36,7 @@ export const moduleLifecycleParams = moduleIdParams.extend({
 });
 
 export const moduleSettingsSchema = z.object({
-  settings: z.record(z.unknown())
+  settings: z.record(z.string(), z.unknown())
 });
 
 const domainTypes = ["PLATFORM_SUBDOMAIN", "CUSTOM"] as const;
@@ -62,7 +62,7 @@ export const createSiteDomainSchema = z
     type: z.enum(domainTypes).default("CUSTOM"),
     status: z.enum(domainStatuses).optional(),
     isPrimary: z.boolean().default(false),
-    metadata: z.record(z.unknown()).optional()
+    metadata: z.record(z.string(), z.unknown()).optional()
   })
   .superRefine((value, context) => {
     if (value.type === "CUSTOM" && !value.hostname) {
@@ -77,7 +77,7 @@ export const createSiteDomainSchema = z
 export const updateSiteDomainSchema = z.object({
   status: z.enum(domainStatuses).optional(),
   isPrimary: z.boolean().optional(),
-  metadata: z.record(z.unknown()).nullable().optional()
+  metadata: z.record(z.string(), z.unknown()).nullable().optional()
 });
 
 export const auditLogQuerySchema = z.object({

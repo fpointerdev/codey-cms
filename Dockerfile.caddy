@@ -1,0 +1,11 @@
+FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS builder
+
+WORKDIR /source
+ENV GOTOOLCHAIN=local CGO_ENABLED=0
+COPY integrations/caddy/go.mod integrations/caddy/go.sum ./
+RUN go mod download && go mod verify
+COPY integrations/caddy/main.go ./
+RUN go build -mod=readonly -trimpath -tags=nobadger,nomysql,nopgx -ldflags="-s -w" -o /out/caddy .
+
+FROM caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+COPY --from=builder /out/caddy /usr/bin/caddy
