@@ -37,7 +37,7 @@ function orderItemSchema(maxItemQuantity: number) {
     productId: z.string().cuid(),
     variantId: z.string().cuid().optional(),
     quantity: z.number().int().positive().max(maxItemQuantity),
-    metadata: z.record(z.unknown()).optional()
+    metadata: z.record(z.string(), z.unknown()).optional()
   });
 }
 
@@ -79,7 +79,7 @@ function orderSchema(maxItemQuantity: number, maxOrderItems: number) {
     shippingAddress: shippingAddressSchema.optional(),
     shippingRateId: z.string().cuid().optional(),
     couponCode: z.string().trim().min(1).max(80).optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     items: z.array(orderItemSchema(maxItemQuantity)).min(1).max(maxOrderItems)
   }).superRefine(validateShippingSelection);
 }
@@ -117,7 +117,7 @@ export const createCartSchema = z.object({
   couponCode: z.string().trim().min(1).max(80).optional(),
   shippingCountry: z.string().trim().length(2).optional(),
   shippingRateId: z.string().cuid().optional(),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.string(), z.unknown()).optional()
 });
 
 export const addCartItemSchema = defaultCheckoutSchemas.addCartItem;
@@ -132,7 +132,7 @@ export const checkoutCartSchema = z.object({
   shippingAddress: shippingAddressSchema.optional(),
   shippingRateId: z.string().cuid().optional(),
   couponCode: z.string().trim().min(1).max(80).optional(),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.string(), z.unknown()).optional()
 }).superRefine(validateShippingSelection);
 
 export const lookupOrderSchema = z.object({

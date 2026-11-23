@@ -6,8 +6,8 @@ x-codey-image: &codey-image
     context: .
     target: production
     args:
-      CODEY_APK_OPENSSL_VERSION: ${CODEY_APK_OPENSSL_VERSION:-3.5.8-r0}
-      CODEY_APK_POSTGRESQL16_CLIENT_VERSION: ${CODEY_APK_POSTGRESQL16_CLIENT_VERSION:-16.15-r0}
+      CODEY_APK_OPENSSL_VERSION: ${CODEY_APK_OPENSSL_VERSION:-3.5.9-r1}
+      CODEY_APK_POSTGRESQL16_CLIENT_VERSION: ${CODEY_APK_POSTGRESQL16_CLIENT_VERSION:-16.16-r0}
 
 x-runtime-environment: &runtime-environment
   NODE_ENV: production
@@ -33,6 +33,7 @@ x-runtime-environment: &runtime-environment
   AUTH_RECOVERY_TOKEN_DELIVERY: disabled
   CODEY_SEED_DEMO_CONTENT: ${CODEY_SEED_DEMO_CONTENT:-false}
   BACKUP_DIR: /app/backups
+  BACKUP_CONTROL_DIR: /app/backup-control
   BACKUP_MIRROR_DIR: /app/backups-mirror
   BACKUP_REQUIRE_ENCRYPTION: "true"
   BACKUP_REQUIRED: ${BACKUP_REQUIRED:-true}
@@ -61,12 +62,16 @@ services:
       disable: true
     environment:
       CODEY_SECRET_DIR: /run/codey-secrets
+      CODEY_API_SECRET_DIR: /run/codey-api-secrets
     volumes:
       - codey_secrets:/run/codey-secrets
+      - codey_api_secrets:/run/codey-api-secrets
     restart: "no"
 
   postgres:
-    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     command:
       - postgres
       - -c
@@ -101,16 +106,18 @@ services:
 
   backend:
     <<: *codey-image
-    command: ["node", "scripts/selfhost-supervisor.mjs"]
+    command: ["node", "scripts/selfhost-api-runner.mjs"]
     environment:
       <<: *runtime-environment
       CODEY_SECRET_DIR: /run/codey-secrets
     volumes:
-      - codey_secrets:/run/codey-secrets:ro
+      - codey_api_secrets:/run/codey-secrets:ro
       - codey_uploads:/app/storage/uploads
-      - codey_backups:/app/backups
-      - codey_backup_mirror:/app/backups-mirror
-      - codey_runtime:/runtime
+      - codey_backups:/app/backups:ro
+      - codey_backup_control:/app/backup-control
+      - codey_runtime:/runtime:ro
+      - codey_update_staging:/runtime/updates
+      - codey_runtime_control:/runtime/control
     ports:
       - "127.0.0.1:${API_PORT:-4000}:4000"
     depends_on:
@@ -129,6 +136,46 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
 
+  supervisor:
+    <<: *codey-image
+    command: ["node", "scripts/selfhost-supervisor.mjs"]
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-update-supervisor.mjs"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    environment:
+      <<: *runtime-environment
+      CODEY_SECRET_DIR: /run/codey-secrets
+      CODEY_EXTERNAL_RUNTIME: "true"
+    volumes:
+      - codey_secrets:/run/codey-secrets:ro
+      - codey_uploads:/app/storage/uploads
+      - codey_backups:/app/backups
+      - codey_backup_mirror:/app/backups-mirror
+      - codey_runtime:/runtime
+      - codey_update_staging:/runtime/updates
+      - codey_runtime_control:/runtime/control
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    stop_grace_period: 30s
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+
   backup:
     <<: *codey-image
     command: ["node", "scripts/run-with-runtime-secrets.mjs", "--", "node", "scripts/backup-scheduler.mjs"]
@@ -146,6 +193,7 @@ services:
       - codey_uploads:/app/storage/uploads:ro
       - codey_backups:/app/backups
       - codey_backup_mirror:/app/backups-mirror
+      - codey_backup_control:/app/backup-control
     depends_on:
       secrets:
         condition: service_completed_successfully
@@ -171,3 +219,7 @@ volumes:
   codey_backups:
   codey_backup_mirror:
   codey_runtime:
+  codey_api_secrets:
+  codey_backup_control:
+  codey_update_staging:
+  codey_runtime_control:

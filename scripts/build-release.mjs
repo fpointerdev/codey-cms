@@ -116,9 +116,15 @@ try {
       containerImages: {
         node: containerImages.node,
         postgres: containerImages.postgres,
-        caddy: containerImages.caddy
+        caddy: containerImages.caddy,
+        golang: containerImages.golang
       },
       apkPackages: containerImages.apkPackages,
+      postgresApkPackages: containerImages.postgresApkPackages,
+      caddyBuild: {
+        goModSha256: sha256Content(await readFile(path.join(root, "integrations/caddy/go.mod"))),
+        goSumSha256: sha256Content(await readFile(path.join(root, "integrations/caddy/go.sum")))
+      },
       dependencyLockSha256,
       sbom: "SBOM.cdx.json"
     }
@@ -133,7 +139,8 @@ try {
     containerImages: {
       node: containerImages.node,
       postgres: containerImages.postgres,
-      caddy: containerImages.caddy
+      caddy: containerImages.caddy,
+      golang: containerImages.golang
     },
     apkPackages: containerImages.apkPackages
   }, root);
@@ -144,7 +151,8 @@ try {
     containerImages: {
       node: containerImages.node,
       postgres: containerImages.postgres,
-      caddy: containerImages.caddy
+      caddy: containerImages.caddy,
+      golang: containerImages.golang
     },
     apkPackages: containerImages.apkPackages,
     lockfileSha256: dependencyLockSha256
@@ -225,6 +233,8 @@ function releaseFiles() {
     ".dockerignore",
     "Caddyfile",
     "Dockerfile",
+    "Dockerfile.postgres",
+    "Dockerfile.caddy",
     "LICENSE",
     "NOTICE.md",
     "README.md",
@@ -235,6 +245,7 @@ function releaseFiles() {
     "docker-compose.selfhost.yml",
     "docs",
     "extensions",
+    "integrations/caddy",
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",

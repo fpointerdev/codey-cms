@@ -115,6 +115,8 @@ const envSchema = z.object({
   STORAGE_QUOTA_SHOP_MB: z.coerce.number().positive().default(5120),
   STORAGE_QUOTA_SAAS_MB: z.coerce.number().positive().default(2048),
   BACKUP_DIR: z.string().trim().min(1).default("backups"),
+  BACKUP_CONTROL_DIR: optionalStringFromEnv,
+  BACKUP_WORKER_MANAGED: booleanFromEnv.default(false),
   BACKUP_MIRROR_DIR: optionalStringFromEnv,
   BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().max(3650).default(30),
   BACKUP_INTERVAL_HOURS: z.coerce.number().positive().max(168).default(24),
@@ -152,7 +154,10 @@ const envSchema = z.object({
     }
   }
 
-  if (value.BACKUP_REQUIRE_ENCRYPTION && !value.BACKUP_ENCRYPTION_KEY) {
+  if (value.BACKUP_WORKER_MANAGED && !value.SELF_HOSTED) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["BACKUP_WORKER_MANAGED"], message: "Managed backup workers require SELF_HOSTED=true." });
+  }
+  if (value.BACKUP_REQUIRE_ENCRYPTION && !value.BACKUP_ENCRYPTION_KEY && !value.BACKUP_WORKER_MANAGED) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["BACKUP_ENCRYPTION_KEY"],

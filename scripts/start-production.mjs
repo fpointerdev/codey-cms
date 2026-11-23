@@ -4,26 +4,34 @@ import { readFile, readlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootArgument = process.argv.indexOf("--runtime-root");
+const root = rootArgument >= 0
+  ? path.resolve(process.argv[rootArgument + 1])
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const prepareOnly = process.argv.includes("--prepare-only");
+const serveOnly = process.argv.includes("--serve-only");
+if (prepareOnly && serveOnly) throw new Error("Select preparation or serving, not both.");
 const migrationDatabaseUrl = process.env.MIGRATION_DATABASE_URL;
 let databaseMayHaveChanged = false;
 
 try {
-  run(process.execPath, ["scripts/build-prisma-schema.mjs"]);
-  databaseMayHaveChanged = true;
-  run(process.execPath, [
-    "node_modules/prisma/build/index.js",
-    "migrate",
-    "deploy",
-    "--schema",
-    "prisma/generated/schema.prisma"
-  ], {
-    ...process.env,
-    DATABASE_URL: process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL
-  });
+  if (!serveOnly) {
+    run(process.execPath, ["scripts/build-prisma-schema.mjs"]);
+    databaseMayHaveChanged = true;
+    run(process.execPath, [
+      "node_modules/prisma/build/index.js",
+      "migrate",
+      "deploy",
+      "--schema",
+      "prisma/generated/schema.prisma"
+    ], {
+      ...process.env,
+      DATABASE_URL: process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL
+    });
 
-  if (process.env.CODEY_MANAGE_RUNTIME_DB_ROLE === "true") {
-    run(process.execPath, ["scripts/configure-runtime-database-role.mjs"]);
+    if (process.env.CODEY_MANAGE_RUNTIME_DB_ROLE === "true") {
+      run(process.execPath, ["scripts/configure-runtime-database-role.mjs"]);
+    }
   }
   delete process.env.MIGRATION_DATABASE_URL;
 
@@ -34,7 +42,7 @@ try {
   const exportApplyScript = path.join(root, "scripts", "apply-export-website-spec.mjs");
 
   if (
-    process.env.CODEY_EXPORT_APPLY_ON_START !== "false" &&
+    !prepareOnly && process.env.CODEY_EXPORT_APPLY_ON_START !== "false" &&
     existsSync(exportSpecPath) &&
     existsSync(exportApplyScript)
   ) {
@@ -47,8 +55,9 @@ try {
     throw new Error(`Compiled server entry was not found at ${path.relative(root, serverEntry)}.`);
   }
 
-  await startServer(serverEntry);
+  if (!prepareOnly) await startServer(serverEntry);
 } catch (error) {
+  if (serveOnly) throw error;
   if (!databaseMayHaveChanged || !await recoverApplyingUpdate(error)) throw error;
   throw new Error("The updated runtime failed before readiness; its pre-update database backup was restored.", {
     cause: error

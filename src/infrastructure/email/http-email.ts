@@ -378,7 +378,7 @@ function smtpTransportOptions(config: EmailDeliveryConfig): SMTPTransport.Option
     options.getSocket = (_transportOptions, callback) => {
       void resolveSafeSmtpHost(config.smtpHost!)
         .then(({ addresses }) => connectApprovedSmtpAddress(addresses, config))
-        .then((socketOptions) => callback(null, socketOptions), (error) => callback(error as Error, null));
+        .then((socketOptions) => callback(null, socketOptions), (error) => callback(error as Error));
     };
   }
   return options;

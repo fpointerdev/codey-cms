@@ -74,7 +74,7 @@ export function writeBackupHeartbeat(directory, running, now = Date.now()) {
   return writeJson(directory, "backup-worker.json", { updatedAt: new Date(now).toISOString(), running });
 }
 
-export async function runRequestedBackup(directory, run, scheduled = false) {
+export async function runRequestedBackup(directory, run, scheduled = false, artifactDirectory = directory) {
   const request = await readJson(directory, "requested-backup.json");
   if (!request && !scheduled) return false;
   if (request) {
@@ -94,7 +94,7 @@ export async function runRequestedBackup(directory, run, scheduled = false) {
   try {
     let succeeded = false;
     try { succeeded = await run({ requested: Boolean(request) }); } catch { /* A failed worker must leave a recoverable result. */ }
-    const latest = await readJson(directory, "latest.json").catch(() => null);
+    const latest = await readJson(artifactDirectory, "latest.json").catch(() => null);
     succeeded = succeeded && latest?.status === "success" && Date.parse(latest.completedAt) >= startedAt && (!request || latest.encrypted === true);
     if (request) {
       await writeJson(directory, "backup-request-status.json", {

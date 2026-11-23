@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { newPasswordSchema } from "../../core/security/password.js";
 
 export const completeInstallationSchema = z
   .object({
@@ -10,7 +11,7 @@ export const completeInstallationSchema = z
       .object({
         name: z.string().trim().min(1).max(120),
         email: z.string().email().max(254),
-        password: z.string().min(12).max(128)
+        password: newPasswordSchema(12)
       })
       .strict()
   })

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { patchSchema } from "../../core/http/patch-schema.js";
 
 export const slugParams = z.object({
   slug: z.string().trim().min(1).max(180)
@@ -60,7 +61,7 @@ export const menuItemParams = menuParams.extend({
   itemId: z.string().trim().min(1)
 });
 
-const jsonObjectSchema = z.record(z.unknown());
+const jsonObjectSchema = z.record(z.string(), z.unknown());
 
 const contentBlockTypeSchema = z.enum([
   "TEXT",
@@ -168,7 +169,7 @@ export const contentBlockSchema = z.object({
   type: contentBlockTypeSchema,
   label: z.string().trim().min(1).max(120).optional(),
   value: z.unknown(),
-  settings: jsonObjectSchema.optional().default({}),
+  settings: jsonObjectSchema.optional().prefault({}),
   sortOrder: z.number().int().min(0).default(0),
   editable: z.boolean().default(true),
   mediaAssetId: z.string().trim().min(1).optional()
@@ -178,7 +179,7 @@ export const pageSectionSchema = z.object({
   key: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(160).optional(),
   sortOrder: z.number().int().min(0).default(0),
-  settings: sectionSettingsSchema.default({}),
+  settings: sectionSettingsSchema.prefault({}),
   blocks: z.array(contentBlockSchema).default([])
 });
 
@@ -188,7 +189,7 @@ const sectionTemplateContentSchema = z.object({
 
 const pageTemplateContentSchema = z.object({
   excerpt: z.string().trim().max(500).optional(),
-  content: jsonObjectSchema.default({}),
+  content: jsonObjectSchema.prefault({}),
   sections: z.array(pageSectionSchema).default([])
 });
 
@@ -219,7 +220,7 @@ export const createCmsPageSchema = z.object({
   locale: z.string().trim().toLowerCase().min(2).max(16).optional(),
   translationGroupId: z.string().trim().min(1).max(120).nullable().optional(),
   excerpt: z.string().trim().max(500).optional(),
-  content: jsonObjectSchema.default({}),
+  content: jsonObjectSchema.prefault({}),
   metaTitle: z.string().trim().max(180).optional(),
   metaDescription: z.string().trim().max(300).optional(),
   seo: jsonObjectSchema.optional(),
@@ -232,7 +233,7 @@ export const contentVersionSchema = z.object({
   expectedUpdatedAt: z.string().datetime({ offset: true }).optional()
 });
 
-export const updateCmsPageSchema = createCmsPageSchema.partial().extend({
+export const updateCmsPageSchema = patchSchema(createCmsPageSchema).extend({
   ...contentVersionSchema.shape,
   sections: z.array(pageSectionSchema).optional()
 });
@@ -252,7 +253,7 @@ export const createCmsPostSchema = createCmsPageSchema.omit({ sections: true }).
   categorySlugs: z.array(z.string().trim().min(1).max(120)).default([])
 });
 
-export const updateCmsPostSchema = createCmsPostSchema.partial().extend(contentVersionSchema.shape);
+export const updateCmsPostSchema = patchSchema(createCmsPostSchema).extend(contentVersionSchema.shape);
 
 export const postQuerySchema = z.object({
   locale: z.string().trim().toLowerCase().min(2).max(16).optional(),
@@ -273,7 +274,7 @@ export const createCmsCategorySchema = z.object({
   description: z.string().trim().max(300).optional()
 });
 
-export const updateCmsCategorySchema = createCmsCategorySchema.partial();
+export const updateCmsCategorySchema = patchSchema(createCmsCategorySchema);
 
 export const addSectionSchema = pageSectionSchema.extend(contentVersionSchema.shape);
 
@@ -304,7 +305,7 @@ export const createMenuItemSchema = z.object({
   openInNewTab: z.boolean().default(false)
 });
 
-export const updateMenuItemSchema = createMenuItemSchema.partial();
+export const updateMenuItemSchema = patchSchema(createMenuItemSchema);
 
 export const redirectResolveQuerySchema = z.object({
   path: z.string().trim().min(1).max(600)
@@ -318,7 +319,7 @@ export const createRedirectSchema = z.object({
   active: z.boolean().default(true)
 });
 
-export const updateRedirectSchema = createRedirectSchema.partial();
+export const updateRedirectSchema = patchSchema(createRedirectSchema);
 
 export const createMediaAssetSchema = z.object({
   kind: z.enum(["IMAGE", "VIDEO", "DOCUMENT", "OTHER"]).default("IMAGE"),
@@ -357,13 +358,13 @@ export const directMediaUploadSchema = z.object({
 
 export const deleteMediaAssetSchema = z.object({
   force: z.boolean().default(false)
-}).default({});
+}).prefault({});
 
 export const cleanupOrphanMediaSchema = z.object({
   dryRun: z.boolean().default(true),
   olderThanDays: z.number().int().min(0).max(365).default(1),
   limit: z.number().int().min(1).max(200).default(50)
-}).default({});
+}).prefault({});
 
 export const contactSubmissionSchema = z.object({
   formKey: z.string().trim().min(1).max(120).default("contact"),

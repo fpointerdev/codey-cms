@@ -8,6 +8,10 @@ const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 try {
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+  // These dependencies ship in MCP/browser bundles, not server node_modules.
+  for (const name of ["@modelcontextprotocol/sdk", "motion", "three"]) {
+    packageJson.dependencies[name] = packageJson.devDependencies[name];
+  }
   delete packageJson.devDependencies;
   delete packageJson.scripts;
   await writeFile(

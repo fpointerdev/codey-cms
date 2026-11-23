@@ -4,7 +4,7 @@ export const createPaymentIntentSchema = z.object({
   orderId: z.string().cuid(),
   provider: z.enum(["STRIPE", "PAYPAL", "MANUAL"]).default("MANUAL"),
   idempotencyKey: z.string().trim().min(8).max(120).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   returnUrl: z.string().trim().url().max(2_000).optional(),
   cancelUrl: z.string().trim().url().max(2_000).optional()
 }).superRefine((input, context) => {

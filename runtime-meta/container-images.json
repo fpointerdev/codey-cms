@@ -1,10 +1,15 @@
 {
   "schemaVersion": 1,
-  "node": "node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd",
-  "postgres": "postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
-  "caddy": "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648",
+  "node": "node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5",
+  "postgres": "postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d",
+  "caddy": "caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0",
+  "golang": "golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18",
+  "postgresApkPackages": {
+    "libxml2": "2.13.9-r3",
+    "su-exec": "0.3-r0"
+  },
   "apkPackages": {
-    "openssl": "3.5.8-r0",
-    "postgresql16-client": "16.15-r0"
+    "openssl": "3.5.9-r1",
+    "postgresql16-client": "16.16-r0"
   }
 }

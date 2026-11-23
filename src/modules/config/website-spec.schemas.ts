@@ -72,7 +72,7 @@ const customValueMaxEntries = 2_000;
 
 const modernBannerVariants = ["glass-interface", "kinetic-product", "floating-product"] as const;
 
-const websiteSpecSectionSettingsSchema = z.record(z.unknown()).superRefine((settings, context) => {
+const websiteSpecSectionSettingsSchema = z.record(z.string(), z.unknown()).superRefine((settings, context) => {
   if (
     settings.bannerVariant !== undefined &&
     !modernBannerVariants.includes(settings.bannerVariant as typeof modernBannerVariants[number])
@@ -191,7 +191,7 @@ export const websiteSpecSectionSchema = z
     galleryMediaKeys: z.array(slugSchema).max(24).default([]),
     productSlugs: z.array(slugSchema).max(100).default([]),
     cta: ctaSchema.optional(),
-    settings: websiteSpecSectionSettingsSchema.default({})
+    settings: websiteSpecSectionSettingsSchema.prefault({})
   })
   .strict()
   .superRefine((section, context) => {
@@ -222,7 +222,7 @@ export const websiteSpecPageSchema = z
         keywords: z.array(z.string().trim().min(1).max(60)).max(20).default([])
       })
       .strict()
-      .default({}),
+      .prefault({}),
     sections: z.array(websiteSpecSectionSchema).min(1).max(30)
   })
   .strict();
@@ -255,7 +255,7 @@ export const websiteSpecProductSchema = z
         keywords: z.array(z.string().trim().min(1).max(60)).max(20).default([])
       })
       .strict()
-      .default({}),
+      .prefault({}),
     category: z
       .object({
         name: z.string().trim().min(1).max(120),
@@ -282,7 +282,7 @@ export const websiteSpecProductSchema = z
           .object({
             name: z.string().trim().min(1).max(120),
             sku: z.string().trim().max(80).optional(),
-            optionValues: z.record(z.unknown()).default({}),
+            optionValues: z.record(z.string(), z.unknown()).prefault({}),
             priceCents: z.number().int().nonnegative().optional(),
             stockQuantity: z.number().int().nonnegative().default(0),
             active: z.boolean().default(true)
@@ -322,7 +322,7 @@ export const websiteSpecSchema = z
         auth: z.boolean().optional()
       })
       .strict()
-      .default({}),
+      .prefault({}),
     style: z
       .object({
         theme: z.string().trim().min(1).max(80),
@@ -341,7 +341,7 @@ export const websiteSpecSchema = z
             body: z.string().trim().max(80).optional()
           })
           .strict()
-          .default({}),
+          .prefault({}),
         experience: z
           .object({
             family: z.string().trim().min(1).max(80),

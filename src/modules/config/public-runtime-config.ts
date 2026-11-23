@@ -23,7 +23,7 @@ const publicLocalizationSettingsSchema = z.object({
   showLanguageSwitcher: z.boolean(),
   languageSwitcherDisplay: z.enum(["buttons", "dropdown"]),
   languageSwitcherLabelStyle: z.enum(["full", "code", "icon"]),
-  strings: z.record(z.record(z.string()))
+  strings: z.record(z.string(), z.record(z.string(), z.string()))
 }).strict();
 
 const publicSiteSettingsSchema = z.object({

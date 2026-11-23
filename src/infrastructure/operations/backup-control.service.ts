@@ -27,7 +27,7 @@ export class BackupControlService {
   }
 
   async status() {
-    const status = await (await this.control()).backupControlStatus(this.config.backup.dir);
+    const status = await (await this.control()).backupControlStatus(this.config.backup.controlDir || this.config.backup.dir);
     return { ...status, canRequest: status.available && !status.busy && this.config.backup.encrypted };
   }
 
@@ -36,7 +36,7 @@ export class BackupControlService {
       throw new AppError(409, "backup_encryption_required", "Encrypted backups must be configured by your hosting provider first.");
     }
     try {
-      return await (await this.control()).requestBackup(this.config.backup.dir);
+      return await (await this.control()).requestBackup(this.config.backup.controlDir || this.config.backup.dir);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "backup_worker_unavailable" || code === "backup_request_cooldown") {

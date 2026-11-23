@@ -13,22 +13,23 @@ export type ModuleLifecycleContext = {
 
 type ModuleLifecycleHandler = (lifecycleContext: ModuleLifecycleContext) => void | Promise<void>;
 
-const lifecycleHandlers: Partial<
-  Record<ModuleId, Partial<Record<ModuleLifecycleHook, ModuleLifecycleHandler>>>
-> = {};
+const lifecycleHandlers = new Map<ModuleId, Map<ModuleLifecycleHook, ModuleLifecycleHandler>>();
 
 export async function runModuleLifecycleHook(
   context: ModuleContext,
   moduleId: ModuleId,
   hook: ModuleLifecycleHook
 ) {
+  if (!Object.hasOwn(moduleCatalog, moduleId)) {
+    throw new AppError(400, "unsupported_module", "Unknown module.");
+  }
   const module = moduleCatalog[moduleId];
 
-  if (!module.lifecycle[hook]) {
+  if (!Object.hasOwn(module.lifecycle, hook) || !module.lifecycle[hook]) {
     throw new AppError(400, "unsupported_module_lifecycle", `${module.label} does not support ${hook}.`);
   }
 
-  const handler = lifecycleHandlers[moduleId]?.[hook];
+  const handler = lifecycleHandlers.get(moduleId)?.get(hook);
 
   if (!handler) {
     context.logger.debug(

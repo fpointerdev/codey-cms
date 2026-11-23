@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sha256File } from "./release-contract.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
@@ -112,6 +113,16 @@ try {
   }
 
   const accessToken = await login(ownerEmail, ownerPassword);
+  await compose(["exec", "-T", "backend", "node", "--input-type=module", "--eval", `
+    import assert from 'node:assert/strict';
+    import { access, writeFile } from 'node:fs/promises';
+    for (const name of ['postgres_password', 'backup_encryption_key']) {
+      await assert.rejects(access('/run/codey-secrets/' + name), { code: 'ENOENT' });
+    }
+    for (const file of ['/app/backups/.isolation-probe', '/runtime/.isolation-probe']) {
+      await assert.rejects(writeFile(file, 'probe'), (error) => ['EROFS', 'EACCES'].includes(error.code));
+    }
+  `]);
   const generatedEdit = await editGeneratedContent(
     accessToken,
     generatedPage.slug,
@@ -174,7 +185,7 @@ try {
   await compose([
     "exec",
     "-T",
-    "backend",
+    "supervisor",
     "node",
     "scripts/run-with-runtime-secrets.mjs",
     "--",
@@ -206,6 +217,7 @@ try {
     throw new Error("The recovery marker remained public after deletion.");
   }
 
+  await compose(["stop", "supervisor"]);
   await compose(["stop", "backend", "backup"]);
   await compose([
     "run",
@@ -217,7 +229,7 @@ try {
     "RESTORE_MEDIA=true",
     "-e",
     "RESTORE_REPLACE_MEDIA=true",
-    "backend",
+    "supervisor",
     "node",
     "scripts/run-with-runtime-secrets.mjs",
     "--",
@@ -225,7 +237,7 @@ try {
     "scripts/restore-runtime.mjs",
     `/app/backups/${latest.manifestFile}`
   ]);
-  await compose(["start", "backend"]);
+  await compose(["start", "backend", "supervisor"]);
   await waitForHttp(`${baseUrl}/api/v1/health/ready`, 120_000);
 
   const restoredPage = await fetch(`${baseUrl}/${slug}`);
@@ -286,7 +298,8 @@ try {
       encryptedBackup: true,
       restoredGeneratedEdit: true,
       restoredRecoveryMarker: true
-    }
+    },
+    isolation: { privateWorkerSecrets: true, readOnlyRuntime: true, readOnlyBackups: true }
   };
 
   if (reportPath) {
@@ -302,7 +315,7 @@ try {
     const diagnostics = [
       await compose(["ps", "-a"], { capture: true, allowFailure: true }),
       await compose(
-        ["logs", "--no-color", "--tail", "200", "secrets", "postgres", "backend", "backup"],
+        ["logs", "--no-color", "--tail", "200", "secrets", "postgres", "backend", "supervisor", "backup"],
         { capture: true, allowFailure: true }
       )
     ].filter(Boolean).join("\n");
@@ -410,7 +423,7 @@ async function editGeneratedContent(accessToken, pageSlug, locale) {
 }
 
 async function assertPackage(directory, expectedVersion, requirePublicKey) {
-  const [runtime, packaged, license, notice, publicKey, caddyfile, publicCompose] = await Promise.all([
+  const [runtime, packaged, license, notice, publicKey, caddyfile, publicCompose, caddyBuild, goModHash, goSumHash] = await Promise.all([
     readJson(path.join(directory, "codey-runtime.json")),
     readJson(path.join(directory, "package.json")),
     readFile(path.join(directory, "LICENSE"), "utf8"),
@@ -421,7 +434,10 @@ async function assertPackage(directory, expectedVersion, requirePublicKey) {
         throw error;
       }),
     readFile(path.join(directory, "Caddyfile"), "utf8"),
-    readFile(path.join(directory, "docker-compose.public.yml"), "utf8")
+    readFile(path.join(directory, "docker-compose.public.yml"), "utf8"),
+    readFile(path.join(directory, "Dockerfile.caddy"), "utf8"),
+    sha256File(path.join(directory, "integrations/caddy/go.mod")),
+    sha256File(path.join(directory, "integrations/caddy/go.sum"))
   ]);
 
   if (runtime?.version !== expectedVersion || runtime?.channel !== "stable") {
@@ -443,7 +459,11 @@ async function assertPackage(directory, expectedVersion, requirePublicKey) {
     runtime.contracts?.automaticTls !== "1.0" ||
     runtime.entrypoints?.publicCompose !== "docker-compose.public.yml" ||
     !caddyfile.includes("reverse_proxy backend:4000") ||
-    !publicCompose.includes(runtime.supplyChain?.containerImages?.caddy || "missing-caddy-image")
+    !publicCompose.includes("dockerfile: Dockerfile.caddy") ||
+    !caddyBuild.includes(runtime.supplyChain?.containerImages?.caddy || "missing-caddy-image") ||
+    !caddyBuild.includes(runtime.supplyChain?.containerImages?.golang || "missing-go-image") ||
+    runtime.supplyChain?.caddyBuild?.goModSha256 !== goModHash ||
+    runtime.supplyChain?.caddyBuild?.goSumSha256 !== goSumHash
   ) {
     throw new Error("The extracted package does not satisfy the automatic HTTPS contract.");
   }

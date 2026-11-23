@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { link, mkdir, open, readFile, unlink } from "node:fs/promises";
+import { link, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const secretDirectory = path.resolve(process.env.CODEY_SECRET_DIR || "/run/codey-secrets");
@@ -16,6 +16,21 @@ await mkdir(secretDirectory, { recursive: true, mode: 0o700 });
 
 for (const [name, bytes] of Object.entries(secrets)) {
   await ensureSecret(name, bytes);
+}
+
+if (process.env.CODEY_API_SECRET_DIR) {
+  const apiDirectory = path.resolve(process.env.CODEY_API_SECRET_DIR);
+  if (apiDirectory === secretDirectory) throw new Error("API secrets must use a separate directory.");
+  await mkdir(apiDirectory, { recursive: true, mode: 0o755 });
+  for (const name of ["postgres_runtime_password", "jwt_access_secret", "credential_encryption_key", "install_token"]) {
+    const temporary = path.join(apiDirectory, `${name}.${randomBytes(12).toString("hex")}.tmp`);
+    try {
+      await writeFile(temporary, await readSecret(name), { flag: "wx", mode: 0o444 });
+      await rename(temporary, path.join(apiDirectory, name));
+    } finally {
+      await unlink(temporary).catch(() => undefined);
+    }
+  }
 }
 
 if (process.argv.includes("--print-install-token")) {
